@@ -35,7 +35,8 @@ func TestAssembleFile(t *testing.T) {
 			file := assembleFile([]byte(test.source))
 			assertFilePartition(t, []byte(test.source), file)
 			var kinds []Kind
-			for _, child := range file.root.Children() {
+			for i := range file.root.ChildCount() {
+				child := file.root.Child(i)
 				token, ok := child.(SyntaxToken)
 				if !ok {
 					t.Fatalf("flat foundation child has type %T", child)
@@ -59,18 +60,38 @@ func TestFileOwnsSourceAndTree(t *testing.T) {
 	for i := range source {
 		source[i] = 'z'
 	}
-	children := file.root.Children()
-	children[0] = SyntaxToken{}
-	children = append(children, SyntaxNode{})
+	child := file.root.Child(0).(SyntaxToken)
+	child = SyntaxToken{}
+	if child.Kind() != Invalid {
+		t.Fatal("zero token must not claim to be an identifier")
+	}
 	root := file.root
 	root = SyntaxNode{}
 	if root.Kind() != InvalidNode {
 		t.Fatal("zero node must not claim to be a file")
 	}
 	assertFilePartition(t, original, file)
-	first := file.root.Children()[0].(SyntaxToken)
+	first := file.root.Child(0).(SyntaxToken)
 	if first.Kind() != Identifier {
-		t.Fatal("changing returned children changed stored tree")
+		t.Fatal("changing returned child value changed stored tree")
+	}
+}
+
+func TestChildTraversalAllocations(t *testing.T) {
+	file := assembleFile([]byte("x = 1 # comment\n"))
+	width := 0
+	allocations := testing.AllocsPerRun(100, func() {
+		width = 0
+		for i := range file.root.ChildCount() {
+			span := file.root.Child(i).Span()
+			width += span.End - span.Start
+		}
+	})
+	if width != len(file.source) {
+		t.Fatalf("traversed %d bytes, want %d", width, len(file.source))
+	}
+	if allocations != 0 {
+		t.Fatalf("child traversal allocated %g times, want zero", allocations)
 	}
 }
 
@@ -136,8 +157,8 @@ func assertFilePartition(t *testing.T, source []byte, file syntaxFile) {
 		}
 		switch element := element.(type) {
 		case SyntaxNode:
-			for _, child := range element.Children() {
-				visit(child)
+			for i := range element.ChildCount() {
+				visit(element.Child(i))
 			}
 			if end != span.End {
 				t.Fatalf("node span ends at %d, children end at %d", span.End, end)

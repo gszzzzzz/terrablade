@@ -1,7 +1,5 @@
 package syntax
 
-import "slices"
-
 // NodeKind identifies a grammatical structure, separately from lexical Kind.
 // Its numeric value is not a stable storage format.
 type NodeKind uint8
@@ -13,7 +11,8 @@ const (
 
 // SyntaxElement is a node or a token in source order. Trees produced by this
 // package contain SyntaxNode and SyntaxToken values, never pointers or nil.
-// The private method reserves construction of element implementations to syntax.
+// The private marker identifies element implementations; embedding an existing
+// implementation can also satisfy this interface outside the package.
 type SyntaxElement interface {
 	Span() Span
 	syntaxElement()
@@ -36,9 +35,12 @@ func (n SyntaxNode) Kind() NodeKind { return n.kind }
 // Span covers the node's children, including any trivia between them.
 func (n SyntaxNode) Span() Span { return n.span }
 
-// Children returns an independent slice in source order. Changing that slice
-// cannot change the tree. Elements themselves are read-only values.
-func (n SyntaxNode) Children() []SyntaxElement { return slices.Clone(n.children) }
+// ChildCount returns the number of immediate children.
+func (n SyntaxNode) ChildCount() int { return len(n.children) }
+
+// Child returns a read-only element in source order without allocating.
+// An index outside [0, ChildCount()) panics, like ordinary slice indexing.
+func (n SyntaxNode) Child(index int) SyntaxElement { return n.children[index] }
 
 // SyntaxToken is a read-only source leaf, including whitespace and comments.
 // Its text is the file's source[Span().Start:Span().End]; it owns no source bytes.
