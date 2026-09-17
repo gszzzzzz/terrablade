@@ -42,6 +42,7 @@ const (
 	GreaterEqual
 	Arrow
 	Colon
+	DoubleColon
 	Question
 	Dot
 	Ellipsis

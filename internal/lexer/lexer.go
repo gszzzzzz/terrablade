@@ -156,6 +156,8 @@ func (l *lexer) punctuation() (Kind, int) {
 			return GreaterEqual, 2
 		case "=>":
 			return Arrow, 2
+		case "::":
+			return DoubleColon, 2
 		}
 	}
 	switch l.source[l.offset] {

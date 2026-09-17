@@ -17,6 +17,8 @@ func TestLexTokens(t *testing.T) {
 		want         []tokenText
 	}{
 		{"empty", "", nil},
+		{"namespaced function", "provider::aws::arn_parse(x)", []tokenText{{Identifier, "provider"}, {DoubleColon, "::"}, {Identifier, "aws"}, {DoubleColon, "::"}, {Identifier, "arn_parse"}, {OpenParen, "("}, {Identifier, "x"}, {CloseParen, ")"}}},
+		{"colon longest match", "::::: : :", []tokenText{{DoubleColon, "::"}, {DoubleColon, "::"}, {Colon, ":"}, {Whitespace, " "}, {Colon, ":"}, {Whitespace, " "}, {Colon, ":"}}},
 		{"trivia", " \t\t \n\r\n\n", []tokenText{{Whitespace, " \t\t "}, {Newline, "\n"}, {Newline, "\r\n"}, {Newline, "\n"}}},
 		{"line comments", "a#one\nb//two\r\n#eof", []tokenText{{Identifier, "a"}, {LineComment, "#one"}, {Newline, "\n"}, {Identifier, "b"}, {LineComment, "//two"}, {Newline, "\r\n"}, {LineComment, "#eof"}}},
 		{"comment endings", "#\rstill comment\r\n//\n", []tokenText{{LineComment, "#\rstill comment"}, {Newline, "\r\n"}, {LineComment, "//"}, {Newline, "\n"}}},
