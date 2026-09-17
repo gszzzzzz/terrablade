@@ -81,6 +81,9 @@ func TestTemplateDiagnosticSpansAndRecovery(t *testing.T) {
 	}{
 		{`"${"`, []Diagnostic{{UnterminatedQuotedTemplate, Span{0, 1}}, {UnterminatedTemplateSequence, Span{1, 3}}, {UnterminatedQuotedTemplate, Span{3, 4}}}},
 		{"\"a\r\nb\"x", []Diagnostic{{NewlineInQuotedTemplate, Span{2, 4}}}},
+		{"\"a\rb\"x", []Diagnostic{{NewlineInQuotedTemplate, Span{2, 3}}}},
+		{"\"a\r\r\nb\"x", []Diagnostic{{NewlineInQuotedTemplate, Span{2, 3}}, {NewlineInQuotedTemplate, Span{3, 5}}}},
+		{"\"a\r", []Diagnostic{{UnterminatedQuotedTemplate, Span{0, 1}}, {NewlineInQuotedTemplate, Span{2, 3}}}},
 		{`"\uD800"x`, []Diagnostic{{InvalidEscape, Span{1, 7}}}},
 		{"<<-E\n${", []Diagnostic{{UnterminatedHeredoc, Span{0, 3}}, {UnterminatedTemplateSequence, Span{5, 7}}}},
 	} {

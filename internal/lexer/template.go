@@ -62,9 +62,9 @@ func (l *lexer) quoted() Kind {
 			l.quotedEscape()
 			continue
 		}
-		if l.source[l.offset] == '\n' || l.has("\r\n") {
+		if l.source[l.offset] == '\n' || l.source[l.offset] == '\r' {
 			start := l.offset
-			if l.source[l.offset] == '\r' {
+			if l.has("\r\n") {
 				l.offset++
 			}
 			l.offset++
