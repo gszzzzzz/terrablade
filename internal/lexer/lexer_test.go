@@ -16,7 +16,11 @@ func TestLexTokens(t *testing.T) {
 		name, source string
 		want         []tokenText
 	}{
-		{"empty", "", nil},
+		{
+			"empty",
+			"",
+			nil,
+		},
 		{
 			"BOM at start",
 			"\uFEFFa=1",

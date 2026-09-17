@@ -170,12 +170,16 @@ func TestHeredocs(t *testing.T) {
 				{Newline, "\n"},
 			},
 		},
-		{"not a heredoc", "<<-EOT", []tokenText{
-			{Less, "<"},
-			{Less, "<"},
-			{Minus, "-"},
-			{Identifier, "EOT"},
-		}},
+		{
+			"not a heredoc",
+			"<<-EOT",
+			[]tokenText{
+				{Less, "<"},
+				{Less, "<"},
+				{Minus, "-"},
+				{Identifier, "EOT"},
+			},
+		},
 		{
 			"spaced opener",
 			"<< EOT\n",
@@ -198,12 +202,16 @@ func TestHeredocs(t *testing.T) {
 				{Newline, "\n"},
 			},
 		},
-		{"numeric marker", "<<12\n", []tokenText{
-			{Less, "<"},
-			{Less, "<"},
-			{Number, "12"},
-			{Newline, "\n"},
-		}},
+		{
+			"numeric marker",
+			"<<12\n",
+			[]tokenText{
+				{Less, "<"},
+				{Less, "<"},
+				{Number, "12"},
+				{Newline, "\n"},
+			},
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) { assertTokens(t, test.source, test.want) })
 	}

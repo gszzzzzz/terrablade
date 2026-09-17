@@ -11,7 +11,14 @@ func TestQuotedTemplates(t *testing.T) {
 		name, source string
 		want         []tokenText
 	}{
-		{"empty", `""`, []tokenText{{QuoteOpen, `"`}, {QuoteClose, `"`}}},
+		{
+			"empty",
+			`""`,
+			[]tokenText{
+				{QuoteOpen, `"`},
+				{QuoteClose, `"`},
+			},
+		},
 		{
 			"literal",
 			"\"# // /* \uFEFF 😀\"",
