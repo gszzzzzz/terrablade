@@ -13,8 +13,10 @@ type Kind uint8
 const (
 	Invalid Kind = iota
 	EOF
-	// BOM classifies U+FEFF in configuration text without deciding placement
-	// validity. Inside comments and template text it remains enclosing content.
+	// BOM is outside native HCL syntax, but Terraform/OpenTofu/HCL tooling may
+	// accept or strip a leading BOM. This token preserves those input bytes;
+	// placement acceptance belongs to parser policy, and canonical omission or
+	// preservation to printer policy. Comments and template text keep it as content.
 	BOM
 	Whitespace
 	Newline
