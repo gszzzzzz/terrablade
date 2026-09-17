@@ -1,0 +1,88 @@
+// Package lexer tokenizes native HCL while preserving every source byte.
+//
+// Tokens refer to half-open byte spans in the caller's source. Lex does not
+// retain or modify that source. Its non-EOF tokens partition the complete input,
+// including malformed UTF-8 and trivia. A final zero-width EOF marks its end.
+// Diagnostics describe lexical errors only; a successful Lex is not a syntax
+// validation. Keywords remain identifiers for the parser to interpret.
+package lexer
+
+// Kind identifies a lexical element. Its numeric value is not a stable format.
+type Kind uint8
+
+const (
+	Invalid Kind = iota
+	EOF
+	Whitespace
+	Newline
+	LineComment
+	BlockComment
+	Identifier
+	Number
+	OpenBrace
+	CloseBrace
+	OpenBracket
+	CloseBracket
+	OpenParen
+	CloseParen
+	Plus
+	Minus
+	Star
+	Slash
+	Percent
+	And
+	Or
+	Bang
+	Equal
+	EqualEqual
+	NotEqual
+	Less
+	LessEqual
+	Greater
+	GreaterEqual
+	Arrow
+	Colon
+	Question
+	Dot
+	Ellipsis
+	Comma
+)
+
+// Span is a half-open byte interval [Start, End) in the original source.
+type Span struct {
+	Start int
+	End   int
+}
+
+// Token owns no source bytes. Its text is source[Span.Start:Span.End].
+type Token struct {
+	Kind Kind
+	Span Span
+}
+
+// DiagnosticKind identifies an error without coupling lexing to presentation.
+type DiagnosticKind uint8
+
+const (
+	InvalidUTF8 DiagnosticKind = iota
+	InvalidCharacter
+	UnexpectedBOM
+	UnterminatedBlockComment
+	// UnsupportedTemplate is temporary until template modes are implemented.
+	UnsupportedTemplate
+)
+
+// Diagnostic points to the source responsible for a lexical error.
+// An error does not require an Invalid token: an unterminated comment, for
+// example, retains its BlockComment kind so its source remains recognizable.
+type Diagnostic struct {
+	Kind DiagnosticKind
+	Span Span
+}
+
+// Result contains tokens and lexical errors, in source order. An input with
+// diagnostics must not be formatted. The token partition remains lossless.
+type Result struct {
+	Tokens      []Token
+	Diagnostics []Diagnostic
+}
