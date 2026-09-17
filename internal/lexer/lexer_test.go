@@ -87,6 +87,18 @@ func TestLexEveryByte(t *testing.T) {
 
 func FuzzLex(f *testing.F) {
 	f.Add([]byte("\uFEFFa\uFEFF#\uFEFF\n/*\uFEFF*/"))
+	for _, source := range []string{
+		`"${~ {a="${x}"} ~}"`,
+		`"%{~for x in xs~}${x}%{~endfor~}"`,
+		`"$${escaped} %%{escaped} \uD800 \U00110000 \q"`,
+		"\"${# }\r\n/* } */x}\"",
+		"<<-OUT\r\nraw ${<<IN\ninner\nIN\n}\r\n \tOUT \t\r\n",
+		"<<E\n%{if x}${\"${y}\"}%{endif}\nE\n",
+		"<<E\nE", "<<-E", "\"${\"${", "<<E\n${<<F\n",
+		"\"\\\xff${\uFEFFx}\"", "<<E\n\xff\uFEFF\nE\n",
+	} {
+		f.Add([]byte(source))
+	}
 	for _, source := range []string{"", "x = 1\r\n", "a-1=1.2E-3", "/* unclosed", "#\xff\n\xfe", "\"${{a=1}}\"", "<<-EOT\n${x}\nEOT", "한국어 e\u0301 \U00010940", "\x00\xc0\xaf\xed\xa0\x80"} {
 		f.Add([]byte(source))
 	}

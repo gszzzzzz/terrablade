@@ -2,6 +2,7 @@ package lexer
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -11,6 +12,7 @@ func TestHeredocs(t *testing.T) {
 		want         []tokenText
 	}{
 		{"empty", "<<EOT\nEOT\n", []tokenText{{HeredocOpen, "<<"}, {HeredocMarker, "EOT"}, {Newline, "\n"}, {HeredocEndMarker, "EOT"}, {Newline, "\n"}}},
+		{"literal before expression", "<<E\nhello ${x}\nE\n", []tokenText{{HeredocOpen, "<<"}, {HeredocMarker, "E"}, {Newline, "\n"}, {TemplateText, "hello "}, {InterpolationOpen, "${"}, {Identifier, "x"}, {TemplateSequenceEnd, "}"}, {TemplateText, "\n"}, {HeredocEndMarker, "E"}, {Newline, "\n"}}},
 		{"raw literal", "<<-EOT\r\n # /* \\q \" \uFEFF $${x} %%{if}\r\nEOT\r\n", []tokenText{{HeredocOpen, "<<-"}, {HeredocMarker, "EOT"}, {Newline, "\r\n"}, {TemplateText, " # /* \\q \" \uFEFF $${x} %%{if}\r\n"}, {HeredocEndMarker, "EOT"}, {Newline, "\r\n"}}},
 		{"marker substring", "<<EOT\nEOTx\nxEOT\nEOT\n", []tokenText{{HeredocOpen, "<<"}, {HeredocMarker, "EOT"}, {Newline, "\n"}, {TemplateText, "EOTx\nxEOT\n"}, {HeredocEndMarker, "EOT"}, {Newline, "\n"}}},
 		{"Unicode marker", "<<_한-글\nhello\n_한-글\n", []tokenText{{HeredocOpen, "<<"}, {HeredocMarker, "_한-글"}, {Newline, "\n"}, {TemplateText, "hello\n"}, {HeredocEndMarker, "_한-글"}, {Newline, "\n"}}},
@@ -25,6 +27,19 @@ func TestHeredocs(t *testing.T) {
 		{"numeric marker", "<<12\n", []tokenText{{Less, "<"}, {Less, "<"}, {Number, "12"}, {Newline, "\n"}}},
 	} {
 		t.Run(test.name, func(t *testing.T) { assertTokens(t, test.source, test.want) })
+	}
+}
+
+func TestDeepHeredocNesting(t *testing.T) {
+	const depth = 5000
+	source := []byte(strings.Repeat("<<E\n${", depth) + "1" + strings.Repeat("}\nE\n", depth))
+	result := Lex(source)
+	assertPartition(t, source, result)
+	if len(result.Diagnostics) != 0 {
+		t.Fatalf("unexpected diagnostics: %+v", result.Diagnostics)
+	}
+	if len(result.Tokens) != depth*8+2 {
+		t.Fatalf("unexpected token count: %d", len(result.Tokens))
 	}
 }
 

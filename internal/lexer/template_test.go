@@ -74,6 +74,32 @@ func TestDeepTemplateNesting(t *testing.T) {
 	}
 }
 
+func TestTemplateDiagnosticSpansAndRecovery(t *testing.T) {
+	for _, test := range []struct {
+		source string
+		want   []Diagnostic
+	}{
+		{`"${"`, []Diagnostic{{UnterminatedQuotedTemplate, Span{0, 1}}, {UnterminatedTemplateSequence, Span{1, 3}}, {UnterminatedQuotedTemplate, Span{3, 4}}}},
+		{"\"a\r\nb\"x", []Diagnostic{{NewlineInQuotedTemplate, Span{2, 4}}}},
+		{`"\uD800"x`, []Diagnostic{{InvalidEscape, Span{1, 7}}}},
+		{"<<-E\n${", []Diagnostic{{UnterminatedHeredoc, Span{0, 3}}, {UnterminatedTemplateSequence, Span{5, 7}}}},
+	} {
+		t.Run(test.source, func(t *testing.T) {
+			result := Lex([]byte(test.source))
+			assertPartition(t, []byte(test.source), result)
+			if !reflect.DeepEqual(result.Diagnostics, test.want) {
+				t.Errorf("diagnostics = %+v, want %+v", result.Diagnostics, test.want)
+			}
+			if strings.HasSuffix(test.source, "x") {
+				last := result.Tokens[len(result.Tokens)-2]
+				if last.Kind != Identifier || last.Span != (Span{len(test.source) - 1, len(test.source)}) {
+					t.Errorf("failed to resume config mode: %+v", last)
+				}
+			}
+		})
+	}
+}
+
 func assertTokens(t *testing.T, text string, want []tokenText) {
 	t.Helper()
 	source := []byte(text)
