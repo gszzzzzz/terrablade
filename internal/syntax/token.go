@@ -1,11 +1,11 @@
-// Package lexer tokenizes native HCL while preserving every source byte.
+// Package syntax tokenizes native HCL while preserving every source byte.
 //
 // Tokens refer to half-open byte spans in the caller's source. Lex does not
 // retain or modify that source. Its non-EOF tokens partition the complete input,
 // including malformed UTF-8 and trivia. A final zero-width EOF marks its end.
 // Diagnostics describe lexical errors only; a successful Lex is not a syntax
 // validation. Keywords remain identifiers for the parser to interpret.
-package lexer
+package syntax
 
 // Kind identifies a lexical element. Its numeric value is not a stable format.
 type Kind uint8

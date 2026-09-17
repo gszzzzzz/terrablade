@@ -4,7 +4,7 @@
 // SHA-256: 24c7fed1195c482faaefd5c1e7eb821c5ee1fb6de07ecdbaa64b56a99da22c08
 // Derived Unicode data is covered by ../../LICENSE-UNICODE.
 
-package lexer
+package syntax
 
 // UnicodeVersion pins identifiers independently of the Go toolchain's tables.
 const UnicodeVersion = "17.0.0"

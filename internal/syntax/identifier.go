@@ -1,4 +1,4 @@
-package lexer
+package syntax
 
 import "sort"
 
@@ -8,7 +8,7 @@ import "sort"
 // with the toolchain, so Terrablade checks in version-pinned Unicode ranges in
 // unicode_tables.go for both exact properties and stable token boundaries.
 // Normal builds need no downloads or generation. To update the tables, run
-// go generate ./internal/lexer from the repository root; the generator verifies
+// go generate ./internal/syntax from the repository root; the generator verifies
 // the pinned SHA-256 of official DerivedCoreProperties.txt before emitting them.
 // The HCL additions '_' and '-' stay here.
 //
