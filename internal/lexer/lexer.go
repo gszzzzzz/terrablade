@@ -9,8 +9,8 @@ import (
 // Lex tokenizes source without modifying it. It always makes progress, including
 // on invalid input, and emits EOF even for an empty source.
 //
-// Quoted templates expose their literal and expression boundaries. Heredocs
-// temporarily report UnsupportedTemplate and preserve the suffix as Invalid.
+// Quoted templates and heredocs expose literal and expression boundaries while
+// preserving their raw spelling; Lex neither evaluates escapes nor strips text.
 func Lex(source []byte) Result {
 	l := lexer{source: source}
 	for l.offset < len(source) {
@@ -22,6 +22,8 @@ func Lex(source []byte) Result {
 		kind, width := UnterminatedQuotedTemplate, 1
 		if frame.mode == modeExpression {
 			kind, width = UnterminatedTemplateSequence, 2
+		} else if frame.mode == modeHeredoc {
+			kind, width = UnterminatedHeredoc, frame.marker.Start-frame.start
 		}
 		l.error(kind, frame.start, frame.start+width)
 	}
@@ -47,6 +49,8 @@ func (l *lexer) scan() Kind {
 			return l.quoted()
 		case modeExpression:
 			return l.templateExpression()
+		case modeHeredoc:
+			return l.heredoc()
 		}
 	}
 	return l.config()
@@ -78,11 +82,11 @@ func (l *lexer) config() Kind {
 		l.offset++
 		return QuoteOpen
 	case l.has("<<"):
-		l.error(UnsupportedTemplate, l.offset, l.offset+2)
-		for l.offset < len(l.source) {
-			l.advanceRune()
+		if marker, ok := l.heredocOpener(); ok {
+			l.modes = append(l.modes, modeFrame{mode: modeHeredoc, start: l.offset, marker: marker})
+			l.offset = marker.Start
+			return HeredocOpen
 		}
-		return Invalid
 	case digit(c):
 		l.number()
 		return Number
@@ -228,7 +232,7 @@ func (l *lexer) punctuation() (Kind, int) {
 
 func (l *lexer) has(text string) bool { return bytes.HasPrefix(l.source[l.offset:], []byte(text)) }
 
-// advanceRune validates encoding even inside comments and unsupported suffixes.
+// advanceRune validates encoding even inside comments and template literals.
 // Every malformed UTF-8 byte advances by one; valid U+FFFD is not an encoding error.
 func (l *lexer) advanceRune() {
 	start := l.offset

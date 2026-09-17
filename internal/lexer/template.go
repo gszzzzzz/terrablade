@@ -7,6 +7,7 @@ type mode uint8
 const (
 	modeQuoted mode = iota
 	modeExpression
+	modeHeredoc
 )
 
 // Each nested expression owns its brace depth. A slice, rather than recursive
@@ -15,6 +16,7 @@ type modeFrame struct {
 	mode   mode
 	start  int
 	braces int
+	marker Span
 }
 
 func (l *lexer) popMode() { l.modes = l.modes[:len(l.modes)-1] }

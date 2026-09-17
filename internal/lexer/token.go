@@ -61,6 +61,12 @@ const (
 	// StripMarker is a separate '~' adjacent to a template sequence boundary.
 	StripMarker
 	TemplateSequenceEnd
+	// HeredocOpen covers << or <<-; HeredocMarker and Newline follow separately.
+	HeredocOpen
+	HeredocMarker
+	// HeredocEndMarker includes the closing line's indentation and trailing
+	// whitespace; its LF/CRLF is a separate Newline token.
+	HeredocEndMarker
 )
 
 // Span is a half-open byte interval [Start, End) in the original source.
@@ -86,8 +92,7 @@ const (
 	UnterminatedTemplateSequence
 	InvalidEscape
 	NewlineInQuotedTemplate
-	// UnsupportedTemplate is temporary until template modes are implemented.
-	UnsupportedTemplate
+	UnterminatedHeredoc
 )
 
 // Diagnostic points to the source responsible for a lexical error.
