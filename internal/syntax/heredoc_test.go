@@ -220,7 +220,7 @@ func TestHeredocs(t *testing.T) {
 func TestDeepHeredocNesting(t *testing.T) {
 	const depth = 5000
 	source := []byte(strings.Repeat("<<E\n${", depth) + "1" + strings.Repeat("}\nE\n", depth))
-	result := Lex(source)
+	result := lex(source)
 	assertPartition(t, source, result)
 	if len(result.Diagnostics) != 0 {
 		t.Fatalf("unexpected diagnostics: %+v", result.Diagnostics)
@@ -270,7 +270,7 @@ func TestHeredocErrors(t *testing.T) {
 		{"<<é\ne\u0301\n", []DiagnosticKind{UnterminatedHeredoc}},
 	} {
 		t.Run(test.source, func(t *testing.T) {
-			result := Lex([]byte(test.source))
+			result := lex([]byte(test.source))
 			assertPartition(t, []byte(test.source), result)
 			var kinds []DiagnosticKind
 			for _, diagnostic := range result.Diagnostics {

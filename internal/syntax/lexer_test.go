@@ -308,7 +308,7 @@ func TestLexTokens(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			source := []byte(test.source)
-			result := Lex(source)
+			result := lex(source)
 			assertPartition(t, source, result)
 			if len(result.Diagnostics) != 0 {
 				t.Fatalf("unexpected diagnostics: %+v", result.Diagnostics)
@@ -368,7 +368,7 @@ func TestLexDiagnostics(t *testing.T) {
 		{"continuation cannot start", "\u0301a", []Diagnostic{{InvalidCharacter, Span{0, 2}}}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			result := Lex([]byte(test.source))
+			result := lex([]byte(test.source))
 			assertPartition(t, []byte(test.source), result)
 			if !reflect.DeepEqual(result.Diagnostics, test.want) {
 				t.Errorf("diagnostics = %+v, want %+v", result.Diagnostics, test.want)
@@ -380,7 +380,7 @@ func TestLexDiagnostics(t *testing.T) {
 func TestLexEveryByte(t *testing.T) {
 	for value := range 256 {
 		source := []byte{byte(value)}
-		assertPartition(t, source, Lex(source))
+		assertPartition(t, source, lex(source))
 	}
 }
 
@@ -413,18 +413,18 @@ func FuzzLex(f *testing.F) {
 	}
 	f.Fuzz(func(t *testing.T, source []byte) {
 		original := bytes.Clone(source)
-		first := Lex(source)
+		first := lex(source)
 		assertPartition(t, source, first)
 		if !bytes.Equal(source, original) {
-			t.Fatal("Lex modified source")
+			t.Fatal("lex modified source")
 		}
-		if second := Lex(source); !reflect.DeepEqual(first, second) {
-			t.Fatal("Lex is not deterministic")
+		if second := lex(source); !reflect.DeepEqual(first, second) {
+			t.Fatal("lex is not deterministic")
 		}
 	})
 }
 
-func assertPartition(t *testing.T, source []byte, result Result) {
+func assertPartition(t *testing.T, source []byte, result lexResult) {
 	t.Helper()
 	if len(result.Tokens) == 0 {
 		t.Fatal("missing EOF")

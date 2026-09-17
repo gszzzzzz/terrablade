@@ -1,9 +1,9 @@
 // Package syntax tokenizes native HCL while preserving every source byte.
 //
-// Tokens refer to half-open byte spans in the caller's source. Lex does not
+// Tokens refer to half-open byte spans in the caller's source. lex does not
 // retain or modify that source. Its non-EOF tokens partition the complete input,
 // including malformed UTF-8 and trivia. A final zero-width EOF marks its end.
-// Diagnostics describe lexical errors only; a successful Lex is not a syntax
+// Diagnostics describe lexical errors only; a successful lex is not a syntax
 // validation. Keywords remain identifiers for the parser to interpret.
 package syntax
 
@@ -75,8 +75,8 @@ type Span struct {
 	End   int
 }
 
-// Token owns no source bytes. Its text is source[Span.Start:Span.End].
-type Token struct {
+// token owns no source bytes. Its text is source[Span.Start:Span.End].
+type token struct {
 	Kind Kind
 	Span Span
 }
@@ -103,9 +103,9 @@ type Diagnostic struct {
 	Span Span
 }
 
-// Result contains tokens and lexical errors, in source order. An input with
+// lexResult contains tokens and lexical errors, in source order. An input with
 // diagnostics must not be formatted. The token partition remains lossless.
-type Result struct {
-	Tokens      []Token
+type lexResult struct {
+	Tokens      []token
 	Diagnostics []Diagnostic
 }

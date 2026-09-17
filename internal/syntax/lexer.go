@@ -6,17 +6,17 @@ import (
 	"unicode/utf8"
 )
 
-// Lex tokenizes source without modifying it. It always makes progress, including
+// lex tokenizes source without modifying it. It always makes progress, including
 // on invalid input, and emits EOF even for an empty source.
 //
 // Quoted templates and heredocs expose literal and expression boundaries while
-// preserving their raw spelling; Lex neither evaluates escapes nor strips text.
-func Lex(source []byte) Result {
+// preserving their raw spelling; lex neither evaluates escapes nor strips text.
+func lex(source []byte) lexResult {
 	l := lexer{source: source}
 	for l.offset < len(source) {
 		start := l.offset
 		kind := l.scan()
-		l.result.Tokens = append(l.result.Tokens, Token{Kind: kind, Span: Span{start, l.offset}})
+		l.result.Tokens = append(l.result.Tokens, token{Kind: kind, Span: Span{start, l.offset}})
 	}
 	for _, frame := range l.modes {
 		kind, width := UnterminatedQuotedTemplate, 1
@@ -27,7 +27,7 @@ func Lex(source []byte) Result {
 		}
 		l.error(kind, frame.start, frame.start+width)
 	}
-	l.result.Tokens = append(l.result.Tokens, Token{Kind: EOF, Span: Span{len(source), len(source)}})
+	l.result.Tokens = append(l.result.Tokens, token{Kind: EOF, Span: Span{len(source), len(source)}})
 	// A whole-comment error may precede an encoding error found inside it.
 	sort.SliceStable(l.result.Diagnostics, func(i, j int) bool {
 		return l.result.Diagnostics[i].Span.Start < l.result.Diagnostics[j].Span.Start
@@ -38,7 +38,7 @@ func Lex(source []byte) Result {
 type lexer struct {
 	source []byte
 	offset int
-	result Result
+	result lexResult
 	modes  []modeFrame
 }
 

@@ -184,7 +184,7 @@ func TestQuotedTemplateErrors(t *testing.T) {
 		{"strip inside object", `"${{a=1~}}"`, []DiagnosticKind{InvalidCharacter}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			result := Lex([]byte(test.source))
+			result := lex([]byte(test.source))
 			assertPartition(t, []byte(test.source), result)
 			var kinds []DiagnosticKind
 			for _, diagnostic := range result.Diagnostics {
@@ -200,7 +200,7 @@ func TestQuotedTemplateErrors(t *testing.T) {
 func TestDeepTemplateNesting(t *testing.T) {
 	const depth = 10000
 	source := []byte(strings.Repeat(`"${`, depth) + `1` + strings.Repeat(`}"`, depth))
-	result := Lex(source)
+	result := lex(source)
 	assertPartition(t, source, result)
 	if len(result.Diagnostics) != 0 {
 		t.Fatalf("unexpected diagnostics: %+v", result.Diagnostics)
@@ -249,7 +249,7 @@ func TestTemplateDiagnosticSpansAndRecovery(t *testing.T) {
 		},
 	} {
 		t.Run(test.source, func(t *testing.T) {
-			result := Lex([]byte(test.source))
+			result := lex([]byte(test.source))
 			assertPartition(t, []byte(test.source), result)
 			if !reflect.DeepEqual(result.Diagnostics, test.want) {
 				t.Errorf("diagnostics = %+v, want %+v", result.Diagnostics, test.want)
@@ -267,7 +267,7 @@ func TestTemplateDiagnosticSpansAndRecovery(t *testing.T) {
 func assertTokens(t *testing.T, text string, want []tokenText) {
 	t.Helper()
 	source := []byte(text)
-	result := Lex(source)
+	result := lex(source)
 	assertPartition(t, source, result)
 	if len(result.Diagnostics) != 0 {
 		t.Fatalf("unexpected diagnostics: %+v", result.Diagnostics)
