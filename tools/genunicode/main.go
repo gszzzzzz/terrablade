@@ -91,6 +91,8 @@ func generate() error {
 	fmt.Fprintln(&output, "// Pinned ID_Start/ID_Continue properties; see identifier.go for rationale and regeneration.")
 	fmt.Fprintf(&output, "// Unicode %s, %s\n// SHA-256: %s\n", version, sourceURL, sourceSHA256)
 	fmt.Fprintln(&output, "// Derived Unicode data is covered by ../../LICENSE-UNICODE.\n\npackage lexer")
+	fmt.Fprintln(&output, "\n// UnicodeVersion pins identifiers independently of the Go toolchain's tables.")
+	fmt.Fprintf(&output, "const UnicodeVersion = %q\n", version)
 	for _, property := range []string{"ID_Start", "ID_Continue"} {
 		name := "idStart"
 		if property == "ID_Continue" {

@@ -6,6 +6,9 @@
 
 package lexer
 
+// UnicodeVersion pins identifiers independently of the Go toolchain's tables.
+const UnicodeVersion = "17.0.0"
+
 var idStart = [...]runeRange{
 	{0x41, 0x5A},
 	{0x61, 0x7A},

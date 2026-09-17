@@ -5,7 +5,7 @@ import "sort"
 // HCL identifiers require the Unicode derived properties ID_Start/ID_Continue,
 // which unicode.IsLetter/IsDigit do not reproduce (for example, ID_Start admits
 // U+2118 and ID_Continue admits combining marks). Go's Unicode data also varies
-// with the toolchain, so Terrablade checks in generated Unicode 17.0 ranges in
+// with the toolchain, so Terrablade checks in version-pinned Unicode ranges in
 // unicode_tables.go for both exact properties and stable token boundaries.
 // Normal builds need no downloads or generation. To update the tables, run
 // go generate ./internal/lexer from the repository root; the generator verifies
@@ -13,9 +13,6 @@ import "sort"
 // The HCL additions '_' and '-' stay here.
 //
 //go:generate go run ../../tools/genunicode
-
-// UnicodeVersion pins identifiers independently of the Go toolchain's tables.
-const UnicodeVersion = "17.0.0"
 
 type runeRange struct{ lo, hi rune }
 
