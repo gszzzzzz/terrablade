@@ -1,0 +1,26 @@
+# Binaries and build output
+/terrablade
+/bin/
+/build/
+/dist/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Go test and profiling output
+*.test
+*.out
+coverage.*
+*.prof
+
+# Go workspace files
+go.work
+go.work.sum
+
+# Editor and OS files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
