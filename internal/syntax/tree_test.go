@@ -13,23 +13,82 @@ func TestAssembleFile(t *testing.T) {
 		source string
 		kinds  []Kind
 	}{
-		{"empty", "", []Kind{EOF}},
-		{"trivia", " \t# comment\r\n/* block */\n", []Kind{
-			Whitespace, LineComment, Newline, BlockComment, Newline, EOF,
-		}},
-		{"attribute spelling", "x = (1 + 2) # end\n", []Kind{
-			Identifier, Whitespace, Equal, Whitespace, OpenParen, Number,
-			Whitespace, Plus, Whitespace, Number, CloseParen, Whitespace,
-			LineComment, Newline, EOF,
-		}},
-		{"BOM and unicode", "\uFEFF한글 = 1\n", []Kind{
-			BOM, Identifier, Whitespace, Equal, Whitespace, Number, Newline, EOF,
-		}},
-		{"template", `"hi ${x}"`, []Kind{
-			QuoteOpen, TemplateText, InterpolationOpen, Identifier,
-			TemplateSequenceEnd, QuoteClose, EOF,
-		}},
-		{"malformed bytes", "\xff/* open", []Kind{Invalid, BlockComment, EOF}},
+		{
+			"empty",
+			"",
+			[]Kind{
+				EOF,
+			},
+		},
+		{
+			"trivia",
+			" \t# comment\r\n/* block */\n",
+			[]Kind{
+				Whitespace,
+				LineComment,
+				Newline,
+				BlockComment,
+				Newline,
+				EOF,
+			},
+		},
+		{
+			"attribute spelling",
+			"x = (1 + 2) # end\n",
+			[]Kind{
+				Identifier,
+				Whitespace,
+				Equal,
+				Whitespace,
+				OpenParen,
+				Number,
+				Whitespace,
+				Plus,
+				Whitespace,
+				Number,
+				CloseParen,
+				Whitespace,
+				LineComment,
+				Newline,
+				EOF,
+			},
+		},
+		{
+			"BOM and unicode",
+			"\uFEFF한글 = 1\n",
+			[]Kind{
+				BOM,
+				Identifier,
+				Whitespace,
+				Equal,
+				Whitespace,
+				Number,
+				Newline,
+				EOF,
+			},
+		},
+		{
+			"template",
+			`"hi ${x}"`,
+			[]Kind{
+				QuoteOpen,
+				TemplateText,
+				InterpolationOpen,
+				Identifier,
+				TemplateSequenceEnd,
+				QuoteClose,
+				EOF,
+			},
+		},
+		{
+			"malformed bytes",
+			"\xff/* open",
+			[]Kind{
+				Invalid,
+				BlockComment,
+				EOF,
+			},
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			file := assembleFile([]byte(test.source))
@@ -116,9 +175,14 @@ func TestFileDeepInput(t *testing.T) {
 
 func FuzzAssembleFile(f *testing.F) {
 	for _, source := range []string{
-		"", "x = 1\r\n", "\uFEFF# header\n/* comment */\n",
-		"/*\xff", "\x00\xc0\xaf\xed\xa0\x80", `"${{a="${x}"}}"`,
-		"<<-END\n%{if x}${y}%{endif}\n END\n", "\"${\"${",
+		"",
+		"x = 1\r\n",
+		"\uFEFF# header\n/* comment */\n",
+		"/*\xff",
+		"\x00\xc0\xaf\xed\xa0\x80",
+		`"${{a="${x}"}}"`,
+		"<<-END\n%{if x}${y}%{endif}\n END\n",
+		"\"${\"${",
 	} {
 		f.Add([]byte(source))
 	}
