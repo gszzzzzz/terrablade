@@ -70,6 +70,10 @@ func (l *lexer) scan() Kind {
 	}
 
 	r, width := utf8.DecodeRune(l.source[l.offset:])
+	if r == '\uFEFF' {
+		l.offset += width
+		return BOM
+	}
 	if identifierStart(r) {
 		l.offset += width
 		for l.offset < len(l.source) {
@@ -87,7 +91,7 @@ func (l *lexer) scan() Kind {
 	}
 	start := l.offset
 	l.advanceRune()
-	if r != '\uFEFF' && !(r == utf8.RuneError && width == 1) {
+	if !(r == utf8.RuneError && width == 1) {
 		l.error(InvalidCharacter, start, l.offset)
 	}
 	return Invalid
@@ -213,8 +217,6 @@ func (l *lexer) advanceRune() {
 	l.offset += width
 	if r == utf8.RuneError && width == 1 {
 		l.error(InvalidUTF8, start, l.offset)
-	} else if r == '\uFEFF' {
-		l.error(UnexpectedBOM, start, l.offset)
 	}
 }
 

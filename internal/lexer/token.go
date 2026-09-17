@@ -13,6 +13,9 @@ type Kind uint8
 const (
 	Invalid Kind = iota
 	EOF
+	// BOM classifies U+FEFF in configuration text without deciding placement
+	// validity. Inside comments and template text it remains enclosing content.
+	BOM
 	Whitespace
 	Newline
 	LineComment
@@ -67,7 +70,6 @@ type DiagnosticKind uint8
 const (
 	InvalidUTF8 DiagnosticKind = iota
 	InvalidCharacter
-	UnexpectedBOM
 	UnterminatedBlockComment
 	// UnsupportedTemplate is temporary until template modes are implemented.
 	UnsupportedTemplate

@@ -17,6 +17,9 @@ func TestLexTokens(t *testing.T) {
 		want         []tokenText
 	}{
 		{"empty", "", nil},
+		{"BOM at start", "\uFEFFa=1", []tokenText{{BOM, "\uFEFF"}, {Identifier, "a"}, {Equal, "="}, {Number, "1"}}},
+		{"BOM placement left to parser", "a\uFEFF\uFEFFb\n\uFEFF", []tokenText{{Identifier, "a"}, {BOM, "\uFEFF"}, {BOM, "\uFEFF"}, {Identifier, "b"}, {Newline, "\n"}, {BOM, "\uFEFF"}}},
+		{"BOM stays comment content", "#\uFEFF\n//\uFEFF\r\n/*\uFEFF*/", []tokenText{{LineComment, "#\uFEFF"}, {Newline, "\n"}, {LineComment, "//\uFEFF"}, {Newline, "\r\n"}, {BlockComment, "/*\uFEFF*/"}}},
 		{"namespaced function", "provider::aws::arn_parse(x)", []tokenText{{Identifier, "provider"}, {DoubleColon, "::"}, {Identifier, "aws"}, {DoubleColon, "::"}, {Identifier, "arn_parse"}, {OpenParen, "("}, {Identifier, "x"}, {CloseParen, ")"}}},
 		{"colon longest match", "::::: : :", []tokenText{{DoubleColon, "::"}, {DoubleColon, "::"}, {Colon, ":"}, {Whitespace, " "}, {Colon, ":"}, {Whitespace, " "}, {Colon, ":"}}},
 		{"trivia", " \t\t \n\r\n\n", []tokenText{{Whitespace, " \t\t "}, {Newline, "\n"}, {Newline, "\r\n"}, {Newline, "\n"}}},
@@ -59,15 +62,14 @@ func TestLexDiagnostics(t *testing.T) {
 		{"invalid characters", "&|;@'\\\x00\u00A0", []Diagnostic{{InvalidCharacter, Span{0, 1}}, {InvalidCharacter, Span{1, 2}}, {InvalidCharacter, Span{2, 3}}, {InvalidCharacter, Span{3, 4}}, {InvalidCharacter, Span{4, 5}}, {InvalidCharacter, Span{5, 6}}, {InvalidCharacter, Span{6, 7}}, {InvalidCharacter, Span{7, 9}}}},
 		{"invalid UTF8", "a\xff\xc0\x80b", []Diagnostic{{InvalidUTF8, Span{1, 2}}, {InvalidUTF8, Span{2, 3}}, {InvalidUTF8, Span{3, 4}}}},
 		{"valid replacement rune", "\uFFFD", []Diagnostic{{InvalidCharacter, Span{0, 3}}}},
-		{"BOM", "\uFEFFa", []Diagnostic{{UnexpectedBOM, Span{0, 3}}}},
-		{"encoding inside line comment", "#\xff\uFEFF\n", []Diagnostic{{InvalidUTF8, Span{1, 2}}, {UnexpectedBOM, Span{2, 5}}}},
+		{"encoding inside line comment", "#\xff\uFEFF\n", []Diagnostic{{InvalidUTF8, Span{1, 2}}}},
 		{"encoding inside block comment", "/*\xff*/", []Diagnostic{{InvalidUTF8, Span{2, 3}}}},
 		{"unterminated comment", "/*x", []Diagnostic{{UnterminatedBlockComment, Span{0, 3}}}},
 		{"ordered errors", "/*\xff", []Diagnostic{{UnterminatedBlockComment, Span{0, 3}}, {InvalidUTF8, Span{2, 3}}}},
 		{"continuation cannot start", "\u0301a", []Diagnostic{{InvalidCharacter, Span{0, 2}}}},
 		{"pending quote", "a=\"# not a comment\"\n", []Diagnostic{{UnsupportedTemplate, Span{2, 3}}}},
 		{"pending heredoc", "a=<<-EOF\n# literal\nEOF\n", []Diagnostic{{UnsupportedTemplate, Span{2, 4}}}},
-		{"pending validates bytes", "\"\xff\uFEFF", []Diagnostic{{UnsupportedTemplate, Span{0, 1}}, {InvalidUTF8, Span{1, 2}}, {UnexpectedBOM, Span{2, 5}}}},
+		{"pending validates bytes", "\"\xff\uFEFF", []Diagnostic{{UnsupportedTemplate, Span{0, 1}}, {InvalidUTF8, Span{1, 2}}}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			result := Lex([]byte(test.source))
@@ -80,11 +82,14 @@ func TestLexDiagnostics(t *testing.T) {
 }
 
 func TestUnsupportedTemplatesPreserveSuffix(t *testing.T) {
-	for _, source := range []string{"x=\"text ${a}\"\ny=1", "x=<<EOT\nhi\nEOT\ny=2"} {
+	for _, source := range []string{"x=\"text ${a}\"\ny=1", "x=<<EOT\nhi\nEOT\ny=2", "x=\"\uFEFF\""} {
 		result := Lex([]byte(source))
 		want := Token{Invalid, Span{2, len(source)}}
 		if len(result.Tokens) != 4 || result.Tokens[2] != want {
 			t.Errorf("%q: tokens = %+v", source, result.Tokens)
+		}
+		if len(result.Diagnostics) != 1 || result.Diagnostics[0].Kind != UnsupportedTemplate {
+			t.Errorf("%q: diagnostics = %+v", source, result.Diagnostics)
 		}
 	}
 }
@@ -97,6 +102,7 @@ func TestLexEveryByte(t *testing.T) {
 }
 
 func FuzzLex(f *testing.F) {
+	f.Add([]byte("\uFEFFa\uFEFF#\uFEFF\n/*\uFEFF*/"))
 	for _, source := range []string{"", "x = 1\r\n", "a-1=1.2E-3", "/* unclosed", "#\xff\n\xfe", "\"${{a=1}}\"", "<<-EOT\n${x}\nEOT", "한국어 e\u0301 \U00010940", "\x00\xc0\xaf\xed\xa0\x80"} {
 		f.Add([]byte(source))
 	}
@@ -131,6 +137,9 @@ func assertPartition(t *testing.T, source []byte, result Result) {
 			}
 		} else if span.Start == span.End {
 			t.Fatalf("empty non-EOF token: %+v", token)
+		}
+		if token.Kind == BOM && !bytes.Equal(source[span.Start:span.End], []byte("\uFEFF")) {
+			t.Fatalf("BOM token does not span exactly one UTF-8 BOM: %+v", token)
 		}
 		reconstructed = append(reconstructed, source[span.Start:span.End]...)
 		end = span.End
