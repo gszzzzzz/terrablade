@@ -52,6 +52,15 @@ const (
 	Dot
 	Ellipsis
 	Comma
+	QuoteOpen
+	QuoteClose
+	// TemplateText preserves literal bytes and escapes without decoding them.
+	TemplateText
+	InterpolationOpen
+	DirectiveOpen
+	// StripMarker is a separate '~' adjacent to a template sequence boundary.
+	StripMarker
+	TemplateSequenceEnd
 )
 
 // Span is a half-open byte interval [Start, End) in the original source.
@@ -73,6 +82,10 @@ const (
 	InvalidUTF8 DiagnosticKind = iota
 	InvalidCharacter
 	UnterminatedBlockComment
+	UnterminatedQuotedTemplate
+	UnterminatedTemplateSequence
+	InvalidEscape
+	NewlineInQuotedTemplate
 	// UnsupportedTemplate is temporary until template modes are implemented.
 	UnsupportedTemplate
 )

@@ -9,15 +9,21 @@ import (
 // Lex tokenizes source without modifying it. It always makes progress, including
 // on invalid input, and emits EOF even for an empty source.
 //
-// This initial implementation supports configuration tokens only. On a quote or
-// heredoc opener it reports UnsupportedTemplate and preserves the entire suffix
-// as one Invalid token. Template contents are not interpreted as configuration.
+// Quoted templates expose their literal and expression boundaries. Heredocs
+// temporarily report UnsupportedTemplate and preserve the suffix as Invalid.
 func Lex(source []byte) Result {
 	l := lexer{source: source}
 	for l.offset < len(source) {
 		start := l.offset
 		kind := l.scan()
 		l.result.Tokens = append(l.result.Tokens, Token{Kind: kind, Span: Span{start, l.offset}})
+	}
+	for _, frame := range l.modes {
+		kind, width := UnterminatedQuotedTemplate, 1
+		if frame.mode == modeExpression {
+			kind, width = UnterminatedTemplateSequence, 2
+		}
+		l.error(kind, frame.start, frame.start+width)
 	}
 	l.result.Tokens = append(l.result.Tokens, Token{Kind: EOF, Span: Span{len(source), len(source)}})
 	// A whole-comment error may precede an encoding error found inside it.
@@ -31,9 +37,22 @@ type lexer struct {
 	source []byte
 	offset int
 	result Result
+	modes  []modeFrame
 }
 
 func (l *lexer) scan() Kind {
+	if len(l.modes) > 0 {
+		switch l.modes[len(l.modes)-1].mode {
+		case modeQuoted:
+			return l.quoted()
+		case modeExpression:
+			return l.templateExpression()
+		}
+	}
+	return l.config()
+}
+
+func (l *lexer) config() Kind {
 	c := l.source[l.offset]
 	switch {
 	case c == ' ' || c == '\t':
@@ -54,12 +73,12 @@ func (l *lexer) scan() Kind {
 		return LineComment
 	case l.has("/*"):
 		return l.blockComment()
-	case c == '"' || l.has("<<"):
-		width := 1
-		if c == '<' {
-			width = 2
-		}
-		l.error(UnsupportedTemplate, l.offset, l.offset+width)
+	case c == '"':
+		l.modes = append(l.modes, modeFrame{mode: modeQuoted, start: l.offset})
+		l.offset++
+		return QuoteOpen
+	case l.has("<<"):
+		l.error(UnsupportedTemplate, l.offset, l.offset+2)
 		for l.offset < len(l.source) {
 			l.advanceRune()
 		}

@@ -67,9 +67,7 @@ func TestLexDiagnostics(t *testing.T) {
 		{"unterminated comment", "/*x", []Diagnostic{{UnterminatedBlockComment, Span{0, 3}}}},
 		{"ordered errors", "/*\xff", []Diagnostic{{UnterminatedBlockComment, Span{0, 3}}, {InvalidUTF8, Span{2, 3}}}},
 		{"continuation cannot start", "\u0301a", []Diagnostic{{InvalidCharacter, Span{0, 2}}}},
-		{"pending quote", "a=\"# not a comment\"\n", []Diagnostic{{UnsupportedTemplate, Span{2, 3}}}},
 		{"pending heredoc", "a=<<-EOF\n# literal\nEOF\n", []Diagnostic{{UnsupportedTemplate, Span{2, 4}}}},
-		{"pending validates bytes", "\"\xff\uFEFF", []Diagnostic{{UnsupportedTemplate, Span{0, 1}}, {InvalidUTF8, Span{1, 2}}}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			result := Lex([]byte(test.source))
@@ -82,7 +80,7 @@ func TestLexDiagnostics(t *testing.T) {
 }
 
 func TestUnsupportedTemplatesPreserveSuffix(t *testing.T) {
-	for _, source := range []string{"x=\"text ${a}\"\ny=1", "x=<<EOT\nhi\nEOT\ny=2", "x=\"\uFEFF\""} {
+	for _, source := range []string{"x=<<EOT\nhi\nEOT\ny=2"} {
 		result := Lex([]byte(source))
 		want := Token{Invalid, Span{2, len(source)}}
 		if len(result.Tokens) != 4 || result.Tokens[2] != want {
