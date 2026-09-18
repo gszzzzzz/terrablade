@@ -6,9 +6,10 @@
 // Nodes and tokens are read-only values; trivia is an ordered token element,
 // never metadata attached to a neighboring node.
 //
-// Lexing and file assembly are currently private implementation details. File
-// assembly does not validate grammar. A public Parse entry point and its Result
-// will be introduced with grammar validation; this foundation exposes neither.
-// Diagnostics currently describe lexical errors only. Keywords remain lexical
-// identifiers for the eventual parser to interpret.
+// Lexing, file assembly, and expression parsing are private implementation
+// details. Flat file assembly does not validate grammar; the private expression
+// parser validates only its supported expression subset, not configuration
+// bodies. A public Parse entry point and its Result will come with body parsing.
+// Diagnostics describe lexical and syntax errors. Contextual keywords retain
+// their lexical Identifier kind in the tree.
 package syntax

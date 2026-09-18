@@ -99,6 +99,7 @@ const (
 	NestedAttributeSplat
 	UnsupportedExpression
 	NestingLimitExceeded
+	InvalidNumber
 )
 
 // Diagnostic points to the source responsible for a lexical or syntax error.
