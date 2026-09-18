@@ -10,6 +10,10 @@
 // widths. A hard line in an unselected IfBreak branch has no effect.
 // ForceFlat establishes a lexical flat boundary: nested groups and IfBreak
 // stay flat even beyond PrintWidth, while mandatory lines remain intact.
+// Cell marks columns for alignment after layout. Consecutive eligible rows
+// align by grapheme-cluster count; a cell spanning ordinary newlines splits its
+// chain, while LiteralLine stays inside an opaque row. Padding never changes
+// an earlier break decision and may exceed the preferred print width.
 //
 // Indent changes the structural indentation context. Ordinary broken lines
 // use it; LiteralLine omits automatic indentation once without discarding the
@@ -41,4 +45,6 @@
 // revisit overlapping contents and take quadratic time. A long grapheme split
 // across many Text nodes can also take quadratic time. Rendering owns
 // its output and work stacks, so shared Docs are safe for concurrent reads.
+// Alignment takes linear work in the output size per populated column; there
+// are at most 256 columns. Each cell's prefix is measured once for its column.
 package document

@@ -22,12 +22,14 @@ const (
 	forceFlatKind
 	indentKind
 	ifBreakKind
+	cellKind
 )
 
 type node struct {
 	kind     kind
 	text     string
 	children []Doc
+	column   uint8
 	// A hard line on the flat path prevents every enclosing group from
 	// flattening. The unselected broken branch of IfBreak must not force it.
 	forceBreak bool
@@ -107,6 +109,21 @@ func ForceFlat(content Doc) Doc { return wrap(forceFlatKind, content) }
 // Indent adds one indentation level within content. It affects indentation
 // after ordinary line breaks, not text already on the current line.
 func Indent(content Doc) Doc { return wrap(indentKind, content) }
+
+// Cell marks content for vertical alignment with the same column on adjacent
+// rendered rows. A row must contain at most one cell per column, lower-numbered
+// columns must precede higher-numbered columns, and cells must not nest.
+// Content supplies its own minimum separator. Alignment
+// adds spaces before it after all line breaks have been chosen, so padding may
+// exceed PrintWidth. Columns count grapheme clusters, not terminal display cells.
+// A cell spanning an ordinary newline is ineligible and splits its chain.
+// LiteralLine belongs to opaque text and does not separate alignment rows.
+func Cell(column uint8, content Doc) Doc {
+	if content.node == nil {
+		return content
+	}
+	return Doc{&node{kind: cellKind, column: column, children: []Doc{content}, forceBreak: content.node.forceBreak}}
+}
 
 func wrap(k kind, content Doc) Doc {
 	if content.node == nil {

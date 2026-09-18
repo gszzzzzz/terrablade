@@ -29,10 +29,16 @@ func Render(doc Doc, options Options) string {
 	pending := 0
 	stack := []command{{doc: doc}}
 	var probe []command
+	var cells []renderedCell
+	row, rowStart := 0, 0
 	for len(stack) > 0 {
 		last := len(stack) - 1
 		current := stack[last]
 		stack = stack[:last]
+		if current.cellEnd != 0 {
+			cells[current.cellEnd-1].lastRow = row
+			continue
+		}
 		n := current.doc.node
 		if n == nil {
 			continue
@@ -60,6 +66,10 @@ func Render(doc Doc, options Options) string {
 				continue
 			}
 			output.WriteByte('\n')
+			if n.kind != literalLineKind {
+				row++
+				rowStart = output.Len()
+			}
 			column = lineWidth{}
 			pending = current.indent
 			if n.kind == literalLineKind {
@@ -76,17 +86,23 @@ func Render(doc Doc, options Options) string {
 			}
 			current.doc = n.children[0]
 			stack = append(stack, current)
+		case cellKind:
+			cells = append(cells, renderedCell{column: n.column, position: output.Len(), rowStart: rowStart, firstRow: row, pending: pending})
+			stack = append(stack, command{cellEnd: len(cells)})
+			current.doc = n.children[0]
+			stack = append(stack, current)
 		default:
 			stack = expand(stack, current, options.IndentWidth)
 		}
 	}
-	return output.String()
+	return alignCells(output.String(), cells)
 }
 
 type command struct {
-	doc    Doc
-	indent int
-	flat   bool
+	doc     Doc
+	indent  int
+	flat    bool
+	cellEnd int // One-based index of an alignment cell ending at this command.
 }
 
 // A probe includes the continuation, not just the candidate group. Otherwise a
@@ -126,7 +142,7 @@ func fits(candidate command, continuation []command, column lineWidth, options O
 			}
 		case hardLineKind, literalLineKind:
 			return true, stack[:0]
-		case groupKind:
+		case groupKind, cellKind:
 			// Candidate descendants inherit flat mode. An undecided sibling
 			// keeps the continuation's broken mode, so its break opportunity
 			// can end this line instead of forcing an earlier group to break.
