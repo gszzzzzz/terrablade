@@ -46,10 +46,13 @@
 //
 // DiagnosticKind.Message supplies standalone English error messages. Their
 // wording may change; match the kind rather than its prose. Result.Position
-// converts a source byte offset, including EOF, to a one-based line and byte
-// column. Only LF advances the line, including in CRLF. Every other byte counts
-// toward the column, including tabs, BOM, and malformed UTF-8; offsets inside
-// UTF-8 sequences are allowed. A zero Result maps offset zero to line 1, column 1.
+// converts a source byte offset, including EOF, to a one-based line and UTF-8
+// rune column. Only LF advances the line, including in CRLF. Each code point
+// counts as one column, including tabs, BOM, combining marks, and emoji sequence
+// components; these are not upstream HCL's grapheme-cluster or display columns.
+// An offset inside a valid rune shares that rune's starting column. Each invalid
+// or truncated UTF-8 byte counts separately. A zero Result maps offset zero to
+// line 1, column 1.
 // Position panics for offsets outside the source. Filenames, excerpts, display
 // widths, and diagnostic rendering belong to callers.
 //

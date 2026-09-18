@@ -5,6 +5,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"terrablade/internal/syntax"
 )
@@ -107,11 +108,17 @@ func FuzzParse(f *testing.F) {
 			offsets = append(offsets, first.Span.Start, first.Span.End, last.Span.Start, last.Span.End)
 		}
 		for _, offset := range offsets {
-			// A byte-by-byte oracle is independent of the prefix-count/search
-			// implementation and also works on malformed encodings.
+			// Decode the complete source one rune at a time, stopping before the
+			// rune that contains an interior offset. This is independent of the
+			// implementation's backward inspection and prefix rune count.
 			want := syntax.Position{Offset: offset, Line: 1, Column: 1}
-			for _, byteValue := range source[:offset] {
-				if byteValue == '\n' {
+			for index := 0; index < offset; {
+				runeValue, width := utf8.DecodeRune(source[index:])
+				if index+width > offset {
+					break
+				}
+				index += width
+				if runeValue == '\n' {
 					want.Line++
 					want.Column = 1
 				} else {
