@@ -26,7 +26,6 @@ func TestTraversalShapes(t *testing.T) {
 			"1.e-",
 			`File(Traversal(Literal("1"), Attribute(".", "e-")))`,
 		},
-
 		{
 			"postfix binds inside unary",
 			"-foo.bar[0]",

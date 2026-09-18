@@ -22,9 +22,10 @@ func lex(source []byte) lexResult {
 	// closing tokens or discarding the already-tokenized partial contents.
 	for _, frame := range l.modes {
 		kind, width := UnterminatedQuotedTemplate, 1
-		if frame.mode == modeExpression {
+		switch frame.mode {
+		case modeExpression:
 			kind, width = UnterminatedTemplateSequence, 2
-		} else if frame.mode == modeHeredoc {
+		case modeHeredoc:
 			kind, width = UnterminatedHeredoc, frame.marker.Start-frame.start
 		}
 		l.error(kind, frame.start, frame.start+width)
