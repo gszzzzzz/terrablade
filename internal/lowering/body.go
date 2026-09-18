@@ -96,7 +96,11 @@ func attribute(result syntax.Result, node syntax.SyntaxNode) (document.Doc, erro
 		}
 		trivia = nil
 	}
-	return spacedSequence(result, parts), nil
+	before, separator := commentGap(result, parts[1].before, gapStyle{empty: space, beforeComment: space, afterComment: space})
+	value := parts[2]
+	gap, start := commentGap(result, value.before, gapStyle{empty: space, beforeComment: space, afterComment: space})
+	return document.Concat(parts[0].doc, before,
+		document.Cell(0, document.Concat(separator, parts[1].doc, gap, start, value.doc))), nil
 }
 
 func block(result syntax.Result, node syntax.SyntaxNode, docs map[syntax.SyntaxNode]bodyLayout) document.Doc {
@@ -183,7 +187,11 @@ func bodyGap(result syntax.Result, trivia []syntax.SyntaxToken, previous, next s
 		} else if !haveContent && nested && newlines > 0 {
 			separator = document.HardLine()
 		}
-		parts = append(parts, separator, literal(result.Text(token.Span())))
+		comment := document.Concat(separator, literal(result.Text(token.Span())))
+		if !isStandalone && token.Kind() == syntax.LineComment {
+			comment = document.Cell(1, comment)
+		}
+		parts = append(parts, comment)
 		haveContent, haveComment, standalone = true, true, isStandalone
 		lineComment = token.Kind() == syntax.LineComment
 		newlines = 0

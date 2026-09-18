@@ -1,9 +1,13 @@
 package lowering_test
 
 import (
+	"context"
+	"os"
+	"os/exec"
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"terrablade/internal/document"
 	"terrablade/internal/lowering"
@@ -63,6 +67,76 @@ func TestFileRejectsInvalidInput(t *testing.T) {
 		doc, err := lowering.File(result)
 		if err == nil || document.Render(doc, document.Options{}) != "" {
 			t.Fatalf("expected error and empty document, got %v", err)
+		}
+	}
+}
+
+func TestBodyAlignment(t *testing.T) {
+	for _, test := range []struct {
+		name, source, want string
+		width              int
+	}{
+		{"attributes", "a=1\nlong=2\nz=3", "a    = 1\nlong = 2\nz    = 3\n", 80},
+		{"removed blank line joins groups", "a=1\n\nlong=2", "a    = 1\nlong = 2\n", 80},
+		{"standalone comment splits groups", "a=1\n# note\nlong=2\nz=3", "a = 1\n# note\nlong = 2\nz    = 3\n", 80},
+		{"inline comments", "a=1 # first\nlong=222 # second\nz=3", "a    = 1   # first\nlong = 222 # second\nz    = 3\n", 80},
+		{"inline prefix", "/* lead */ a=1\nlong=2", "/* lead */ a = 1\nlong         = 2\n", 80},
+		{"name comment", "a /* name */=1\nlong=2", "a /* name */ = 1\nlong         = 2\n", 80},
+		{"unicode grapheme columns", "한글=1\naaa=2\né=3", "한글  = 1\naaa = 2\né   = 3\n", 80},
+		{"heredoc stays in group", "a=1\nlong=<<E\nx\nE\nz=3", "a    = 1\nlong = <<E\nx\nE\nz    = 3\n", 80},
+		{"wrapped tuple splits groups", "a=1\nlong=[alpha,beta]\nz=2", "a = 1\nlong = [\n  alpha,\n  beta,\n]\nz = 2\n", 16},
+		{"flat tuple joins groups", "a=1\nlong=[alpha,beta]\nz=2", "a    = 1\nlong = [alpha, beta]\nz    = 2\n", 80},
+		{"operator parentheses split groups", "a=1\nlong=alpha+beta\nz=2", "a = 1\nlong = (\n  alpha\n  + beta\n)\nz = 2\n", 16},
+		{"nested scope", "b {\n a=1\n longer=2\n}\nx=3", "b {\n  a      = 1\n  longer = 2\n}\n\nx = 3\n", 80},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			got := renderFile(t, test.source, test.width)
+			if got != test.want {
+				t.Fatalf("rendered %q, want %q", got, test.want)
+			}
+			if again := renderFile(t, got, test.width); again != got {
+				t.Fatalf("not idempotent: %q => %q", got, again)
+			}
+			assertFileContent(t, test.source, got)
+		})
+	}
+}
+
+func TestBodyOpenTofuCompatibility(t *testing.T) {
+	if os.Getenv("TERRABLADE_COMPARE_TOFU") != "1" {
+		t.Skip("set TERRABLADE_COMPARE_TOFU=1 to compare with an installed OpenTofu")
+	}
+	for _, source := range []string{
+		"a=1\nlong=2\nz=3",
+		"a=1 # first\nlong=222 # second\nz=3",
+		"a=1 // first\nlong=222 // second\nz=3",
+		"a=1\n# note\nlong=2\nz=3",
+		"a /* name */=1\nlong=2",
+		"/* lead */ a=1\nlong=2",
+		"a /* multi\nline */=1\nlong_name=2",
+		"한글=1\naaa=2\né=3",
+		"a=1\nlong=<<E\nx\nE\nz=3",
+		"a=1\nlong=[alpha,beta]\nz=2",
+		"a=1\nlong=alpha+beta\nz=2",
+		"outer label {\n a=1\n inner { z=3 }\n longer=2\n}\nx=3",
+		"a=1\n# next\nb {}\n\n\n# attributes\nx=3\nyyyy=4",
+		"b { # open\n a=1 # value\n}\n",
+		"b {\n a=<<-E\n  x\n  E\n}\n",
+		"b { /*body*/ }\n",
+	} {
+		for _, width := range []int{16, 80} {
+			output := renderFile(t, source, width)
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			command := exec.CommandContext(ctx, "tofu", "fmt", "-no-color", "-")
+			command.Stdin = strings.NewReader(output)
+			formatted, err := command.CombinedOutput()
+			cancel()
+			if err != nil {
+				t.Fatalf("OpenTofu failed: %v\n%s", err, formatted)
+			}
+			if string(formatted) != output {
+				t.Errorf("OpenTofu changed body formatting:\n%q\n=>\n%q", output, formatted)
+			}
 		}
 	}
 }

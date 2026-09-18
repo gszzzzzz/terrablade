@@ -14,6 +14,12 @@
 //     retain source blank separation, capped at one line. Inline comments remain
 //     inline, and outer body padding is removed without discarding comments.
 //   - Heredocs: a following body separator owns the marker's final newline.
+//   - Alignment: consecutive rendered attribute rows align their equals signs;
+//     structural multiline values and standalone comments split those groups.
+//     Heredoc contents and other literal token lines remain opaque. Consecutive
+//     trailing line comments align separately. Columns count grapheme clusters,
+//     matching upstream HCL formatting. Alignment happens after width-driven
+//     line breaks, so padding can exceed the preferred print width.
 //
 // Expression applies these formatting policies:
 //
