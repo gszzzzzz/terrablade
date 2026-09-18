@@ -1,6 +1,19 @@
-// Package lowering converts syntax into immutable document layouts. Expression
-// accepts a complete, diagnostic-free parse and an expression node from that
-// parse. It does not parse, evaluate, render, or format enclosing body trivia.
+// Package lowering converts syntax into immutable document layouts. File lowers
+// a complete diagnostic-free parse. Expression lowers an expression from that
+// parse without its enclosing body trivia. Neither entry parses or evaluates.
+//
+// File applies these body formatting policies:
+//
+//   - File boundaries: outer blank padding is removed. Nonempty bodies end in
+//     one LF; empty bodies do not. A leading BOM is preserved independently.
+//   - Blocks: empty blocks use {}; every nonempty block uses an indented body
+//     and a closing brace on its own line. Bare labels become quoted labels;
+//     already quoted labels retain their spelling. Header comments are retained.
+//   - Item boundaries: consecutive attributes have no blank line. Boundaries
+//     involving a block have exactly one blank line. Independent comment runs
+//     retain source blank separation, capped at one line. Inline comments remain
+//     inline, and outer body padding is removed without discarding comments.
+//   - Heredocs: a following body separator owns the marker's final newline.
 //
 // Expression applies these formatting policies:
 //
@@ -72,8 +85,9 @@
 // Lowering uses iterative traversal, including for deep unary chains. Returned
 // documents may share immutable source strings and can be rendered concurrently.
 // Construction takes linear time and storage in the expression's tree size;
-// rendering follows document's own resource contract. No final newline is added.
+// rendering follows document's own resource contract. Expression adds no final
+// newline; File owns the complete file boundary.
 //
 // All expression forms produced by a diagnostic-free native-HCL parse are
-// supported. Bodies, attributes, and blocks belong to the enclosing formatter.
+// supported, as are complete bodies, attributes, blocks, and literal labels.
 package lowering

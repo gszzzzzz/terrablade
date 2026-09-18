@@ -20,6 +20,13 @@ func Expression(result syntax.Result, node syntax.SyntaxNode) (document.Doc, err
 	if !expressionKind(node.Kind()) {
 		return document.Doc{}, errors.New("lowering: expected an expression node")
 	}
+	lowered, err := lowerExpression(result, node)
+	return lowered.doc, err
+}
+
+// File validates the whole result once, then lowers each attribute expression
+// through this same path without repeatedly copying the diagnostics slice.
+func lowerExpression(result syntax.Result, node syntax.SyntaxNode) (layout, error) {
 	type frame struct {
 		node       syntax.SyntaxNode
 		next       int
@@ -53,12 +60,12 @@ func Expression(result syntax.Result, node syntax.SyntaxNode) (document.Doc, err
 		}
 		doc, err := lowerNode(result, current.node, current.safe, current.inSequence, docs)
 		if err != nil {
-			return document.Doc{}, err
+			return layout{}, err
 		}
 		docs[current.node] = doc
 		stack = stack[:len(stack)-1]
 	}
-	return docs[node].doc, nil
+	return docs[node], nil
 }
 
 func expressionKind(kind syntax.NodeKind) bool {
