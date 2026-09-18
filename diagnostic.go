@@ -161,8 +161,12 @@ func (e *ParseError) Error() string {
 		return "terrablade: invalid HCL"
 	}
 	first := e.diagnostics[0]
-	return fmt.Sprintf("terrablade: %d:%d: %s (%d diagnostics)",
-		first.Span.Start.Line, first.Span.Start.Column, first.Message, len(e.diagnostics))
+	noun := "diagnostics"
+	if len(e.diagnostics) == 1 {
+		noun = "diagnostic"
+	}
+	return fmt.Sprintf("terrablade: %d:%d: %s (%d %s)",
+		first.Span.Start.Line, first.Span.Start.Column, first.Message, len(e.diagnostics), noun)
 }
 
 // Diagnostics returns an independent copy, or nil for a zero ParseError.

@@ -173,6 +173,25 @@ func TestDiagnosticOrdering(t *testing.T) {
 	}
 }
 
+func TestParseErrorText(t *testing.T) {
+	for _, test := range []struct {
+		source string
+		want   string
+	}{
+		{"name =", "terrablade: 1:7: Expected an expression. (1 diagnostic)"},
+		{"a=\xff", "terrablade: 1:3: Invalid UTF-8 encoding. (2 diagnostics)"},
+	} {
+		_, err := terrablade.Format([]byte(test.source), terrablade.Options{})
+		if err == nil || err.Error() != test.want {
+			t.Fatalf("Format(%q) error = %v, want %q", test.source, err, test.want)
+		}
+	}
+	var zero terrablade.ParseError
+	if got := zero.Error(); got != "terrablade: invalid HCL" {
+		t.Fatalf("zero ParseError.Error() = %q", got)
+	}
+}
+
 func parseDiagnostics(t testing.TB, source []byte) []terrablade.Diagnostic {
 	t.Helper()
 	output, err := terrablade.Format(source, terrablade.Options{})

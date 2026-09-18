@@ -56,8 +56,9 @@ func (e *OptionsError) Error() string {
 //
 // Invalid options return an *OptionsError. Lexical, syntax, and parser nesting
 // limit errors return a *ParseError with original-source diagnostics. Every error
-// returns nil output; recovered partial input is never formatted. Filenames and
-// diagnostic presentation belong to callers. Format performs no I/O.
+// is one of these two types and returns nil output; recovered partial input is
+// never formatted. Filenames and diagnostic presentation belong to callers.
+// Format performs no I/O.
 func Format(source []byte, options Options) ([]byte, error) {
 	for _, option := range []struct {
 		name  string
@@ -77,7 +78,9 @@ func Format(source []byte, options Options) ([]byte, error) {
 	}
 	doc, err := lowering.File(result)
 	if err != nil {
-		return nil, fmt.Errorf("terrablade: cannot format parsed input: %w", err)
+		// Lowering supports every diagnostic-free native-HCL parse. Failure
+		// here is an internal invariant violation, not a third caller error.
+		panic(fmt.Sprintf("terrablade: internal invariant: cannot lower diagnostic-free input: %v", err))
 	}
 	return []byte(document.Render(doc, document.Options{
 		PrintWidth: options.PrintWidth, IndentWidth: options.IndentWidth, TabWidth: options.TabWidth,
