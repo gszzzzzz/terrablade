@@ -22,6 +22,8 @@ type bodyFrame struct {
 }
 
 type bodyAttributeKey struct {
+	// Nested bodies start after distinct consumed '{' tokens. Only the deepest
+	// unfinished body can start at EOF, so body.start uniquely identifies scope.
 	bodyStart int
 	name      string
 }
@@ -95,16 +97,17 @@ func (p *parser) body() SyntaxNode {
 		}
 		if frame.single {
 			p.report(ExpectedSingleLineAttribute, name)
-			p.recoverUntil(&item, lineExpression, bodyItemBoundaries)
+			// Finish the partial item before recovery reuses the pending tail.
 			frame.body.node(item.finish(Error))
+			p.recoverUntil(&frame.body, lineExpression, bodyItemBoundaries)
 			frame.single = false
 			continue
 		}
 		kind = p.peek(lineExpression)
 		if kind != OpenBrace && kind != QuoteOpen && kind != Identifier {
 			p.report(ExpectedAttributeOrBlock, p.tokens[p.look(lineExpression)].span)
-			p.recoverUntil(&item, lineExpression, bodyItemBoundaries)
 			frame.body.node(item.finish(Error))
+			p.recoverUntil(&frame.body, lineExpression, bodyItemBoundaries)
 			continue
 		}
 		if !p.blockHeader(&item) {

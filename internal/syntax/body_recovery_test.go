@@ -107,15 +107,113 @@ func TestBodyRecovery(t *testing.T) {
       Body
         Error
           "c"
-          Error
-            "{"
-            "}"
+        Error
+          "{"
+          "}"
       "}"
     Attribute
       "a"
       "="
       Literal
         "1"`,
+		},
+		{
+			"malformed item suffix is a sibling error across nested newlines",
+			"a : (1,\n2)\nb=2",
+			[]Diagnostic{{ExpectedAttributeOrBlock, Span{2, 3}}},
+			`File
+  Body
+    Error
+      "a"
+    Error
+      ":"
+      "("
+      "1"
+      ","
+      "2"
+      ")"
+    Attribute
+      "b"
+      "="
+      Literal
+        "2"`,
+		},
+		{
+			"single line malformed suffix preserves its containing closer",
+			"b { c : [1,\n2] }\na=2",
+			[]Diagnostic{{ExpectedSingleLineAttribute, Span{4, 5}}},
+			`File
+  Body
+    Block
+      "b"
+      "{"
+      Body
+        Error
+          "c"
+        Error
+          ":"
+          "["
+          "1"
+          ","
+          "2"
+          "]"
+      "}"
+    Attribute
+      "a"
+      "="
+      Literal
+        "2"`,
+		},
+		{
+			"single line bare name leaves the next line for body recovery",
+			"b { c\n a=1\n}\nz=2",
+			[]Diagnostic{{ExpectedSingleLineAttribute, Span{4, 5}}},
+			`File
+  Body
+    Block
+      "b"
+      "{"
+      Body
+        Error
+          "c"
+        Attribute
+          "a"
+          "="
+          Literal
+            "1"
+      "}"
+    Attribute
+      "z"
+      "="
+      Literal
+        "2"`,
+		},
+		{
+			"malformed suffix leaves a trailing EOF comment with body",
+			"a : #tail",
+			[]Diagnostic{{ExpectedAttributeOrBlock, Span{2, 3}}},
+			`File
+  Body
+    Error
+      "a"
+    Error
+      ":"`,
+		},
+		{
+			"single line bare name at EOF does not create a suffix error",
+			"b { c",
+			[]Diagnostic{
+				{ExpectedSingleLineAttribute, Span{4, 5}},
+				{ExpectedClosingBrace, Span{5, 5}},
+			},
+			`File
+  Body
+    Block
+      "b"
+      "{"
+      Body
+        Error
+          "c"`,
 		},
 		{
 			"incomplete header retains type and label",
@@ -309,18 +407,18 @@ func TestBodyRecovery(t *testing.T) {
       Body`,
 		},
 		{
-			"bare name recovers at newline",
-			"b\nx=1",
+			"bare name recovers at newline without an empty suffix error",
+			"a\nb=2",
 			[]Diagnostic{{ExpectedAttributeOrBlock, Span{1, 2}}},
 			`File
   Body
     Error
-      "b"
+      "a"
     Attribute
-      "x"
+      "b"
       "="
       Literal
-        "1"`,
+        "2"`,
 		},
 		{
 			"lexical and header diagnostics both survive",
@@ -365,5 +463,35 @@ func TestBodyRecovery(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			assertBody(t, test.source, test.diagnostics, test.shape)
 		})
+	}
+}
+
+func TestBodyRecoveryTriviaOwnership(t *testing.T) {
+	for _, source := range []string{
+		"a /*gap*/ : [1] /*tail*/ #end\nb=2",
+		"b { c /*gap*/ : [1] /*tail*/ }\na=2",
+	} {
+		file := parseBodySource([]byte(source))
+		assertExpressionPartition(t, []byte(source), file)
+		comments := 0
+		stack := []SyntaxNode{file.root}
+		for len(stack) > 0 {
+			node := stack[len(stack)-1]
+			stack = stack[:len(stack)-1]
+			for i := range node.ChildCount() {
+				child := node.Child(i)
+				if inner, ok := child.Node(); ok {
+					stack = append(stack, inner)
+				} else if token, ok := child.Token(); ok && token.Kind() == BlockComment {
+					comments++
+					if node.Kind() != Body {
+						t.Fatalf("recovery boundary comment belongs to %v, want Body", node.Kind())
+					}
+				}
+			}
+		}
+		if comments != 2 {
+			t.Fatalf("found %d boundary comments, want 2", comments)
+		}
 	}
 }
