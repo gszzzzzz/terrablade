@@ -60,7 +60,7 @@ func commentGap(result syntax.Result, trivia []syntax.SyntaxToken, style gapStyl
 			if comment {
 				prefix = space
 			}
-			commentDoc := document.Concat(commentSeparator(newlines, lineComment || requiredLine, prefix, style.blankLine), literal(result.Text(token.Span())))
+			commentDoc := document.Concat(commentSeparator(newlines, lineComment || requiredLine, prefix, style.blankLine), commentLiteral(result, token))
 			if token.Kind() == syntax.LineComment && newlines == 0 && !lineComment && !requiredLine {
 				commentDoc = document.Cell(1, commentDoc)
 			}
@@ -82,6 +82,19 @@ func commentGap(result syntax.Result, trivia []syntax.SyntaxToken, style gapStyl
 		return document.Doc{}, end
 	}
 	return document.Concat(parts...), commentSeparator(newlines, lineComment, style.afterComment, style.blankLine)
+}
+
+// Every line comment is followed by a newline supplied by its enclosing gap or
+// body. Protect a final literal CR from becoming part of that line ending: the
+// lexer excludes the CR in CRLF from the comment, but retains every earlier CR.
+// This also covers an EOF comment that did not originally have a line ending.
+func commentLiteral(result syntax.Result, token syntax.SyntaxToken) document.Doc {
+	text := result.Text(token.Span())
+	comment := literal(text)
+	if token.Kind() == syntax.LineComment && strings.HasSuffix(text, "\r") {
+		comment = document.Concat(comment, document.Text("\r"))
+	}
+	return comment
 }
 
 func commentSeparator(newlines int, lineComment bool, fallback spacing, blankLine bool) document.Doc {

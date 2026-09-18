@@ -215,7 +215,7 @@ func bodyGap(result syntax.Result, trivia []syntax.SyntaxToken, previous, next s
 			// not another one after every intervening comment.
 			gap.boundary = bodyOuterBoundary
 		}
-		comment := document.Concat(separator.doc(), literal(result.Text(token.Span())))
+		comment := document.Concat(separator.doc(), commentLiteral(result, token))
 		if !gap.after.standalone && token.Kind() == syntax.LineComment {
 			comment = document.Cell(1, comment)
 		}
