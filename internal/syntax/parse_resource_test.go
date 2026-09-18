@@ -7,6 +7,8 @@ import (
 	"testing"
 	"unicode/utf8"
 
+	"github.com/apparentlymart/go-textseg/v17/textseg"
+
 	"terrablade/internal/syntax"
 )
 
@@ -75,6 +77,7 @@ func FuzzParse(f *testing.F) {
 		"b \"${f(}tail\" {}\na=1\n",
 		"a=\xff\nb=/*\x00",
 		"\ufeffa=\"é🙂\"\r\n\tb=\xff\rc=1\n",
+		"# e\u0301👩‍💻🇰🇷\u0600\xc0\xaf\n",
 	} {
 		f.Add([]byte(source))
 	}
@@ -107,18 +110,26 @@ func FuzzParse(f *testing.F) {
 			first, last := diagnostics[0], diagnostics[len(diagnostics)-1]
 			offsets = append(offsets, first.Span.Start, first.Span.End, last.Span.Start, last.Span.End)
 		}
+		// A NUL is a single-byte control cluster that cannot join either neighbor.
+		// Normalize malformed bytes this way for an oracle independent of the
+		// implementation's valid runs, line slicing, and bounded lookahead.
+		normalized := bytes.Clone(source)
+		for index := 0; index < len(normalized); {
+			runeValue, width := utf8.DecodeRune(normalized[index:])
+			if runeValue == utf8.RuneError && width == 1 {
+				normalized[index] = 0
+			}
+			index += width
+		}
 		for _, offset := range offsets {
-			// Decode the complete source one rune at a time, stopping before the
-			// rune that contains an interior offset. This is independent of the
-			// implementation's backward inspection and prefix rune count.
 			want := syntax.Position{Offset: offset, Line: 1, Column: 1}
 			for index := 0; index < offset; {
-				runeValue, width := utf8.DecodeRune(source[index:])
-				if index+width > offset {
+				advance, cluster, _ := textseg.ScanGraphemeClusters(normalized[index:], true)
+				if index+advance > offset {
 					break
 				}
-				index += width
-				if runeValue == '\n' {
+				index += advance
+				if cluster[len(cluster)-1] == '\n' {
 					want.Line++
 					want.Column = 1
 				} else {
