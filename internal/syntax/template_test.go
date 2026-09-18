@@ -268,7 +268,7 @@ func TestTemplateDiagnosticSpansAndRecovery(t *testing.T) {
 			}
 			if strings.HasSuffix(test.source, "x") {
 				last := result.Tokens[len(result.Tokens)-2]
-				if last.Kind != Identifier || last.Span != (Span{len(test.source) - 1, len(test.source)}) {
+				if last.Kind() != Identifier || last.Span() != (Span{len(test.source) - 1, len(test.source)}) {
 					t.Errorf("failed to resume config mode: %+v", last)
 				}
 			}
@@ -286,7 +286,7 @@ func assertTokens(t *testing.T, text string, want []tokenText) {
 	}
 	var got []tokenText
 	for _, token := range result.Tokens[:len(result.Tokens)-1] {
-		got = append(got, tokenText{token.Kind, string(source[token.Span.Start:token.Span.End])})
+		got = append(got, tokenText{token.Kind(), string(source[token.Span().Start:token.Span().End])})
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("tokens = %#v\nwant %#v", got, want)

@@ -10,7 +10,7 @@ func TestParserTriviaLookahead(t *testing.T) {
 		name    string
 		source  string
 		context expressionContext
-		kind    Kind
+		kind    TokenKind
 	}{
 		{
 			"horizontal and multiline block comment",
@@ -143,8 +143,8 @@ func TestExpressionTriviaPlacement(t *testing.T) {
 				}
 				if node.Kind() != File {
 					for _, token := range lex([]byte(file.source[node.span.Start:node.span.End])).Tokens {
-						if token.Span.Start == 0 || token.Span.End == node.span.End-node.span.Start {
-							if isTrivia(token.Kind) {
+						if token.Span().Start == 0 || token.Span().End == node.span.End-node.span.Start {
+							if isTrivia(token.Kind()) {
 								t.Fatalf("node %v absorbed outer trivia", node.Kind())
 							}
 						}
@@ -184,11 +184,11 @@ func TestLimitStopsGrammarAndRetainsUnparsedTokens(t *testing.T) {
 	p.consumeLookahead(&variable, lineExpression)
 	root.node(p.finish(VariableExpression, variable))
 	position := p.pos
-	limitSpan := p.tokens[p.look(lineExpression)].Span
+	limitSpan := p.tokens[p.look(lineExpression)].span
 	p.haltAtLimit(limitSpan)
 	p.haltAtLimit(limitSpan)
 
-	if p.current().Kind != EOF || p.peek(lineExpression) != EOF || p.peek(delimitedExpression) != EOF {
+	if p.current().kind != EOF || p.peek(lineExpression) != EOF || p.peek(delimitedExpression) != EOF {
 		t.Fatal("all grammar cursor views must appear exhausted after a limit")
 	}
 	// A production need not know about the halt flag to stop consuming/reporting.

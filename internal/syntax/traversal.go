@@ -18,7 +18,7 @@ func (p *parser) steps(parent *nodeBuilder, context expressionContext, mode trav
 		return
 	}
 	if p.depth == maxRecursiveExpressionDepth {
-		p.haltAtLimit(p.tokens[p.look(context)].Span)
+		p.haltAtLimit(p.tokens[p.look(context)].span)
 		return
 	}
 	p.depth++
@@ -44,7 +44,7 @@ func (p *parser) steps(parent *nodeBuilder, context expressionContext, mode trav
 				if mode == attributeTraversalSteps {
 					// Nested .* is invalid within a legacy projection. A preceding
 					// bracket step would already have ended that projection.
-					p.report(NestedAttributeSplat, p.tokens[p.look(context)].Span)
+					p.report(NestedAttributeSplat, p.tokens[p.look(context)].span)
 					p.consumeLookahead(&b, context)
 					parent.node(p.finish(Error, b))
 					continue
@@ -54,7 +54,7 @@ func (p *parser) steps(parent *nodeBuilder, context expressionContext, mode trav
 				p.steps(&b, context, attributeTraversalSteps)
 				parent.node(p.finish(AttributeSplat, b))
 			default:
-				p.report(ExpectedAttributeName, p.tokens[p.look(context)].Span)
+				p.report(ExpectedAttributeName, p.tokens[p.look(context)].span)
 				parent.node(p.finish(Error, b))
 				return
 			}

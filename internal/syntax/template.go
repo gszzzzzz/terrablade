@@ -21,7 +21,7 @@ type modeFrame struct {
 
 func (l *lexer) popMode() { l.modes = l.modes[:len(l.modes)-1] }
 
-func (l *lexer) templateExpression() Kind {
+func (l *lexer) templateExpression() TokenKind {
 	frame := &l.modes[len(l.modes)-1]
 	switch l.source[l.offset] {
 	case '~':
@@ -45,7 +45,7 @@ func (l *lexer) templateExpression() Kind {
 	return l.config()
 }
 
-func (l *lexer) quoted() Kind {
+func (l *lexer) quoted() TokenKind {
 	if l.source[l.offset] == '"' {
 		l.offset++
 		l.popMode()
@@ -79,7 +79,7 @@ func (l *lexer) quoted() Kind {
 	return TemplateText
 }
 
-func (l *lexer) templateOpen() (Kind, bool) {
+func (l *lexer) templateOpen() (TokenKind, bool) {
 	kind := InterpolationOpen
 	if l.has("%{") {
 		kind = DirectiveOpen

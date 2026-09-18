@@ -295,7 +295,7 @@ func FuzzExpression(f *testing.F) {
 func assertExpressionPartition(t *testing.T, source []byte, file syntaxFile) {
 	t.Helper()
 	assertFilePartition(t, source, file)
-	var tokens []token
+	var tokens []SyntaxToken
 	stack := []SyntaxElement{file.root}
 	for len(stack) > 0 {
 		element := stack[len(stack)-1]
@@ -306,7 +306,7 @@ func assertExpressionPartition(t *testing.T, source []byte, file syntaxFile) {
 				stack = append(stack, element.Child(i))
 			}
 		case SyntaxToken:
-			tokens = append(tokens, token{Kind: element.Kind(), Span: element.Span()})
+			tokens = append(tokens, SyntaxToken{kind: element.Kind(), span: element.Span()})
 		}
 	}
 	if want := lex(source).Tokens; !reflect.DeepEqual(tokens, want) {

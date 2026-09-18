@@ -7,7 +7,7 @@ import (
 )
 
 type tokenText struct {
-	kind Kind
+	kind TokenKind
 	text string
 }
 
@@ -315,7 +315,7 @@ func TestLexTokens(t *testing.T) {
 			}
 			var got []tokenText
 			for _, token := range result.Tokens[:len(result.Tokens)-1] {
-				got = append(got, tokenText{token.Kind, string(source[token.Span.Start:token.Span.End])})
+				got = append(got, tokenText{token.Kind(), string(source[token.Span().Start:token.Span().End])})
 			}
 			if !reflect.DeepEqual(got, test.want) {
 				t.Errorf("tokens = %#v\nwant %#v", got, test.want)
@@ -528,7 +528,7 @@ func TestLexNumericCandidates(t *testing.T) {
 			}
 			var got []tokenText
 			for _, token := range result.Tokens[:len(result.Tokens)-1] {
-				got = append(got, tokenText{token.Kind, string(source[token.Span.Start:token.Span.End])})
+				got = append(got, tokenText{token.Kind(), string(source[token.Span().Start:token.Span().End])})
 			}
 			if !reflect.DeepEqual(got, test.want) {
 				t.Fatalf("tokens = %+v, want %+v", got, test.want)
@@ -585,24 +585,24 @@ func assertPartition(t *testing.T, source []byte, result lexResult) {
 	end := 0
 	var reconstructed []byte
 	for i, token := range result.Tokens {
-		span := token.Span
+		span := token.Span()
 		if span.Start != end || span.End < span.Start || span.End > len(source) {
 			t.Fatalf("invalid partition at token %d: %+v, previous end %d", i, token, end)
 		}
-		if token.Kind == EOF {
+		if token.Kind() == EOF {
 			if i != len(result.Tokens)-1 || span.Start != len(source) || span.End != len(source) {
 				t.Fatalf("invalid EOF: %+v", token)
 			}
 		} else if span.Start == span.End {
 			t.Fatalf("empty non-EOF token: %+v", token)
 		}
-		if token.Kind == BOM && !bytes.Equal(source[span.Start:span.End], []byte("\uFEFF")) {
+		if token.Kind() == BOM && !bytes.Equal(source[span.Start:span.End], []byte("\uFEFF")) {
 			t.Fatalf("BOM token does not span exactly one UTF-8 BOM: %+v", token)
 		}
 		reconstructed = append(reconstructed, source[span.Start:span.End]...)
 		end = span.End
 	}
-	if result.Tokens[len(result.Tokens)-1].Kind != EOF || end != len(source) {
+	if result.Tokens[len(result.Tokens)-1].Kind() != EOF || end != len(source) {
 		t.Fatal("missing final EOF or source bytes")
 	}
 	if !bytes.Equal(reconstructed, source) {

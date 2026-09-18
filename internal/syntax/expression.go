@@ -22,9 +22,9 @@ func parseExpressionSource(source []byte) syntaxFile {
 // and trailing trivia remains available to the enclosing structure.
 func (p *parser) operand(b *nodeBuilder, minimum int, context expressionContext) {
 	i := p.look(context)
-	switch p.tokens[i].Kind {
+	switch p.tokens[i].kind {
 	case EOF, CloseParen, CloseBracket, CloseBrace, Comma, Colon, Newline, LineComment:
-		p.report(ExpectedExpression, p.tokens[i].Span)
+		p.report(ExpectedExpression, p.tokens[i].span)
 		b.node(p.finish(Error, p.begin()))
 		return
 	}
@@ -36,7 +36,7 @@ func (p *parser) operand(b *nodeBuilder, minimum int, context expressionContext)
 // binary 1..6 (left associative), unary 7, then postfix traversal.
 func (p *parser) expression(minimum int, context expressionContext) SyntaxNode {
 	if p.depth == maxRecursiveExpressionDepth {
-		span := p.current().Span
+		span := p.current().span
 		b := p.begin()
 		// Retain the offending token in a non-empty Error before freezing the
 		// cursor: this boundary makes progress, while File recovers the remainder.
@@ -79,7 +79,7 @@ func (p *parser) expression(minimum int, context expressionContext) SyntaxNode {
 	return left
 }
 
-func binaryPower(kind Kind) int {
+func binaryPower(kind TokenKind) int {
 	switch kind {
 	case Or:
 		return 1
@@ -101,7 +101,7 @@ func (p *parser) prefix(context expressionContext) SyntaxNode {
 	b := p.begin()
 	token := p.current()
 	kind := Error
-	switch token.Kind {
+	switch token.kind {
 	case Number:
 		p.number(&b, context, false)
 		kind = LiteralExpression
@@ -112,7 +112,7 @@ func (p *parser) prefix(context expressionContext) SyntaxNode {
 			p.call(&b, context)
 			kind = FunctionCallExpression
 		} else {
-			switch p.source[token.Span.Start:token.Span.End] {
+			switch p.source[token.span.Start:token.span.End] {
 			case "true", "false", "null":
 				kind = LiteralExpression
 			default:
@@ -130,10 +130,10 @@ func (p *parser) prefix(context expressionContext) SyntaxNode {
 		p.operand(&b, 7, context)
 		kind = UnaryExpression
 	case OpenBracket, OpenBrace, QuoteOpen, HeredocOpen:
-		p.report(UnsupportedExpression, token.Span)
+		p.report(UnsupportedExpression, token.span)
 		p.unsupported(&b)
 	default:
-		p.report(ExpectedExpression, token.Span)
+		p.report(ExpectedExpression, token.span)
 		p.consumeLookahead(&b, context)
 	}
 	left := p.finish(kind, b)
@@ -149,7 +149,7 @@ func (p *parser) prefix(context expressionContext) SyntaxNode {
 // number validates the lexer's numeric candidate without evaluating the
 // expression. Legacy dot-index syntax additionally rejects any decimal point.
 func (p *parser) number(b *nodeBuilder, context expressionContext, legacy bool) {
-	span := p.tokens[p.look(context)].Span
+	span := p.tokens[p.look(context)].span
 	text := p.source[span.Start:span.End]
 	if legacy && strings.Contains(text, ".") {
 		p.report(InvalidLegacyIndex, span)
@@ -163,12 +163,12 @@ func (p *parser) number(b *nodeBuilder, context expressionContext, legacy bool) 
 
 // A mismatch leaves the token for the enclosing production. Consuming it here
 // could steal that production's closer or attach trailing trivia to this node.
-func (p *parser) expect(b *nodeBuilder, kind Kind, diagnostic DiagnosticKind, context expressionContext) bool {
+func (p *parser) expect(b *nodeBuilder, kind TokenKind, diagnostic DiagnosticKind, context expressionContext) bool {
 	if p.peek(context) == kind {
 		p.consumeLookahead(b, context)
 		return true
 	}
-	p.report(diagnostic, p.tokens[p.look(context)].Span)
+	p.report(diagnostic, p.tokens[p.look(context)].span)
 	return false
 }
 
@@ -205,7 +205,7 @@ func (p *parser) call(b *nodeBuilder, context expressionContext) {
 			p.expect(b, CloseParen, ExpectedClosingParen, delimitedExpression)
 			return
 		default:
-			p.report(ExpectedArgumentSeparator, p.tokens[p.look(delimitedExpression)].Span)
+			p.report(ExpectedArgumentSeparator, p.tokens[p.look(delimitedExpression)].span)
 			p.recoverArgument(b)
 			if p.peek(delimitedExpression) != Comma {
 				p.expect(b, CloseParen, ExpectedClosingParen, delimitedExpression)
@@ -240,9 +240,9 @@ func (p *parser) recoverArgument(parent *nodeBuilder) {
 func (p *parser) unsupported(b *nodeBuilder) {
 	// Raw tokens preserve template whitespace and delimiters in the Error subtree;
 	// expression lookahead would interpret trivia in the wrong sub-language.
-	var ends []Kind
-	for p.current().Kind != EOF {
-		kind := p.current().Kind
+	var ends []TokenKind
+	for p.current().kind != EOF {
+		kind := p.current().kind
 		if close := closing(kind); close != Invalid {
 			ends = append(ends, close)
 		} else if len(ends) > 0 && ends[len(ends)-1] == kind {
@@ -255,7 +255,7 @@ func (p *parser) unsupported(b *nodeBuilder) {
 	}
 }
 
-func closing(kind Kind) Kind {
+func closing(kind TokenKind) TokenKind {
 	switch kind {
 	case OpenParen:
 		return CloseParen

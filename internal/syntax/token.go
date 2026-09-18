@@ -1,10 +1,10 @@
 package syntax
 
-// Kind identifies a lexical element. Its numeric value is not a stable format.
-type Kind uint8
+// TokenKind identifies a lexical element. Its numeric value is not a stable format.
+type TokenKind uint8
 
 const (
-	Invalid Kind = iota
+	Invalid TokenKind = iota
 	EOF
 	// BOM is outside native HCL syntax, but Terraform/OpenTofu/HCL tooling may
 	// accept or strip a leading BOM. This token preserves those input bytes;
@@ -71,12 +71,6 @@ type Span struct {
 	End   int
 }
 
-// token owns no source bytes. Its text is source[Span.Start:Span.End].
-type token struct {
-	Kind Kind
-	Span Span
-}
-
 // DiagnosticKind identifies an error without coupling lexing to presentation.
 type DiagnosticKind uint8
 
@@ -117,6 +111,6 @@ type Diagnostic struct {
 // lexResult contains tokens and lexical errors, in source order. An input with
 // diagnostics must not be formatted. The token partition remains lossless.
 type lexResult struct {
-	Tokens      []token
+	Tokens      []SyntaxToken
 	Diagnostics []Diagnostic
 }

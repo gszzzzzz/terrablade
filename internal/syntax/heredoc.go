@@ -30,7 +30,7 @@ func (l *lexer) heredocOpener() (Span, bool) {
 	return Span{}, false
 }
 
-func (l *lexer) heredoc() Kind {
+func (l *lexer) heredoc() TokenKind {
 	frame := l.modes[len(l.modes)-1]
 	if l.offset == frame.marker.Start {
 		l.offset = frame.marker.End

@@ -56,9 +56,9 @@ func TestKindString(t *testing.T) {
 		"HeredocMarker",
 		"HeredocEndMarker",
 	}
-	assertEnumNames(t, want, uint8(kindCount), func(value uint8) string { return Kind(value).String() })
-	if got := Kind(255).String(); got != "Kind(255)" {
-		t.Fatalf("unknown Kind = %q, want %q", got, "Kind(255)")
+	assertEnumNames(t, want, uint8(kindCount), func(value uint8) string { return TokenKind(value).String() })
+	if got := TokenKind(255).String(); got != "TokenKind(255)" {
+		t.Fatalf("unknown TokenKind = %q, want %q", got, "TokenKind(255)")
 	}
 }
 

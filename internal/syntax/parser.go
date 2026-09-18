@@ -22,7 +22,7 @@ const (
 	lineTrivia
 )
 
-func classifyTrivia(kind Kind) triviaClass {
+func classifyTrivia(kind TokenKind) triviaClass {
 	switch kind {
 	case Whitespace, BlockComment:
 		// HCL treats a block comment as inline whitespace even if it spans lines.
@@ -34,11 +34,11 @@ func classifyTrivia(kind Kind) triviaClass {
 	}
 }
 
-func isTrivia(kind Kind) bool { return classifyTrivia(kind) != notTrivia }
+func isTrivia(kind TokenKind) bool { return classifyTrivia(kind) != notTrivia }
 
 type parser struct {
 	source      string
-	tokens      []token
+	tokens      []SyntaxToken
 	pos         int
 	diagnostics []Diagnostic
 	depth       int
@@ -69,7 +69,7 @@ func (p *parser) look(context expressionContext) int {
 func (p *parser) lookFrom(index int, context expressionContext) int {
 	i := index
 	for i < len(p.tokens)-1 {
-		switch classifyTrivia(p.tokens[i].Kind) {
+		switch classifyTrivia(p.tokens[i].kind) {
 		case inlineTrivia:
 			i++
 		case lineTrivia:
@@ -84,11 +84,11 @@ func (p *parser) lookFrom(index int, context expressionContext) int {
 	return i
 }
 
-func (p *parser) peek(context expressionContext) Kind {
-	return p.tokens[p.look(context)].Kind
+func (p *parser) peek(context expressionContext) TokenKind {
+	return p.tokens[p.look(context)].kind
 }
 
-func (p *parser) current() token {
+func (p *parser) current() SyntaxToken {
 	if p.halted {
 		return p.tokens[len(p.tokens)-1]
 	}
@@ -103,7 +103,7 @@ type nodeBuilder struct {
 func (p *parser) begin() nodeBuilder {
 	// Empty error nodes stay at the real cursor, not the virtual EOF after a halt,
 	// so they cannot create a gap between consumed and still-unparsed source.
-	return nodeBuilder{start: p.tokens[p.pos].Span.Start}
+	return nodeBuilder{start: p.tokens[p.pos].span.Start}
 }
 
 func (b *nodeBuilder) node(node SyntaxNode) {
@@ -122,8 +122,7 @@ func (p *parser) consumeUntil(b *nodeBuilder, index int) {
 // gate. Productions must never consume from this view after a limit.
 func (p *parser) retainUntil(b *nodeBuilder, index int) {
 	for p.pos < index {
-		token := p.tokens[p.pos]
-		b.children = append(b.children, SyntaxToken{kind: token.Kind, span: token.Span})
+		b.children = append(b.children, p.tokens[p.pos])
 		p.pos++
 	}
 }
@@ -132,7 +131,7 @@ func (p *parser) retainUntil(b *nodeBuilder, index int) {
 // The file assembler alone owns EOF, preventing duplicate sentinel leaves.
 func (p *parser) consumeLookahead(b *nodeBuilder, context expressionContext) {
 	i := p.look(context)
-	if p.tokens[i].Kind != EOF {
+	if p.tokens[i].kind != EOF {
 		i++
 	}
 	p.consumeUntil(b, i)
@@ -170,7 +169,7 @@ func (p *parser) file(root nodeBuilder) syntaxFile {
 	})
 	root.children = append(root.children, SyntaxToken{
 		kind: EOF,
-		span: p.tokens[len(p.tokens)-1].Span,
+		span: p.tokens[len(p.tokens)-1].span,
 	})
 	return syntaxFile{
 		source: p.source,
@@ -188,10 +187,10 @@ func (p *parser) file(root nodeBuilder) syntaxFile {
 // at File level, and unparsed non-trivia remains a flat, bounded Error node.
 func (p *parser) retainRemainder(root *nodeBuilder) {
 	p.retainUntil(root, p.lookFrom(p.pos, delimitedExpression))
-	if p.tokens[p.pos].Kind != EOF {
-		p.report(UnexpectedToken, p.tokens[p.pos].Span)
+	if p.tokens[p.pos].kind != EOF {
+		p.report(UnexpectedToken, p.tokens[p.pos].span)
 		end := len(p.tokens) - 1
-		for end > p.pos && isTrivia(p.tokens[end-1].Kind) {
+		for end > p.pos && isTrivia(p.tokens[end-1].kind) {
 			end--
 		}
 		rest := p.begin()

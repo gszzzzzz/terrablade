@@ -16,7 +16,7 @@ func lex(source []byte) lexResult {
 	for l.offset < len(source) {
 		start := l.offset
 		kind := l.scan()
-		l.result.Tokens = append(l.result.Tokens, token{Kind: kind, Span: Span{start, l.offset}})
+		l.result.Tokens = append(l.result.Tokens, SyntaxToken{kind: kind, span: Span{start, l.offset}})
 	}
 	// Diagnose every still-open template frame at its opener, without inventing
 	// closing tokens or discarding the already-tokenized partial contents.
@@ -30,7 +30,7 @@ func lex(source []byte) lexResult {
 		}
 		l.error(kind, frame.start, frame.start+width)
 	}
-	l.result.Tokens = append(l.result.Tokens, token{Kind: EOF, Span: Span{len(source), len(source)}})
+	l.result.Tokens = append(l.result.Tokens, SyntaxToken{kind: EOF, span: Span{len(source), len(source)}})
 	// A whole-comment error may precede an encoding error found inside it.
 	sort.SliceStable(l.result.Diagnostics, func(i, j int) bool {
 		return l.result.Diagnostics[i].Span.Start < l.result.Diagnostics[j].Span.Start
@@ -45,7 +45,7 @@ type lexer struct {
 	modes  []modeFrame
 }
 
-func (l *lexer) scan() Kind {
+func (l *lexer) scan() TokenKind {
 	if len(l.modes) > 0 {
 		switch l.modes[len(l.modes)-1].mode {
 		case modeQuoted:
@@ -59,7 +59,7 @@ func (l *lexer) scan() Kind {
 	return l.config()
 }
 
-func (l *lexer) config() Kind {
+func (l *lexer) config() TokenKind {
 	c := l.source[l.offset]
 	switch {
 	case c == ' ' || c == '\t':
@@ -130,7 +130,7 @@ func (l *lexer) config() Kind {
 	return Invalid
 }
 
-func (l *lexer) blockComment() Kind {
+func (l *lexer) blockComment() TokenKind {
 	start := l.offset
 	l.offset += 2
 	for l.offset < len(l.source) {
@@ -179,7 +179,7 @@ func (l *lexer) number() {
 
 func digit(c byte) bool { return c >= '0' && c <= '9' }
 
-func (l *lexer) punctuation() (Kind, int) {
+func (l *lexer) punctuation() (TokenKind, int) {
 	if l.has("...") {
 		return Ellipsis, 3
 	}

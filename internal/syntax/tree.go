@@ -1,6 +1,6 @@
 package syntax
 
-// NodeKind identifies a grammatical structure, separately from lexical Kind.
+// NodeKind identifies a grammatical structure, separately from TokenKind.
 // Its numeric value is not a stable storage format.
 type NodeKind uint8
 
@@ -60,14 +60,14 @@ func (n SyntaxNode) Child(index int) SyntaxElement { return n.children[index] }
 // SyntaxToken is a read-only source leaf, including whitespace and comments.
 // Its text is the file's source[Span().Start:Span().End]; it owns no source bytes.
 type SyntaxToken struct {
-	kind Kind
+	kind TokenKind
 	span Span
 }
 
 func (t SyntaxToken) syntaxElement() {}
 
 // Kind identifies the lexical element.
-func (t SyntaxToken) Kind() Kind { return t.kind }
+func (t SyntaxToken) Kind() TokenKind { return t.kind }
 
 // Span identifies the original source bytes. Only EOF has an empty span.
 func (t SyntaxToken) Span() Span { return t.span }
