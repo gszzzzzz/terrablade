@@ -16,6 +16,8 @@ func FuzzExpression(f *testing.F) {
 		"f(a,b,)", "[-1,true,null]", "provider::f(xs...)",
 		"f(a # comment\n,b)", "f(a, /*x\ry*/ b)", "(/*a*/x/*b*/)",
 		"[ # empty\n]", "f([a,b], g(x))", "f(a/*x\r\ny*/,b)",
+		"[alpha,\n\nbeta]", "[a,\n\n# note\n\nb]", "(long_name)",
+		"[a /* c */,b]", "[/* lead */ a]", "[a # keep\n,b]",
 	} {
 		f.Add(source, uint8(20))
 	}

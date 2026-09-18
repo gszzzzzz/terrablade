@@ -96,13 +96,13 @@ func lowerNode(result syntax.Result, node syntax.SyntaxNode, docs map[syntax.Syn
 	case syntax.LiteralExpression, syntax.VariableExpression, syntax.UnaryExpression:
 		return sequence(result, pieces), nil
 	case syntax.ParenthesizedExpression:
-		return delimited(result, pieces, 0, false), nil
+		return parenthesized(result, pieces), nil
 	case syntax.TupleExpression:
 		return delimited(result, pieces, 0, true), nil
 	default: // FunctionCallExpression, including namespace prefixes.
 		for i, part := range pieces {
 			if part.kind == syntax.OpenParen {
-				return delimited(result, pieces, i, true), nil
+				return delimited(result, pieces, i, false), nil
 			}
 		}
 		panic("lowering: valid call has no opening parenthesis")
@@ -112,42 +112,62 @@ func lowerNode(result syntax.Result, node syntax.SyntaxNode, docs map[syntax.Syn
 func sequence(result syntax.Result, pieces []piece) document.Doc {
 	parts := make([]document.Doc, 0, len(pieces)*2)
 	for _, part := range pieces {
-		gap, end := commentGap(result, part.before, tight)
+		gap, end := commentGap(result, part.before, gapStyle{beforeComment: space, afterComment: space})
 		parts = append(parts, gap, end, part.doc)
 	}
 	return document.Concat(parts...)
 }
 
-func delimited(result syntax.Result, pieces []piece, open int, comma bool) document.Doc {
+func parenthesized(result syntax.Result, pieces []piece) document.Doc {
+	inner := pieces[1]
+	close := pieces[len(pieces)-1]
+	leading, start := commentGap(result, inner.before, gapStyle{afterComment: space})
+	gap, end := commentGap(result, close.before, gapStyle{beforeComment: space})
+	return document.Concat(pieces[0].doc, document.Indent(document.Concat(leading, start, inner.doc, gap)), end, close.doc)
+}
+
+func delimited(result syntax.Result, pieces []piece, open int, preserveBlank bool) document.Doc {
+	// Commas are canonical separators rather than comment anchors. Move their
+	// leading trivia to the following gap so comments cannot swallow punctuation.
+	for i := open + 1; i < len(pieces)-1; i++ {
+		if pieces[i].kind == syntax.Comma && len(pieces[i].before) > 0 {
+			pieces[i+1].before = append(pieces[i].before, pieces[i+1].before...)
+			pieces[i].before = nil
+		}
+	}
 	head := sequence(result, pieces[:open+1])
 	close := pieces[len(pieces)-1]
 	content := pieces[open+1 : len(pieces)-1]
 	parts := make([]document.Doc, 0, len(content)*3+3)
 	for i, part := range content {
-		spacing := tight
+		style := gapStyle{beforeComment: space, afterComment: space}
 		if i == 0 {
-			spacing = soft
+			style.empty, style.beforeComment = soft, soft
 		} else if content[i-1].kind == syntax.Comma {
-			spacing = line
+			style.empty, style.afterComment = line, line
+			style.blankLine = preserveBlank
 		}
-		gap, end := commentGap(result, part.before, spacing)
+		if part.kind == syntax.Comma || part.kind == syntax.Ellipsis {
+			style.afterComment = tight
+		}
+		gap, end := commentGap(result, part.before, style)
 		value := part.doc
 		if i == len(content)-1 && part.kind == syntax.Comma {
 			value = document.IfBreak(value, document.Doc{})
 		}
 		parts = append(parts, gap, end, value)
 	}
-	if comma && len(content) > 0 {
+	if len(content) > 0 {
 		last := content[len(content)-1].kind
 		if last != syntax.Comma && last != syntax.Ellipsis {
 			parts = append(parts, document.IfBreak(document.Text(","), document.Doc{}))
 		}
 	}
-	spacing := soft
+	style := gapStyle{empty: soft, beforeComment: space, afterComment: soft}
 	if len(content) == 0 {
-		spacing = tight
+		style.empty, style.beforeComment = tight, soft
 	}
-	gap, end := commentGap(result, close.before, spacing)
+	gap, end := commentGap(result, close.before, style)
 	parts = append(parts, gap)
 	return document.Group(document.Concat(head, document.Indent(document.Concat(parts...)), end, close.doc))
 }

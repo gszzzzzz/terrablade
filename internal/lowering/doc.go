@@ -7,10 +7,16 @@
 // tuples flatten when they fit and otherwise put entries on separate indented
 // lines, with a trailing comma except after an expanded call argument. Source
 // trailing commas are omitted in flat layouts. Empty delimiters stay compact
-// unless comments require a line break. Comments remain in source order between
-// the same significant elements; line comments force a line break. Literal
-// comment content, including indentation and lone CR, is preserved, while CRLF
-// is normalized to LF. Outer trivia is owned by the enclosing syntax node.
+// unless comments require a line break. Explicit parentheses do not introduce
+// width-triggered breaks; their contents may still break. Broken tuple entry
+// gaps preserve at most one source blank line; calls collapse blank lines.
+// Comments remain in source order, with inline comments kept inline and source
+// newlines retaining standalone comments. Commas move before their leading
+// comments, and line comments force a line break. Literal
+// comment content, including indentation and lone CR, is preserved. CRLF is
+// normalized to LF except after a literal CR, where normalization would merge
+// that CR into the line ending and lose content on a later pass. Outer trivia
+// is owned by the enclosing syntax node.
 //
 // Lowering uses iterative traversal, including for deep unary chains. Returned
 // documents may share immutable source strings and can be rendered concurrently.
