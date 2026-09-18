@@ -182,6 +182,7 @@ func TestNormalizationOpenTofuFormatting(t *testing.T) {
 	for _, source := range []string{
 		`"${foo.0.bar}"`, `"${"${a}"}"`, `a - "${b - c}"`, `-"${a+b}"`,
 		`{"${a}"="${b}"}`, `"${x[*].a}".0`, `foo.*.0`, `foo[*].0`,
+		`{"${"k"}"=1}`, `{"${""}"=1}`, `{"${"$${a}"}"=1}`,
 		`"${~/*lead*/ a /*tail*/~}"`,
 		"\"${# lead\na # tail\n}\"", "\"${foo # c\n.bar}\"",
 		"f(foo.// c\n0)", "\"${{\na=1\n}}\"",

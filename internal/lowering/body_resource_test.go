@@ -37,6 +37,7 @@ func FuzzFile(f *testing.F) {
 		"b {\n a=\"${foo # c\n.bar}\"\n b=\"${# c\nx # d\n}\"\n}\n",
 		`a="${x[*].a}".0`, `a=foo.*.0`, `a=foo[*].0`,
 		"a=\"${<<E\nx\nE\n}\" # tail\n", "b {\n a=\"${<<E\nx\nE\n}\" /*tail*/\n}\n",
+		"#x\r\r\n", "a=1 #x\r\r\nb=2", `a={"${"k"}"=1}`,
 	} {
 		f.Add(source, uint8(20))
 	}

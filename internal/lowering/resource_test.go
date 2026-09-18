@@ -39,6 +39,7 @@ func FuzzExpression(f *testing.F) {
 		`"${/*a*/"${/*b*/x/*c*/}"/*d*/}"`, `foo[*].0.bar`, `foo.*.0[0].1`,
 		"\"${# lead\na # tail\n}\"", "\"${foo # c\n.bar}\"", "\"${! # c\na}\"",
 		"\"${<<E\nx\nE\n[0]}\"", "foo[0]./*c*/1", "f(foo.// c\n1)",
+		"f(a, #x\r\r\nb)", "\"${a #x\r\r\n}\"", `{"${"k"}"=1}`,
 	} {
 		f.Add(source, uint8(20))
 	}
