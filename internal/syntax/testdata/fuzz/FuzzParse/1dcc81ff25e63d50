@@ -1,0 +1,2 @@
+go test fuzz v1
+[]byte("A=\"%{if A}%{for $ A0 A00\"${A00000")
