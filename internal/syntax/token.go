@@ -125,6 +125,10 @@ const (
 	diagnosticKindCount
 )
 
+// DiagnosticKindCount bounds the contiguous internal diagnostic enumeration.
+// Consumers with exhaustive diagnostic mappings use it to detect added kinds.
+const DiagnosticKindCount = diagnosticKindCount
+
 // Diagnostic points to the source responsible for a lexical or syntax error.
 // An error does not require an Invalid token: an unterminated comment, for
 // example, retains its BlockComment kind so its source remains recognizable.

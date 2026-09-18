@@ -65,6 +65,64 @@ const (
 	DuplicateAttribute           DiagnosticKind = "DuplicateAttribute"
 )
 
+// Keep the external vocabulary explicit. An internal kind must be deliberately
+// mapped here before it can appear in a public diagnostic, even when its name
+// happens to match. The internal count makes additions visible to our tests.
+var publicDiagnosticKinds = [syntax.DiagnosticKindCount]DiagnosticKind{
+	syntax.InvalidUTF8:                  InvalidUTF8,
+	syntax.InvalidCharacter:             InvalidCharacter,
+	syntax.UnterminatedBlockComment:     UnterminatedBlockComment,
+	syntax.UnterminatedQuotedTemplate:   UnterminatedQuotedTemplate,
+	syntax.UnterminatedTemplateSequence: UnterminatedTemplateSequence,
+	syntax.InvalidEscape:                InvalidEscape,
+	syntax.NewlineInQuotedTemplate:      NewlineInQuotedTemplate,
+	syntax.UnterminatedHeredoc:          UnterminatedHeredoc,
+	syntax.ExpectedExpression:           ExpectedExpression,
+	syntax.UnexpectedToken:              UnexpectedToken,
+	syntax.ExpectedClosingParen:         ExpectedClosingParen,
+	syntax.ExpectedClosingBracket:       ExpectedClosingBracket,
+	syntax.ExpectedConditionalColon:     ExpectedConditionalColon,
+	syntax.ExpectedArgumentSeparator:    ExpectedArgumentSeparator,
+	syntax.ExpectedAttributeName:        ExpectedAttributeName,
+	syntax.ExpectedFunctionName:         ExpectedFunctionName,
+	syntax.ExpectedOpeningParen:         ExpectedOpeningParen,
+	syntax.InvalidLegacyIndex:           InvalidLegacyIndex,
+	syntax.NestedAttributeSplat:         NestedAttributeSplat,
+	syntax.NestingLimitExceeded:         NestingLimitExceeded,
+	syntax.InvalidNumber:                InvalidNumber,
+	syntax.ExpectedTupleSeparator:       ExpectedTupleSeparator,
+	syntax.ExpectedClosingBrace:         ExpectedClosingBrace,
+	syntax.ExpectedObjectValueSeparator: ExpectedObjectValueSeparator,
+	syntax.ExpectedObjectItemSeparator:  ExpectedObjectItemSeparator,
+	syntax.ExpectedForVariable:          ExpectedForVariable,
+	syntax.ExpectedForIn:                ExpectedForIn,
+	syntax.ExpectedForColon:             ExpectedForColon,
+	syntax.ExpectedForArrow:             ExpectedForArrow,
+	syntax.UnexpectedForKey:             UnexpectedForKey,
+	syntax.UnexpectedForGrouping:        UnexpectedForGrouping,
+	syntax.ExpectedTemplateSequenceEnd:  ExpectedTemplateSequenceEnd,
+	syntax.ExpectedTemplateDirective:    ExpectedTemplateDirective,
+	syntax.UnknownTemplateDirective:     UnknownTemplateDirective,
+	syntax.UnexpectedTemplateDirective:  UnexpectedTemplateDirective,
+	syntax.ExpectedTemplateEndIf:        ExpectedTemplateEndIf,
+	syntax.ExpectedTemplateEndFor:       ExpectedTemplateEndFor,
+	syntax.ExpectedBodyItem:             ExpectedBodyItem,
+	syntax.ExpectedAttributeOrBlock:     ExpectedAttributeOrBlock,
+	syntax.ExpectedBodyItemSeparator:    ExpectedBodyItemSeparator,
+	syntax.ExpectedBlockOpeningBrace:    ExpectedBlockOpeningBrace,
+	syntax.ExpectedLiteralBlockLabel:    ExpectedLiteralBlockLabel,
+	syntax.ExpectedSingleLineAttribute:  ExpectedSingleLineAttribute,
+	syntax.ExpectedSingleLineBlockEnd:   ExpectedSingleLineBlockEnd,
+	syntax.DuplicateAttribute:           DuplicateAttribute,
+}
+
+func publicDiagnosticKind(kind syntax.DiagnosticKind) DiagnosticKind {
+	if kind >= syntax.DiagnosticKindCount || publicDiagnosticKinds[kind] == "" {
+		panic(fmt.Sprintf("terrablade: internal invariant: unmapped diagnostic kind %s", kind))
+	}
+	return publicDiagnosticKinds[kind]
+}
+
 // Position identifies a location in the original input, including EOF.
 // Its zero value is not a source position: the first byte is (0, 1, 1).
 type Position struct {
@@ -117,7 +175,7 @@ func newParseError(source string, parsed []syntax.Diagnostic) *ParseError {
 	endpoints := make([]*Position, 0, 2*len(parsed))
 	for i, diagnostic := range parsed {
 		diagnostics[i] = Diagnostic{
-			Kind: DiagnosticKind(diagnostic.Kind.String()), Message: diagnostic.Kind.Message(),
+			Kind: publicDiagnosticKind(diagnostic.Kind), Message: diagnostic.Kind.Message(),
 			Span: Span{Start: Position{Offset: diagnostic.Span.Start}, End: Position{Offset: diagnostic.Span.End}},
 		}
 		endpoints = append(endpoints, &diagnostics[i].Span.Start, &diagnostics[i].Span.End)
