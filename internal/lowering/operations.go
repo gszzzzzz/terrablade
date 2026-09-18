@@ -58,10 +58,8 @@ func traversalSequence(result syntax.Result, pieces []piece, endsNumber, endsHer
 // not the entire name: e2suffix would still swallow e2 into the numeric token.
 // A minus can occur in an attribute name (e-2). A plus is a separate operator
 // token in the CST: .e + 2 supplies only "e" here and needs no boundary space.
+// The caller supplies a diagnostic-free attribute/index token, never empty.
 func numberContinuesAcrossDot(next string) bool {
-	if next == "" {
-		return false
-	}
 	if next[0] == 'e' || next[0] == 'E' {
 		next = next[1:]
 		if next != "" && (next[0] == '+' || next[0] == '-') {

@@ -239,6 +239,13 @@ func parenthesized(result syntax.Result, pieces []piece) document.Doc {
 
 func delimited(result syntax.Result, pieces []piece, open int, preserveBlank bool, edge spacing) document.Doc {
 	moveCommaTrivia(pieces)
+	// A heredoc's mandatory marker newline is enough before the closer. Drop
+	// a source trailing comma as well as avoiding a synthesized one. Its trivia
+	// has already moved to the closer, so no comments or blank lines are lost.
+	if last := len(pieces) - 2; last > open && pieces[last].kind == syntax.Comma && pieces[last-1].child.endsHeredoc {
+		pieces[last+1].before = append(pieces[last].before, pieces[last+1].before...)
+		pieces = append(pieces[:last], pieces[last+1:]...)
+	}
 	head := sequence(result, pieces[:open+1])
 	close := pieces[len(pieces)-1]
 	content := pieces[open+1 : len(pieces)-1]
@@ -264,13 +271,7 @@ func delimited(result syntax.Result, pieces []piece, open int, preserveBlank boo
 	}
 	if len(content) > 0 {
 		last := content[len(content)-1].kind
-		// Object newlines already separate items. A comma on the next line
-		// after a heredoc marker would instead start an invalid new object key.
-		heredocObjectValue := pieces[open].kind == syntax.OpenBrace && content[len(content)-1].child.endsHeredoc
-		if last != syntax.Comma && last != syntax.Ellipsis && !heredocObjectValue {
-			if content[len(content)-1].child.endsHeredoc {
-				parts = append(parts, document.HardLine())
-			}
+		if last != syntax.Comma && last != syntax.Ellipsis && !content[len(content)-1].child.endsHeredoc {
 			parts = append(parts, document.IfBreak(document.Text(","), document.Doc{}))
 		}
 	}
@@ -288,6 +289,11 @@ func delimited(result syntax.Result, pieces []piece, open int, preserveBlank boo
 // applies to for bindings and template directive headers, not only lists.
 func moveCommaTrivia(pieces []piece) {
 	for i := 0; i < len(pieces)-1; i++ {
+		// A required comma after a heredoc cannot cross the marker newline.
+		// Keeping that gap separate also avoids inventing a blank line later.
+		if i > 0 && pieces[i-1].child.endsHeredoc {
+			continue
+		}
 		if pieces[i].token && pieces[i].kind == syntax.Comma && len(pieces[i].before) > 0 {
 			pieces[i+1].before = append(pieces[i].before, pieces[i+1].before...)
 			pieces[i].before = nil

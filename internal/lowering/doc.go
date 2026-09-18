@@ -11,7 +11,9 @@
 //     spelling are preserved. Whitespace between tokens is canonicalized.
 //   - Calls and tuples: entries flatten when they fit and otherwise occupy
 //     separate indented lines. Broken layouts have a trailing comma except
-//     after an expanded call argument; flat layouts omit source trailing commas.
+//     after an expanded call argument or a final heredoc. Source trailing commas
+//     are omitted in flat layouts and after final heredocs; required commas
+//     after non-final heredocs stay on the next line.
 //     Empty delimiters stay compact unless comments require a line break.
 //   - Objects: entries use key = value with no alignment. Flat entries have
 //     comma separators and spaces inside braces; broken entries use one line
@@ -26,10 +28,11 @@
 //     ellipses stay attached to their values; no trailing comma is introduced.
 //   - Templates: quoted and heredoc literal chunks retain their spelling and
 //     line structure and never wrap for width. Interpolation and directive
-//     contents reflow in safe expression context, including source newlines.
-//     Flat boundaries use ${expr}, ${~expr~}, %{if condition}, and %{~if condition~}.
-//     Broken sequences indent their contents between boundary newlines. No
-//     whitespace is synthesized outside sequence boundaries into literal text.
+//     contents flatten in safe expression context, including source newlines
+//     and nested groups, even beyond print width. Only mandatory comment and
+//     heredoc lines remain. Boundaries use ${expr}, ${~expr~}, %{if condition},
+//     and %{~if condition~}. No whitespace is synthesized outside sequence
+//     boundaries into literal text.
 //   - Heredocs: opener, marker, literal indentation, and closing-marker spelling
 //     are preserved. Literal lines bypass automatic indentation. The marker's
 //     terminating LF belongs to the enclosing gap or body; lowering enforces

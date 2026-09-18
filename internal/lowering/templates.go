@@ -49,7 +49,9 @@ func templateSequence(result syntax.Result, pieces []piece) document.Doc {
 	trailing, last := commentGap(result, pieces[end].before, gapStyle{empty: soft, beforeComment: space, afterComment: soft, requiredLine: content[len(content)-1].child.endsHeredoc})
 	closer := append([]piece(nil), pieces[end:]...)
 	closer[0].before = nil
-	return document.Group(document.Concat(opener,
+	// Width-driven newlines in sequences can change template indentation
+	// semantics. Keep all nested groups flat, retaining only mandatory lines.
+	return document.ForceFlat(document.Concat(opener,
 		document.Indent(document.Concat(leading, first, spacedSequence(result, content), trailing)),
 		last, sequence(result, closer)))
 }
