@@ -1,6 +1,7 @@
 package document_test
 
 import (
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -14,7 +15,6 @@ func TestCompositionOwnershipAndConcurrentRendering(t *testing.T) {
 	parts := []document.Doc{document.Text("alpha"), document.Line(), document.Text("beta")}
 	doc := document.Group(document.Concat(parts...))
 	clear(parts)
-	parts = append(parts, document.Text("replacement"))
 	copied := doc
 	doc = document.Text("other")
 	var readers sync.WaitGroup
@@ -93,11 +93,11 @@ func TestDisplayWidthIgnoresEnvironmentAndDependencyDefaults(t *testing.T) {
 func TestGraphemeAcrossGroupEdges(t *testing.T) {
 	for _, doc := range []document.Doc{
 		document.Concat(document.Text("👩"), document.Group(document.Concat(
-			document.Text("‍💻"), document.Line(), document.Text("x"),
+			document.Text("\u200d💻"), document.Line(), document.Text("x"),
 		))),
 		document.Concat(document.Group(document.Concat(
 			document.Text("x"), document.Line(), document.Text("👩"),
-		)), document.Text("‍💻")),
+		)), document.Text("\u200d💻")),
 	} {
 		if got := document.Render(doc, document.Options{PrintWidth: 4}); strings.Contains(got, "\n") {
 			t.Fatalf("cluster crossing group edge was over-counted: %q", got)
@@ -178,6 +178,23 @@ func BenchmarkRender(b *testing.B) {
 			b.ReportAllocs()
 			for b.Loop() {
 				_ = document.Render(doc, options)
+			}
+		})
+	}
+}
+
+func BenchmarkRenderSiblingGroups(b *testing.B) {
+	for _, count := range []int{5000, 10000, 20000} {
+		b.Run(strconv.Itoa(count), func(b *testing.B) {
+			parts := make([]document.Doc, 0, count*2)
+			item := document.Group(document.Concat(document.Text("a"), document.Line(), document.Text("b")))
+			for range count {
+				parts = append(parts, item, document.HardLine())
+			}
+			doc := document.Concat(parts...)
+			b.ReportAllocs()
+			for b.Loop() {
+				_ = document.Render(doc, document.Options{})
 			}
 		})
 	}

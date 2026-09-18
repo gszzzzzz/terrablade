@@ -116,6 +116,32 @@ func TestDisplayWidth(t *testing.T) {
 	}
 }
 
+func TestAdjacentGroupsBreakIndependently(t *testing.T) {
+	call := document.Group(document.Concat(
+		document.Text("fn("),
+		document.Indent(document.Concat(
+			document.SoftLine(), document.Text("a,"), document.Line(), document.Text("b"),
+		)),
+		document.SoftLine(), document.Text(")"),
+	))
+	traversal := document.Group(document.Indent(document.Concat(
+		document.SoftLine(), document.Text(".attribute"),
+	)))
+	doc := document.Concat(call, traversal)
+	for _, test := range []struct {
+		width int
+		want  string
+	}{
+		{18, "fn(a, b).attribute"},
+		{12, "fn(a, b)\n  .attribute"},
+		{7, "fn(\n  a,\n  b\n)\n  .attribute"},
+	} {
+		if got := document.Render(doc, document.Options{PrintWidth: test.width}); got != test.want {
+			t.Errorf("width %d: %q, want %q", test.width, got, test.want)
+		}
+	}
+}
+
 func TestOptionsAndIndentationFit(t *testing.T) {
 	doc := document.Indent(document.Concat(
 		document.HardLine(),

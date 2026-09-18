@@ -67,13 +67,11 @@ func Render(doc Doc, options Options) string {
 		case groupKind:
 			if !current.flat && !n.forceBreak {
 				candidate := command{doc: n.children[0], indent: current.indent, flat: true}
-				probe = append(probe[:0], stack...)
-				probe = append(probe, candidate)
 				start := column
 				if pending > 0 {
 					start.columns = pending
 				}
-				current.flat = fits(probe, start, options)
+				current.flat, probe = fits(candidate, stack, start, options, probe)
 			}
 			current.doc = n.children[0]
 			stack = append(stack, current)
@@ -93,14 +91,24 @@ type command struct {
 // A probe includes the continuation, not just the candidate group. Otherwise a
 // closing delimiter or following operator could overflow a line that "fits".
 // It stops at the first physical newline; text beyond it uses a fresh width.
-func fits(stack []command, column lineWidth, options Options) bool {
-	for len(stack) > 0 {
+// The continuation is borrowed read-only. Copying the render stack for every
+// group would make even a flat list of independent groups quadratic.
+func fits(candidate command, continuation []command, column lineWidth, options Options, scratch []command) (bool, []command) {
+	stack := append(scratch[:0], candidate)
+	next := len(continuation) - 1
+	for len(stack) > 0 || next >= 0 {
 		if column.columns > options.PrintWidth {
-			return false
+			return false, stack[:0]
 		}
-		last := len(stack) - 1
-		current := stack[last]
-		stack = stack[:last]
+		var current command
+		if len(stack) > 0 {
+			last := len(stack) - 1
+			current = stack[last]
+			stack = stack[:last]
+		} else {
+			current = continuation[next]
+			next--
+		}
 		n := current.doc.node
 		if n == nil {
 			continue
@@ -110,22 +118,24 @@ func fits(stack []command, column lineWidth, options Options) bool {
 			column.append(n.text, options.TabWidth)
 		case lineKind, softLineKind:
 			if !current.flat {
-				return true
+				return true, stack[:0]
 			}
 			if n.kind == lineKind {
 				column.append(" ", options.TabWidth)
 			}
 		case hardLineKind, literalLineKind:
-			return true
+			return true, stack[:0]
 		case groupKind:
-			current.flat = !n.forceBreak
+			// Candidate descendants inherit flat mode. An undecided sibling
+			// keeps the continuation's broken mode, so its break opportunity
+			// can end this line instead of forcing an earlier group to break.
 			current.doc = n.children[0]
 			stack = append(stack, current)
 		default:
 			stack = expand(stack, current, options.IndentWidth)
 		}
 	}
-	return column.columns <= options.PrintWidth
+	return column.columns <= options.PrintWidth, stack[:0]
 }
 
 func expand(stack []command, current command, indentWidth int) []command {
@@ -151,7 +161,7 @@ func expand(stack []command, current command, indentWidth int) []command {
 }
 
 // Retain the last grapheme because the next Text may extend it, e.g. separate
-// Text("👩") and Text("‍💻"). Measuring each node independently is incorrect.
+// Text("👩") and Text("\u200d💻"). Measuring each node independently is incorrect.
 // A copy is an independent probe: the retained string is immutable.
 type lineWidth struct {
 	columns   int

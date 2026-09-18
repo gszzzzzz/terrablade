@@ -32,7 +32,9 @@
 // arena ownership, or mutable traversal interface is exposed. Construction and
 // rendering use no recursive traversal and impose no arbitrary nesting limit.
 // Resources scale with expanded document size, not just shared node count.
-// Group probes may revisit overlapping contents; pathological nesting or a long
-// grapheme split across many Text nodes can take quadratic time. Rendering owns
+// Group probes borrow the pending continuation without copying it. Independent
+// groups separated by lines take linear work; pathological nested groups can
+// revisit overlapping contents and take quadratic time. A long grapheme split
+// across many Text nodes can also take quadratic time. Rendering owns
 // its output and work stacks, so shared Docs are safe for concurrent reads.
 package document
