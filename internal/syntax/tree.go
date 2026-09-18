@@ -71,36 +71,10 @@ func (t SyntaxToken) Kind() Kind { return t.kind }
 // Span identifies the original source bytes. Only EOF has an empty span.
 func (t SyntaxToken) Span() Span { return t.span }
 
-// syntaxFile owns a source snapshot and its lossless tree. It is deliberately
-// private: this foundation does not yet validate HCL grammar and cannot serve
-// as a formatter's parse result. A public Parse interface will come with grammar
-// validation, not with an intermediate success status or synthetic diagnostic.
+// syntaxFile owns a source snapshot and its lossless tree. It stays private
+// until configuration-body parsing can validate a complete native HCL file.
 type syntaxFile struct {
 	source      string
 	root        SyntaxNode
 	diagnostics []Diagnostic
-}
-
-// assembleFile snapshots source and places every lexical token directly under
-// File. All bytes, including malformed input and trivia, appear exactly once.
-// EOF is always the final child, at [len(source), len(source)), even for an empty
-// file. The current flat structure makes no claim about grammatical validity.
-//
-// No node attaches leading or trailing trivia to a neighboring structure. Future
-// grammar nodes will contain only internal trivia, leaving inter-node trivia at
-// the parent level. No recursive grammar processing occurs in this foundation.
-func assembleFile(source []byte) syntaxFile {
-	file := syntaxFile{source: string(source)}
-	lexed := lex(source)
-	children := make([]SyntaxElement, len(lexed.Tokens))
-	for i, token := range lexed.Tokens {
-		children[i] = SyntaxToken{kind: token.Kind, span: token.Span}
-	}
-	file.root = SyntaxNode{
-		kind:     File,
-		span:     Span{Start: 0, End: len(file.source)},
-		children: children,
-	}
-	file.diagnostics = lexed.Diagnostics
-	return file
 }

@@ -2,127 +2,24 @@ package syntax
 
 import (
 	"bytes"
-	"reflect"
 	"strings"
 	"testing"
 )
 
-func TestAssembleFile(t *testing.T) {
-	for _, test := range []struct {
-		name   string
-		source string
-		kinds  []Kind
-	}{
-		{
-			"empty",
-			"",
-			[]Kind{
-				EOF,
-			},
-		},
-		{
-			"trivia",
-			" \t# comment\r\n/* block */\n",
-			[]Kind{
-				Whitespace,
-				LineComment,
-				Newline,
-				BlockComment,
-				Newline,
-				EOF,
-			},
-		},
-		{
-			"attribute spelling",
-			"x = (1 + 2) # end\n",
-			[]Kind{
-				Identifier,
-				Whitespace,
-				Equal,
-				Whitespace,
-				OpenParen,
-				Number,
-				Whitespace,
-				Plus,
-				Whitespace,
-				Number,
-				CloseParen,
-				Whitespace,
-				LineComment,
-				Newline,
-				EOF,
-			},
-		},
-		{
-			"BOM and unicode",
-			"\uFEFF한글 = 1\n",
-			[]Kind{
-				BOM,
-				Identifier,
-				Whitespace,
-				Equal,
-				Whitespace,
-				Number,
-				Newline,
-				EOF,
-			},
-		},
-		{
-			"template",
-			`"hi ${x}"`,
-			[]Kind{
-				QuoteOpen,
-				TemplateText,
-				InterpolationOpen,
-				Identifier,
-				TemplateSequenceEnd,
-				QuoteClose,
-				EOF,
-			},
-		},
-		{
-			"malformed bytes",
-			"\xff/* open",
-			[]Kind{
-				Invalid,
-				BlockComment,
-				EOF,
-			},
-		},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			file := assembleFile([]byte(test.source))
-			assertFilePartition(t, []byte(test.source), file)
-			var kinds []Kind
-			for i := range file.root.ChildCount() {
-				child := file.root.Child(i)
-				token, ok := child.(SyntaxToken)
-				if !ok {
-					t.Fatalf("flat foundation child has type %T", child)
-				}
-				kinds = append(kinds, token.Kind())
-			}
-			if !reflect.DeepEqual(kinds, test.kinds) {
-				t.Fatalf("kinds = %v, want %v", kinds, test.kinds)
-			}
-		})
-	}
-}
-
 func TestFileOwnsSourceAndTree(t *testing.T) {
-	source := []byte("x = 1\n")
+	source := []byte("x + 1\n")
 	original := bytes.Clone(source)
-	file := assembleFile(source)
+	file := parseExpressionSource(source)
 	if !bytes.Equal(source, original) {
-		t.Fatal("assembly changed caller source")
+		t.Fatal("parsing changed caller source")
 	}
 	for i := range source {
 		source[i] = 'z'
 	}
-	child := file.root.Child(0).(SyntaxToken)
-	child = SyntaxToken{}
-	if child.Kind() != Invalid {
-		t.Fatal("zero token must not claim to be an identifier")
+	child := file.root.Child(0).(SyntaxNode)
+	child = SyntaxNode{}
+	if child.Kind() != InvalidNode {
+		t.Fatal("zero node must not claim to be an expression")
 	}
 	root := file.root
 	root = SyntaxNode{}
@@ -130,14 +27,14 @@ func TestFileOwnsSourceAndTree(t *testing.T) {
 		t.Fatal("zero node must not claim to be a file")
 	}
 	assertFilePartition(t, original, file)
-	first := file.root.Child(0).(SyntaxToken)
-	if first.Kind() != Identifier {
+	first := file.root.Child(0).(SyntaxNode)
+	if first.Kind() != BinaryExpression {
 		t.Fatal("changing returned child value changed stored tree")
 	}
 }
 
 func TestChildTraversalAllocations(t *testing.T) {
-	file := assembleFile([]byte("x = 1 # comment\n"))
+	file := parseExpressionSource([]byte("x + 1 # comment\n"))
 	width := 0
 	allocations := testing.AllocsPerRun(100, func() {
 		width = 0
@@ -154,53 +51,11 @@ func TestChildTraversalAllocations(t *testing.T) {
 	}
 }
 
-func TestFilePreservesLexicalDiagnostics(t *testing.T) {
-	file := assembleFile([]byte("/*\xff"))
-	want := []Diagnostic{
-		{Kind: UnterminatedBlockComment, Span: Span{Start: 0, End: 3}},
-		{Kind: InvalidUTF8, Span: Span{Start: 2, End: 3}},
-	}
-	if !reflect.DeepEqual(file.diagnostics, want) {
-		t.Fatalf("diagnostics = %+v, want %+v", file.diagnostics, want)
-	}
-	assertFilePartition(t, []byte("/*\xff"), file)
-}
-
 func TestFileDeepInput(t *testing.T) {
-	// The file foundation is iterative; grammar nesting limits belong to the
-	// later recursive parser, not to lossless token storage.
+	// Unsupported collections are recovered iteratively rather than recursing
+	// through every balanced delimiter.
 	source := []byte(strings.Repeat("[", 10000) + strings.Repeat("]", 10000))
-	assertFilePartition(t, source, assembleFile(source))
-}
-
-func FuzzAssembleFile(f *testing.F) {
-	for _, source := range []string{
-		"",
-		"x = 1\r\n",
-		"\uFEFF# header\n/* comment */\n",
-		"/*\xff",
-		"\x00\xc0\xaf\xed\xa0\x80",
-		`"${{a="${x}"}}"`,
-		"<<-END\n%{if x}${y}%{endif}\n END\n",
-		"\"${\"${",
-	} {
-		f.Add([]byte(source))
-	}
-	f.Fuzz(func(t *testing.T, source []byte) {
-		original := bytes.Clone(source)
-		file := assembleFile(source)
-		assertFilePartition(t, original, file)
-		if !bytes.Equal(source, original) {
-			t.Fatal("assembly changed source")
-		}
-		if second := assembleFile(source); !reflect.DeepEqual(file, second) {
-			t.Fatal("assembly is not deterministic")
-		}
-		// Changing the input buffer after assembly cannot invalidate tree spans
-		// or alter text, including invalid UTF-8 and embedded NUL bytes.
-		clear(source)
-		assertFilePartition(t, original, file)
-	})
+	assertFilePartition(t, source, parseExpressionSource(source))
 }
 
 func assertFilePartition(t *testing.T, source []byte, file syntaxFile) {
