@@ -66,7 +66,7 @@ func TestParserCursorPreservesTriviaAndEOF(t *testing.T) {
 	p.consumeLookahead(&root, lineExpression)
 	file := p.file(root)
 	assertFilePartition(t, source, file)
-	node := file.root.Child(2).(SyntaxNode)
+	node, _ := file.root.Child(2).Node()
 	if node.Kind() != LiteralExpression || node.Span() != (Span{Start: 11, End: 12}) {
 		t.Fatalf("trivia leaked into expression: %+v", node)
 	}
@@ -132,10 +132,10 @@ func TestExpressionTriviaPlacement(t *testing.T) {
 			var visit func(SyntaxNode)
 			visit = func(node SyntaxNode) {
 				for i := range node.ChildCount() {
-					switch child := node.Child(i).(type) {
-					case SyntaxNode:
+					element := node.Child(i)
+					if child, ok := element.Node(); ok {
 						visit(child)
-					case SyntaxToken:
+					} else if child, ok := element.Token(); ok {
 						if child.Kind() == BlockComment || child.Kind() == LineComment {
 							containers[file.source[child.span.Start:child.span.End]] = node.Kind()
 						}
@@ -196,7 +196,7 @@ func TestLimitStopsGrammarAndRetainsUnparsedTokens(t *testing.T) {
 
 	file := p.file(root)
 	assertExpressionPartition(t, source, file)
-	if file.root.Child(2).(SyntaxNode).Kind() != Error {
+	if node, ok := file.root.Child(2).Node(); !ok || node.Kind() != Error {
 		t.Fatal("unparsed non-trivia must remain in a file-level Error node")
 	}
 	want := []Diagnostic{

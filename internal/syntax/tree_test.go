@@ -20,12 +20,17 @@ func TestFileOwnsSourceAndTree(t *testing.T) {
 	if zero.Kind() != InvalidNode {
 		t.Fatal("zero node must have the invalid kind")
 	}
-	child := file.root.Child(0).(SyntaxNode)
-	child.kind = InvalidNode
-	root := file.root
-	root.kind = InvalidNode
+	child, ok := file.root.Child(0).Node()
+	if !ok || child.Kind() != BinaryExpression {
+		t.Fatal("first child must be a binary expression")
+	}
+	// Replacing a copied handle must not change the tree it came from.
+	child = zero
+	if child.Kind() != InvalidNode {
+		t.Fatal("replaced handle must be invalid")
+	}
 	assertFilePartition(t, original, file)
-	first := file.root.Child(0).(SyntaxNode)
+	first, _ := file.root.Child(0).Node()
 	if first.Kind() != BinaryExpression {
 		t.Fatal("changing returned child value changed stored tree")
 	}
@@ -66,25 +71,35 @@ func assertFilePartition(t *testing.T, source []byte, file syntaxFile) {
 	}
 	end, eofCount := 0, 0
 	var reconstructed strings.Builder
-	var visit func(SyntaxElement)
-	visit = func(element SyntaxElement) {
+	type frame struct {
+		element SyntaxElement
+		exit    bool
+	}
+	stack := []frame{{element: file.root.Element()}}
+	for len(stack) > 0 {
+		current := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		element := current.element
 		span := element.Span()
-		if span.Start != end || span.End < span.Start || span.End > len(source) {
-			t.Fatalf("non-contiguous or invalid span %+v after %d", span, end)
-		}
-		switch element := element.(type) {
-		case SyntaxNode:
-			for i := range element.ChildCount() {
-				visit(element.Child(i))
-			}
+		if current.exit {
 			if end != span.End {
 				t.Fatalf("node span ends at %d, children end at %d", span.End, end)
 			}
-		case SyntaxToken:
+			continue
+		}
+		if span.Start != end || span.End < span.Start || span.End > len(source) {
+			t.Fatalf("non-contiguous or invalid span %+v after %d", span, end)
+		}
+		if node, ok := element.Node(); ok {
+			stack = append(stack, frame{element: element, exit: true})
+			for i := node.ChildCount() - 1; i >= 0; i-- {
+				stack = append(stack, frame{element: node.Child(i)})
+			}
+		} else if token, ok := element.Token(); ok {
 			if eofCount != 0 {
 				t.Fatal("token follows EOF")
 			}
-			if element.Kind() == EOF {
+			if token.Kind() == EOF {
 				eofCount++
 				if span != (Span{Start: len(source), End: len(source)}) {
 					t.Fatalf("invalid EOF span %+v", span)
@@ -94,11 +109,10 @@ func assertFilePartition(t *testing.T, source []byte, file syntaxFile) {
 			}
 			reconstructed.WriteString(file.source[span.Start:span.End])
 			end = span.End
-		default:
-			t.Fatalf("unexpected element implementation %T", element)
+		} else {
+			t.Fatal("invalid element in tree")
 		}
 	}
-	visit(file.root)
 	if eofCount != 1 || reconstructed.String() != string(source) {
 		t.Fatal("tree must contain one final EOF and reconstruct every input byte")
 	}

@@ -52,7 +52,7 @@ func (p *parser) expression(minimum int, context expressionContext) SyntaxNode {
 		// Only the weakest binding level may consume '?'. Parsing both arms at
 		// zero lets the false arm absorb another conditional, associating right.
 		if kind == Question && minimum == 0 {
-			b := nodeBuilder{start: left.span.Start}
+			b := p.beginAt(left.Span().Start)
 			b.node(left)
 			p.consumeLookahead(&b, context)
 			p.operand(&b, 0, context)
@@ -68,7 +68,7 @@ func (p *parser) expression(minimum int, context expressionContext) SyntaxNode {
 		if power == 0 || power < minimum {
 			break
 		}
-		b := nodeBuilder{start: left.span.Start}
+		b := p.beginAt(left.Span().Start)
 		b.node(left)
 		p.consumeLookahead(&b, context)
 		// A same-precedence operator cannot enter the RHS. This loop consumes it
@@ -138,7 +138,7 @@ func (p *parser) prefix(context expressionContext) SyntaxNode {
 	}
 	left := b.finish(kind)
 	if p.peek(context) == Dot || p.peek(context) == OpenBracket {
-		b = nodeBuilder{start: left.span.Start}
+		b = p.beginAt(left.Span().Start)
 		b.node(left)
 		p.steps(&b, context, allTraversalSteps)
 		left = b.finish(TraversalExpression)
@@ -226,7 +226,7 @@ func (p *parser) recoverArgument(parent *nodeBuilder) {
 	for {
 		switch p.peek(delimitedExpression) {
 		case EOF, Comma, CloseParen, CloseBracket, CloseBrace:
-			if len(b.children) > 0 {
+			if len(p.pending) > b.mark {
 				parent.node(b.finish(Error))
 			}
 			return

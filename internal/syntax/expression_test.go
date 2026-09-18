@@ -145,7 +145,7 @@ func TestExpressionShapes(t *testing.T) {
 			if len(file.diagnostics) != 0 {
 				t.Fatalf("unexpected diagnostics: %+v", file.diagnostics)
 			}
-			if got := expressionShape(file, file.root); got != test.shape {
+			if got := expressionShape(file, file.root.Element()); got != test.shape {
 				t.Fatalf("shape:\n%s\nwant:\n%s", got, test.shape)
 			}
 		})
@@ -339,7 +339,7 @@ func assertDiagnosticsAndShape(t *testing.T, source string, diagnostics []Diagno
 	if !reflect.DeepEqual(file.diagnostics, diagnostics) {
 		t.Errorf("diagnostics = %+v\nwant %+v", file.diagnostics, diagnostics)
 	}
-	if got := expressionShape(file, file.root); got != shape {
+	if got := expressionShape(file, file.root.Element()); got != shape {
 		t.Errorf("shape:\n%s\nwant:\n%s", got, shape)
 	}
 }
@@ -356,8 +356,8 @@ func TestUnterminatedUnsupportedLeavesTrailingTrivia(t *testing.T) {
 			}
 			// The Error node is the first child; trivia after its last real token
 			// must follow it at File level, exactly as after a parenthesized error.
-			node := file.root.Child(0).(SyntaxNode)
-			last := node.Child(node.ChildCount() - 1).(SyntaxToken)
+			node, _ := file.root.Child(0).Node()
+			last, _ := node.Child(node.ChildCount() - 1).Token()
 			if isTrivia(last.Kind()) || file.root.ChildCount() < 3 {
 				t.Fatalf("trailing trivia absorbed: %v ends with %v, file has %d children", node.Kind(), last.Kind(), file.root.ChildCount())
 			}
@@ -368,7 +368,7 @@ func TestUnterminatedUnsupportedLeavesTrailingTrivia(t *testing.T) {
 func TestExpressionRecoveryPreservesFollowingArgument(t *testing.T) {
 	file := parseExpressionSource([]byte("f(1 2, 3)"))
 	want := `File(Call("f", "(", Literal("1"), Error("2"), ",", Literal("3"), ")"))`
-	if got := expressionShape(file, file.root); got != want {
+	if got := expressionShape(file, file.root.Element()); got != want {
 		t.Fatalf("recovered shape = %s, want %s", got, want)
 	}
 }
@@ -432,28 +432,27 @@ func assertExpressionPartition(t *testing.T, source []byte, file syntaxFile) {
 	assertFilePartition(t, source, file)
 	var tokens []SyntaxToken
 	errors := 0
-	stack := []SyntaxElement{file.root}
+	stack := []SyntaxElement{file.root.Element()}
 	for len(stack) > 0 {
-		element := stack[len(stack)-1]
+		current := stack[len(stack)-1]
 		stack = stack[:len(stack)-1]
-		switch element := element.(type) {
-		case SyntaxNode:
+		if element, ok := current.Node(); ok {
 			if element.Kind() == Error {
 				errors++
 			}
 			count := element.ChildCount()
 			if element.Kind() != File && count > 0 {
-				if token, ok := element.Child(0).(SyntaxToken); ok && isTrivia(token.Kind()) {
-					t.Fatalf("%v begins with %v trivia: %s", element.Kind(), token.Kind(), expressionShape(file, element))
+				if token, ok := element.Child(0).Token(); ok && isTrivia(token.Kind()) {
+					t.Fatalf("%v begins with %v trivia: %s", element.Kind(), token.Kind(), expressionShape(file, element.Element()))
 				}
-				if token, ok := element.Child(count - 1).(SyntaxToken); ok && isTrivia(token.Kind()) {
-					t.Fatalf("%v ends with %v trivia: %s", element.Kind(), token.Kind(), expressionShape(file, element))
+				if token, ok := element.Child(count - 1).Token(); ok && isTrivia(token.Kind()) {
+					t.Fatalf("%v ends with %v trivia: %s", element.Kind(), token.Kind(), expressionShape(file, element.Element()))
 				}
 			}
 			for i := count - 1; i >= 0; i-- {
 				stack = append(stack, element.Child(i))
 			}
-		case SyntaxToken:
+		} else if element, ok := current.Token(); ok {
 			tokens = append(tokens, SyntaxToken{kind: element.Kind(), span: element.Span()})
 		}
 	}
@@ -461,21 +460,20 @@ func assertExpressionPartition(t *testing.T, source []byte, file syntaxFile) {
 		t.Fatalf("tree leaves differ from lexer tokens:\n%+v\nwant:\n%+v", tokens, want)
 	}
 	if errors > 0 && len(file.diagnostics) == 0 {
-		t.Fatalf("%d Error nodes without any diagnostic: %s", errors, expressionShape(file, file.root))
+		t.Fatalf("%d Error nodes without any diagnostic: %s", errors, expressionShape(file, file.root.Element()))
 	}
 }
 
 // expressionShape omits trivia only for readable grammar assertions. Separate
 // partition and placement assertions verify every token, including all trivia.
-func expressionShape(file syntaxFile, element SyntaxElement) string {
-	switch element := element.(type) {
-	case SyntaxToken:
+func expressionShape(file syntaxFile, current SyntaxElement) string {
+	if element, ok := current.Token(); ok {
 		if isTrivia(element.Kind()) || element.Kind() == EOF {
 			return ""
 		}
 		span := element.Span()
 		return strconv.Quote(file.source[span.Start:span.End])
-	case SyntaxNode:
+	} else if element, ok := current.Node(); ok {
 		names := map[NodeKind]string{
 			File: "File", Error: "Error", LiteralExpression: "Literal",
 			VariableExpression: "Variable", ParenthesizedExpression: "Paren",

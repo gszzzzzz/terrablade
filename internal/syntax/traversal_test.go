@@ -97,7 +97,7 @@ func TestTraversalShapes(t *testing.T) {
 			if len(file.diagnostics) != 0 {
 				t.Fatalf("unexpected diagnostics: %+v", file.diagnostics)
 			}
-			if got := expressionShape(file, file.root); got != test.shape {
+			if got := expressionShape(file, file.root.Element()); got != test.shape {
 				t.Fatalf("shape:\n%s\nwant:\n%s", got, test.shape)
 			}
 		})

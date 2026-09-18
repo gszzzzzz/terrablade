@@ -39,6 +39,8 @@ func isTrivia(kind TokenKind) bool { return classifyTrivia(kind) != notTrivia }
 type parser struct {
 	source      string
 	tokens      []SyntaxToken
+	arena       *syntaxArena
+	pending     []elementRef
 	pos         int
 	diagnostics []Diagnostic
 	depth       int
@@ -50,6 +52,7 @@ func newParser(source []byte) *parser {
 	return &parser{
 		source:      string(source),
 		tokens:      lexed.Tokens,
+		arena:       &syntaxArena{tokens: lexed.Tokens},
 		diagnostics: lexed.Diagnostics,
 	}
 }
@@ -96,18 +99,26 @@ func (p *parser) current() SyntaxToken {
 }
 
 type nodeBuilder struct {
-	start    int
-	children []SyntaxElement
+	parser *parser
+	start  int
+	mark   int
 }
 
 func (p *parser) begin() nodeBuilder {
 	// Empty error nodes stay at the real cursor, not the virtual EOF after a halt,
 	// so they cannot create a gap between consumed and still-unparsed source.
-	return nodeBuilder{start: p.tokens[p.pos].span.Start}
+	return p.beginAt(p.tokens[p.pos].span.Start)
+}
+
+// Builders nest in grammar order. Each owns the tail of pending after mark;
+// finishing a nested builder restores that tail before its parent appends the
+// resulting node. Sharing this scratch buffer avoids one allocation per node.
+func (p *parser) beginAt(start int) nodeBuilder {
+	return nodeBuilder{parser: p, start: start, mark: len(p.pending)}
 }
 
 func (b *nodeBuilder) node(node SyntaxNode) {
-	b.children = append(b.children, node)
+	b.parser.pending = append(b.parser.pending, elementRef(node.index+1))
 }
 
 // consumeUntil appends raw tokens before index, leaving index unconsumed.
@@ -122,7 +133,7 @@ func (p *parser) consumeUntil(b *nodeBuilder, index int) {
 // gate. Productions must never consume from this view after a limit.
 func (p *parser) retainUntil(b *nodeBuilder, index int) {
 	for p.pos < index {
-		b.children = append(b.children, p.tokens[p.pos])
+		b.parser.pending = append(b.parser.pending, elementRef(-p.pos-1))
 		p.pos++
 	}
 }
@@ -153,11 +164,20 @@ func (p *parser) haltAtLimit(span Span) {
 }
 
 func (b nodeBuilder) finish(kind NodeKind) SyntaxNode {
+	p := b.parser
+	children := p.pending[b.mark:]
 	span := Span{Start: b.start, End: b.start}
-	if len(b.children) > 0 {
-		span.End = b.children[len(b.children)-1].Span().End
+	if len(children) > 0 {
+		span.End = (SyntaxElement{arena: p.arena, ref: children[len(children)-1]}).Span().End
 	}
-	return SyntaxNode{kind: kind, span: span, children: b.children}
+	node := SyntaxNode{arena: p.arena, index: len(p.arena.nodes)}
+	p.arena.nodes = append(p.arena.nodes, nodeRecord{
+		kind: kind, span: span,
+		firstChild: len(p.arena.children), childCount: len(children),
+	})
+	p.arena.children = append(p.arena.children, children...)
+	p.pending = p.pending[:b.mark]
+	return node
 }
 
 func (p *parser) file(root nodeBuilder) syntaxFile {
@@ -167,17 +187,10 @@ func (p *parser) file(root nodeBuilder) syntaxFile {
 	sort.SliceStable(p.diagnostics, func(i, j int) bool {
 		return p.diagnostics[i].Span.Start < p.diagnostics[j].Span.Start
 	})
-	root.children = append(root.children, SyntaxToken{
-		kind: EOF,
-		span: p.tokens[len(p.tokens)-1].span,
-	})
+	p.pending = append(p.pending, elementRef(-len(p.tokens)))
 	return syntaxFile{
-		source: p.source,
-		root: SyntaxNode{
-			kind:     File,
-			span:     Span{Start: 0, End: len(p.source)},
-			children: root.children,
-		},
+		source:      p.source,
+		root:        root.finish(File),
 		diagnostics: p.diagnostics,
 	}
 }
