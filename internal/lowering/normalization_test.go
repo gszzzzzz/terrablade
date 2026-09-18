@@ -104,6 +104,25 @@ func TestNormalizationFileAndCST(t *testing.T) {
 	}
 }
 
+func TestNormalizationHeredocTrailingComments(t *testing.T) {
+	for _, source := range []string{
+		"a = \"${<<E\nx\nE\n}\" # tail\n",
+		"a = \"${<<E\nx\nE\n}\" # tail\nb=1\n",
+		"a = \"${<<E\nx\nE\n}\" /*tail*/\nb=1\n",
+		"a = \"${<<E\nx\nE\n}\" /*first*/ /*second*/ # tail\nb {}\n",
+		"b {\n a = \"${<<E\nx\nE\n}\" # tail\n}\n",
+	} {
+		output := renderFile(t, source, 80)
+		assertFileContent(t, source, output)
+		if next := renderFile(t, output, 80); next != output {
+			t.Fatalf("not idempotent: %q => %q", output, next)
+		}
+		if os.Getenv("TERRABLADE_COMPARE_TOFU") == "1" {
+			assertOpenTofu(t, output)
+		}
+	}
+}
+
 // The upstream evaluator independently checks values and types. Strict equality
 // catches object-key reinterpretation, reassociation, and shifted splat scope;
 // reparsing alone would accept all three classes of semantic mistake.

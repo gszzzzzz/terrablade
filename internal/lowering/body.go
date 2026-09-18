@@ -58,7 +58,7 @@ func File(result syntax.Result) (document.Doc, error) {
 			lowered.doc = document.Text(text)
 		case syntax.Attribute:
 			var err error
-			lowered.doc, err = attribute(result, current.node)
+			lowered, err = attribute(result, current.node)
 			if err != nil {
 				return document.Doc{}, err
 			}
@@ -72,10 +72,11 @@ func File(result syntax.Result) (document.Doc, error) {
 // The closing line belongs outside Indent. The contents include an opening
 // line only for nested bodies, allowing an opener's inline comment to stay put.
 type bodyLayout struct {
-	doc, end document.Doc
+	doc, end    document.Doc
+	endsHeredoc bool
 }
 
-func attribute(result syntax.Result, node syntax.SyntaxNode) (document.Doc, error) {
+func attribute(result syntax.Result, node syntax.SyntaxNode) (bodyLayout, error) {
 	var parts []piece
 	var trivia []syntax.SyntaxToken
 	for i := range node.ChildCount() {
@@ -83,7 +84,7 @@ func attribute(result syntax.Result, node syntax.SyntaxNode) (document.Doc, erro
 		if child, ok := element.Node(); ok {
 			value, err := lowerExpression(result, child)
 			if err != nil {
-				return document.Doc{}, err
+				return bodyLayout{}, err
 			}
 			parts = append(parts, piece{doc: value.doc, child: value, before: trivia})
 		} else if token, ok := element.Token(); ok {
@@ -95,7 +96,7 @@ func attribute(result syntax.Result, node syntax.SyntaxNode) (document.Doc, erro
 		}
 		trivia = nil
 	}
-	return assignment(result, parts, false), nil
+	return bodyLayout{doc: assignment(result, parts, false), endsHeredoc: parts[len(parts)-1].child.endsHeredoc}, nil
 }
 
 func block(result syntax.Result, node syntax.SyntaxNode, docs map[syntax.SyntaxNode]bodyLayout) document.Doc {
@@ -129,6 +130,7 @@ func body(result syntax.Result, node syntax.SyntaxNode, nested bool, docs map[sy
 	var parts []document.Doc
 	var trivia []syntax.SyntaxToken
 	previous := syntax.InvalidNode
+	endsHeredoc := false
 	nonempty := false
 	for i := range node.ChildCount() {
 		element := node.Child(i)
@@ -137,9 +139,10 @@ func body(result syntax.Result, node syntax.SyntaxNode, nested bool, docs map[sy
 			continue
 		}
 		child, _ := element.Node()
-		parts = append(parts, bodyGap(result, trivia, previous, child.Kind(), nested), docs[child].doc)
+		parts = append(parts, bodyGap(result, trivia, previous, child.Kind(), nested, endsHeredoc), docs[child].doc)
 		trivia = nil
 		previous = child.Kind()
+		endsHeredoc = docs[child].endsHeredoc
 		nonempty = true
 	}
 	for _, token := range trivia {
@@ -147,7 +150,7 @@ func body(result syntax.Result, node syntax.SyntaxNode, nested bool, docs map[sy
 			nonempty = true
 		}
 	}
-	parts = append(parts, bodyGap(result, trivia, previous, syntax.InvalidNode, nested))
+	parts = append(parts, bodyGap(result, trivia, previous, syntax.InvalidNode, nested, endsHeredoc))
 	var end document.Doc
 	if nonempty {
 		end = document.HardLine()
@@ -158,7 +161,7 @@ func body(result syntax.Result, node syntax.SyntaxNode, nested bool, docs map[sy
 // Body gaps own both item separators and comments. Classify each source gap
 // before selecting its separator; comment placement and section policy are
 // independent of document construction.
-func bodyGap(result syntax.Result, trivia []syntax.SyntaxToken, previous, next syntax.NodeKind, nested bool) document.Doc {
+func bodyGap(result syntax.Result, trivia []syntax.SyntaxToken, previous, next syntax.NodeKind, nested, afterHeredoc bool) document.Doc {
 	var parts []document.Doc
 	gap := bodyGapClass{before: bodyGapSide{kind: bodyItem}, onOpener: nested && previous == syntax.InvalidNode}
 	switch {
@@ -186,6 +189,12 @@ func bodyGap(result syntax.Result, trivia []syntax.SyntaxToken, previous, next s
 		}
 		if token.Kind() != syntax.LineComment && token.Kind() != syntax.BlockComment {
 			continue
+		}
+		if afterHeredoc {
+			// Unwrapping a template can expose a heredoc before an inline
+			// attribute comment. Its end marker must occupy its own line.
+			gap.lines = max(gap.lines, 1)
+			afterHeredoc = false
 		}
 		// A run can contain several block comments on the same line. They
 		// share their section status, but a prefix sharing the next item's
