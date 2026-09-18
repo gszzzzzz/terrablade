@@ -150,6 +150,10 @@ func expand(stack []command, current command, indentWidth int) []command {
 		current.indent = addWidth(current.indent, indentWidth)
 		current.doc = n.children[0]
 		stack = append(stack, current)
+	case forceFlatKind:
+		current.flat = true
+		current.doc = n.children[0]
+		stack = append(stack, current)
 	case ifBreakKind:
 		index := 0
 		if current.flat {

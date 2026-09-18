@@ -19,6 +19,7 @@ const (
 	hardLineKind
 	literalLineKind
 	groupKind
+	forceFlatKind
 	indentKind
 	ifBreakKind
 )
@@ -97,6 +98,11 @@ var (
 // Group attempts to flatten its contents into the remaining print width.
 // If it cannot, its lines break and nested groups make independent decisions.
 func Group(content Doc) Doc { return wrap(groupKind, content) }
+
+// ForceFlat flattens content and all nested groups regardless of print width.
+// It selects flat IfBreak branches, but preserves HardLine and LiteralLine.
+// Flat mode resumes after those mandatory lines and ends at this boundary.
+func ForceFlat(content Doc) Doc { return wrap(forceFlatKind, content) }
 
 // Indent adds one indentation level within content. It affects indentation
 // after ordinary line breaks, not text already on the current line.

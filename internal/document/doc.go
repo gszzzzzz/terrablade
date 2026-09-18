@@ -8,6 +8,8 @@
 // selects its broken branch. HardLine and LiteralLine on a group's flat path
 // force that group and its ancestors to break, even at unlimited practical
 // widths. A hard line in an unselected IfBreak branch has no effect.
+// ForceFlat establishes a lexical flat boundary: nested groups and IfBreak
+// stay flat even beyond PrintWidth, while mandatory lines remain intact.
 //
 // Indent changes the structural indentation context. Ordinary broken lines
 // use it; LiteralLine omits automatic indentation once without discarding the

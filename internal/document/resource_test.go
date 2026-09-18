@@ -41,7 +41,7 @@ func TestCompositionOwnershipAndConcurrentRendering(t *testing.T) {
 
 func TestDeepDocuments(t *testing.T) {
 	const depth = 50000
-	for _, shape := range []string{"left concat", "right concat", "groups", "indent and literal lines"} {
+	for _, shape := range []string{"left concat", "right concat", "groups", "force flat", "indent and literal lines"} {
 		t.Run(shape, func(t *testing.T) {
 			doc := document.Text("x")
 			want := "x"
@@ -53,6 +53,8 @@ func TestDeepDocuments(t *testing.T) {
 					doc = document.Concat(document.Text("x"), doc)
 				case "groups":
 					doc = document.Group(doc)
+				case "force flat":
+					doc = document.ForceFlat(document.Group(doc))
 				case "indent and literal lines":
 					doc = document.Indent(document.Group(document.Concat(document.LiteralLine(), doc)))
 				}
