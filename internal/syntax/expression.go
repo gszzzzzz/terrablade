@@ -8,7 +8,7 @@ import (
 // parseExpressionSource is an internal test seam for an attribute-style value:
 // unparenthesized newlines terminate it. It is not a configuration-file parser.
 // Leading and trailing trivia belong to File. Remaining non-trivia is an error.
-func parseExpressionSource(source []byte) syntaxFile {
+func parseExpressionSource(source []byte) Result {
 	p := newParser(source)
 	root := p.begin()
 	p.consumeUntil(&root, p.look(delimitedExpression))

@@ -71,7 +71,8 @@ type Span struct {
 	End   int
 }
 
-// DiagnosticKind identifies an error without coupling lexing to presentation.
+// DiagnosticKind identifies a lexical or syntax error without coupling parsing
+// to presentation. Its numeric value is not a stable storage format.
 type DiagnosticKind uint8
 
 const (

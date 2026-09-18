@@ -20,7 +20,7 @@ func TestBodyDeepNesting(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			source := []byte(strings.Repeat("b {\n", depth) + "a=1\n" + test.ending)
-			file := parseBodySource(source)
+			file := Parse(source)
 			assertExpressionPartition(t, source, file)
 			wantDiagnostics := 0
 			if test.missing {
@@ -44,7 +44,7 @@ func TestBodyDeepNesting(t *testing.T) {
 
 func TestBodyExpressionLimitRetainsOuterTail(t *testing.T) {
 	source := []byte("outer {\n inner { a=" + strings.Repeat("!", maxRecursiveExpressionDepth+1) + "x }\n}\ntail=1\n")
-	file := parseBodySource(source)
+	file := Parse(source)
 	assertExpressionPartition(t, source, file)
 	if len(file.diagnostics) != 1 || file.diagnostics[0].Kind != NestingLimitExceeded {
 		t.Fatalf("expression shutdown cascaded into body errors: %+v", file.diagnostics)
@@ -66,7 +66,7 @@ func TestBodyFlatItemsAndArena(t *testing.T) {
 		source.WriteString("=1\nb { a=2 }\n")
 	}
 	data := []byte(source.String())
-	file := parseBodySource(data)
+	file := Parse(data)
 	assertExpressionPartition(t, data, file)
 	if len(file.diagnostics) != 0 {
 		t.Fatalf("flat sibling bodies share attribute scopes: %+v", file.diagnostics)
@@ -97,7 +97,7 @@ func TestBodyAllocationScaling(t *testing.T) {
 				source += strings.Repeat("}\n", count)
 			}
 			data := []byte(source)
-			return testing.AllocsPerRun(5, func() { _ = parseBodySource(data) })
+			return testing.AllocsPerRun(5, func() { _ = Parse(data) })
 		}
 		small, large := measure(100), measure(1000)
 		// Growth in the shared arena, scope table, and frame slices is allowed;
@@ -126,7 +126,7 @@ func TestBodyLongLabelsAndRecovery(t *testing.T) {
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			file := parseBodySource([]byte(test.source))
+			file := Parse([]byte(test.source))
 			assertExpressionPartition(t, []byte(test.source), file)
 			if !reflect.DeepEqual(file.diagnostics, test.diagnostics) {
 				t.Fatalf("diagnostics = %+v, want %+v", file.diagnostics, test.diagnostics)
@@ -163,7 +163,7 @@ func FuzzBody(f *testing.F) {
 		// Mutate only our clone for the ownership check: the fuzzing engine may
 		// retain its original input after this callback for corpus minimization.
 		input := bytes.Clone(source)
-		file := parseBodySource(input)
+		file := Parse(input)
 		assertExpressionPartition(t, source, file)
 		if !bytes.Equal(input, source) {
 			t.Fatal("body parser mutated input")
@@ -173,7 +173,7 @@ func FuzzBody(f *testing.F) {
 				t.Fatalf("lost lexical diagnostic: %+v", diagnostic)
 			}
 		}
-		if next := parseBodySource(input); !reflect.DeepEqual(file, next) {
+		if next := Parse(input); !reflect.DeepEqual(file, next) {
 			t.Fatal("body parser is not deterministic")
 		}
 		clear(input)

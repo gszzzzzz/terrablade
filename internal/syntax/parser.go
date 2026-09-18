@@ -191,7 +191,7 @@ func (b nodeBuilder) finish(kind NodeKind) SyntaxNode {
 	return node
 }
 
-func (p *parser) file(root nodeBuilder) syntaxFile {
+func (p *parser) file(root nodeBuilder) Result {
 	p.retainRemainder(&root)
 	// Lexical diagnostics can overlap later parser diagnostics; ties retain their
 	// original order, with lexical diagnostics first.
@@ -199,7 +199,7 @@ func (p *parser) file(root nodeBuilder) syntaxFile {
 		return p.diagnostics[i].Span.Start < p.diagnostics[j].Span.Start
 	})
 	p.pending = append(p.pending, elementRef(-len(p.tokens)))
-	return syntaxFile{
+	return Result{
 		source:      p.source,
 		root:        root.finish(File),
 		diagnostics: p.diagnostics,

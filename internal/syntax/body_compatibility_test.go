@@ -100,7 +100,7 @@ var bodyCompatibilityCases = []struct {
 func TestBodyCompatibility(t *testing.T) {
 	for _, test := range bodyCompatibilityCases {
 		t.Run(test.name, func(t *testing.T) {
-			file := parseBodySource([]byte(test.source))
+			file := Parse([]byte(test.source))
 			assertExpressionPartition(t, []byte(test.source), file)
 			if valid := len(file.diagnostics) == 0; valid != test.valid {
 				t.Fatalf("valid = %v, want %v: %+v", valid, test.valid, file.diagnostics)
@@ -132,7 +132,7 @@ func TestBodyOpenTofuCompatibility(t *testing.T) {
 					t.Fatalf("unexpected OpenTofu failure: %v\n%s", err, output)
 				}
 			}
-			accepted := len(parseBodySource([]byte(test.source)).diagnostics) == 0
+			accepted := len(Parse([]byte(test.source)).diagnostics) == 0
 			if (err == nil) != test.valid || (err == nil) != accepted {
 				t.Fatalf("OpenTofu accepted=%v, parser accepted=%v, want=%v\n%s", err == nil, accepted, test.valid, output)
 			}

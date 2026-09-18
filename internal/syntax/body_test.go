@@ -140,7 +140,7 @@ func TestBodyShapes(t *testing.T) {
 
 func TestBodyTriviaOwnership(t *testing.T) {
 	source := "# file\nblock /*type*/ label /*label*/ \"x\" /*brace*/ {\n # body\n a /*name*/ = /*value*/ (1 /*expr*/) /*tail*/ # end\n /*close*/ } /*blocktail*/\n"
-	file := parseBodySource([]byte(source))
+	file := Parse([]byte(source))
 	assertExpressionPartition(t, []byte(source), file)
 	if len(file.diagnostics) != 0 {
 		t.Fatalf("unexpected diagnostics: %+v", file.diagnostics)
@@ -179,7 +179,7 @@ func TestBodyTriviaOwnership(t *testing.T) {
 
 func assertBody(t *testing.T, source string, diagnostics []Diagnostic, shape string) {
 	t.Helper()
-	file := parseBodySource([]byte(source))
+	file := Parse([]byte(source))
 	assertExpressionPartition(t, []byte(source), file)
 	if !reflect.DeepEqual(file.diagnostics, diagnostics) {
 		t.Errorf("diagnostics: %+v\nwant: %+v", file.diagnostics, diagnostics)
@@ -191,7 +191,7 @@ func assertBody(t *testing.T, source string, diagnostics []Diagnostic, shape str
 
 // Vertical grammar snapshots omit trivia only. Partition and ownership tests
 // independently pin the token stream, every span, and comment/trivia parents.
-func bodyShape(file syntaxFile, root SyntaxElement) string {
+func bodyShape(file Result, root SyntaxElement) string {
 	var out strings.Builder
 	var visit func(SyntaxElement, int)
 	visit = func(element SyntaxElement, depth int) {

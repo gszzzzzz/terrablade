@@ -471,7 +471,7 @@ func TestBodyRecoveryTriviaOwnership(t *testing.T) {
 		"a /*gap*/ : [1] /*tail*/ #end\nb=2",
 		"b { c /*gap*/ : [1] /*tail*/ }\na=2",
 	} {
-		file := parseBodySource([]byte(source))
+		file := Parse([]byte(source))
 		assertExpressionPartition(t, []byte(source), file)
 		comments := 0
 		stack := []SyntaxNode{file.root}

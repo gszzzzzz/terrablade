@@ -61,7 +61,7 @@ func TestFileDeepInput(t *testing.T) {
 	assertFilePartition(t, source, parseExpressionSource(source))
 }
 
-func assertFilePartition(t *testing.T, source []byte, file syntaxFile) {
+func assertFilePartition(t *testing.T, source []byte, file Result) {
 	t.Helper()
 	if file.source != string(source) {
 		t.Fatal("file source differs from input")

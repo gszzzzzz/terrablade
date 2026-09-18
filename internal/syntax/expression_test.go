@@ -398,7 +398,7 @@ func FuzzExpression(f *testing.F) {
 // at least one diagnostic. Diagnostics without Error nodes remain legitimate,
 // for example a missing closer or an unrepresentable number literal. Exact
 // Error-to-diagnostic relationships belong to focused recovery tests.
-func assertExpressionPartition(t *testing.T, source []byte, file syntaxFile) {
+func assertExpressionPartition(t *testing.T, source []byte, file Result) {
 	t.Helper()
 	assertFilePartition(t, source, file)
 	var tokens []SyntaxToken
@@ -437,7 +437,7 @@ func assertExpressionPartition(t *testing.T, source []byte, file syntaxFile) {
 
 // expressionShape omits trivia only for readable grammar assertions. Separate
 // partition and placement assertions verify every token, including all trivia.
-func expressionShape(file syntaxFile, current SyntaxElement) string {
+func expressionShape(file Result, current SyntaxElement) string {
 	if element, ok := current.Token(); ok {
 		if isTrivia(element.Kind()) || element.Kind() == EOF {
 			return ""

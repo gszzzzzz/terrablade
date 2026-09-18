@@ -146,13 +146,6 @@ type SyntaxToken struct {
 // Kind identifies the lexical element.
 func (t SyntaxToken) Kind() TokenKind { return t.kind }
 
-// Span identifies the original source bytes. Only EOF has an empty span.
+// Span identifies the original source bytes. Among tokens produced by Parse,
+// only EOF has an empty span. A zero token also has an empty span.
 func (t SyntaxToken) Span() Span { return t.span }
-
-// syntaxFile owns a source snapshot and its lossless tree. Grammar entry points
-// keep it private until the public source and diagnostic contracts are settled.
-type syntaxFile struct {
-	source      string
-	root        SyntaxNode
-	diagnostics []Diagnostic
-}

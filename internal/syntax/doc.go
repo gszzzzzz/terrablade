@@ -1,4 +1,20 @@
-// Package syntax provides the lossless syntax foundation for native HCL.
+// Package syntax parses native HCL configurations into lossless concrete syntax
+// trees. This internal module is shared by Terrablade's consumers; it does not
+// provide HCL JSON parsing, expression evaluation, or schema validation.
+//
+// Parse is the complete-file entry point. Its Result owns a source snapshot and
+// provides read-only tree handles and copied diagnostics. The caller may reuse
+// the input buffer after Parse returns. Results, nodes, and elements can be
+// copied and read concurrently. A node or element keeps its tree alive; retain
+// Result or its Source string separately when source text is needed.
+//
+// A zero Result represents no parse: its root is InvalidNode, its source is
+// empty, and its diagnostics are nil. Parse(nil) instead returns an empty File
+// containing an empty Body and EOF. Malformed input still produces a File and
+// diagnostics, with incomplete or Error nodes retaining the original bytes.
+// All diagnostics are errors; a result with diagnostics must not be formatted.
+// Diagnostics are ordered by byte offset, with lexical errors first at equal
+// offsets. The tree and diagnostic order are deterministic for identical input.
 //
 // Tree leaves preserve every source byte, including malformed UTF-8, whitespace,
 // and comments. Each leaf refers to a half-open byte span in an owned source
@@ -12,16 +28,24 @@
 // keys retain their parentheses and represent computed key expressions.
 //
 // A configuration File contains one Body and a final EOF, with an optional
-// leading BOM retained before the Body for upstream compatibility. Body owns
+// leading BOM retained before the Body for upstream compatibility. If a parser
+// resource limit is reached, File may also contain Error and trivia children
+// preserving the unparsed remainder between Body and EOF. Body owns
 // inter-item and edge trivia. Attribute contains its name token, equals token,
 // and value expression. Block contains its type token, zero or more BlockLabel
 // nodes, opening brace, nested Body, and closing brace. The braces belong to
 // Block, not Body. Labels preserve either an identifier or quoted literal; they
 // are never variable-reference expressions. Malformed nodes can be incomplete.
 //
-// Lexing, expression parsing, and configuration-body parsing are private
-// implementation details. A public Parse entry point and its Result are deferred
-// until source ownership and diagnostic access contracts are settled.
-// Diagnostics describe lexical and syntax errors. Contextual keywords retain
-// their lexical Identifier kind in the tree.
+// Obtain node or token text by slicing Result.Source() with its Span from the
+// same parse. Kind String methods supply symbolic names for debugging rather
+// than user-facing diagnostic prose; numeric kinds are not a storage format.
+// Contextual keywords retain their lexical Identifier kind in the tree.
+//
+// Lexing, grammar recovery, source ownership, and tree storage are private
+// implementation details behind Parse. Parsing bounds recursive expression
+// nesting and reports NestingLimitExceeded while preserving unparsed bytes.
+// Iterative productions can still build deep trees, so consumers should use
+// iterative traversal. Child access allocates no memory; traversal stacks belong
+// to callers, and Diagnostics copies its slice only when errors are present.
 package syntax

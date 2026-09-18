@@ -1,19 +1,5 @@
 package syntax
 
-// parseBodySource is the internal complete-file entry point. The public result
-// contract is separate from the grammar and remains intentionally unexported.
-func parseBodySource(source []byte) syntaxFile {
-	p := newParser(source)
-	root := p.begin()
-	// Upstream accepts a single BOM at byte zero despite the native HCL spec.
-	// Preserve it outside Body, where it cannot be confused with a body item.
-	if p.current().kind == BOM {
-		p.consumeUntil(&root, p.pos+1)
-	}
-	root.node(p.body())
-	return p.file(root)
-}
-
 type bodyFrame struct {
 	block     nodeBuilder
 	body      nodeBuilder
