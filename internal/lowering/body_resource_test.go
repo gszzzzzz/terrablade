@@ -73,6 +73,7 @@ func TestDeepAndWideBodies(t *testing.T) {
 		strings.Repeat("b {\n", 512) + "a=x\n" + strings.Repeat("}\n", 512),
 		wideBody(10000),
 		"b" + strings.Repeat(" label", 20000) + " {}\n",
+		"b" + strings.Repeat(" /*header*/ label", 20000) + " {}\n",
 	} {
 		output := renderFile(t, source, 30)
 		assertFileContent(t, source, output)
@@ -108,8 +109,9 @@ func TestConcurrentFileLowering(t *testing.T) {
 func BenchmarkFileLowering(b *testing.B) {
 	for _, count := range []int{1000, 5000, 10000} {
 		for name, source := range map[string]string{
-			"wide": wideBody(count),
-			"deep": strings.Repeat("b {\n", count) + "a=x\n" + strings.Repeat("}\n", count),
+			"wide":   wideBody(count),
+			"deep":   strings.Repeat("b {\n", count) + "a=x\n" + strings.Repeat("}\n", count),
+			"header": "b" + strings.Repeat(" /*header*/ label", count) + " {}\n",
 		} {
 			b.Run(name+"/"+strconv.Itoa(count), func(b *testing.B) {
 				result := syntax.Parse([]byte(source))
