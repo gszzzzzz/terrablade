@@ -448,7 +448,8 @@ func TestExpressionDepthBoundaries(t *testing.T) {
 }
 
 func TestFlatBinaryChainDoesNotHitRecursionLimit(t *testing.T) {
-	source := []byte(strings.Repeat("a + ", 299) + "a")
+	const terms = maxRecursiveExpressionDepth * 8
+	source := []byte(strings.Repeat("a + ", terms-1) + "a")
 	file := parseExpressionSource(source)
 	assertExpressionPartition(t, source, file)
 	if len(file.diagnostics) != 0 {

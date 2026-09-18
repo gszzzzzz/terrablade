@@ -36,26 +36,26 @@ func (p *parser) steps(parent *nodeBuilder, context expressionContext, mode trav
 			switch p.peek(context) {
 			case Identifier:
 				p.consumeLookahead(&b, context)
-				parent.node(p.finish(AttributeAccess, b))
+				parent.node(b.finish(AttributeAccess))
 			case Number:
 				p.number(&b, context, true)
-				parent.node(p.finish(LegacyIndexAccess, b))
+				parent.node(b.finish(LegacyIndexAccess))
 			case Star:
 				if mode == attributeTraversalSteps {
 					// Nested .* is invalid within a legacy projection. A preceding
 					// bracket step would already have ended that projection.
 					p.report(NestedAttributeSplat, p.tokens[p.look(context)].span)
 					p.consumeLookahead(&b, context)
-					parent.node(p.finish(Error, b))
+					parent.node(b.finish(Error))
 					continue
 				}
 				p.consumeLookahead(&b, context)
 				// Bracket indexing stays outside this legacy projection as a sibling.
 				p.steps(&b, context, attributeTraversalSteps)
-				parent.node(p.finish(AttributeSplat, b))
+				parent.node(b.finish(AttributeSplat))
 			default:
 				p.report(ExpectedAttributeName, p.tokens[p.look(context)].span)
-				parent.node(p.finish(Error, b))
+				parent.node(b.finish(Error))
 				return
 			}
 			continue
@@ -69,11 +69,11 @@ func (p *parser) steps(parent *nodeBuilder, context expressionContext, mode trav
 				// Every suffix projects per element, so it stays inside this splat.
 				p.steps(&b, context, allTraversalSteps)
 			}
-			parent.node(p.finish(FullSplat, b))
+			parent.node(b.finish(FullSplat))
 		} else {
 			p.operand(&b, 0, delimitedExpression)
 			p.expect(&b, CloseBracket, ExpectedClosingBracket, delimitedExpression)
-			parent.node(p.finish(IndexAccess, b))
+			parent.node(b.finish(IndexAccess))
 		}
 	}
 }

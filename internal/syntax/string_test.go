@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestKindString(t *testing.T) {
+func TestTokenKindString(t *testing.T) {
 	want := []string{
 		"Invalid",
 		"EOF",
@@ -56,7 +56,7 @@ func TestKindString(t *testing.T) {
 		"HeredocMarker",
 		"HeredocEndMarker",
 	}
-	assertEnumNames(t, want, uint8(kindCount), func(value uint8) string { return TokenKind(value).String() })
+	assertEnumNames(t, want, uint8(tokenKindCount), func(value uint8) string { return TokenKind(value).String() })
 	if got := TokenKind(255).String(); got != "TokenKind(255)" {
 		t.Fatalf("unknown TokenKind = %q, want %q", got, "TokenKind(255)")
 	}

@@ -25,7 +25,7 @@ func (p *parser) operand(b *nodeBuilder, minimum int, context expressionContext)
 	switch p.tokens[i].kind {
 	case EOF, CloseParen, CloseBracket, CloseBrace, Comma, Colon, Newline, LineComment:
 		p.report(ExpectedExpression, p.tokens[i].span)
-		b.node(p.finish(Error, p.begin()))
+		b.node(p.begin().finish(Error))
 		return
 	}
 	p.consumeUntil(b, i)
@@ -42,7 +42,7 @@ func (p *parser) expression(minimum int, context expressionContext) SyntaxNode {
 		// cursor: this boundary makes progress, while File recovers the remainder.
 		p.consumeLookahead(&b, context)
 		p.haltAtLimit(span)
-		return p.finish(Error, b)
+		return b.finish(Error)
 	}
 	p.depth++
 	defer func() { p.depth-- }()
@@ -59,7 +59,7 @@ func (p *parser) expression(minimum int, context expressionContext) SyntaxNode {
 			if p.expect(&b, Colon, ExpectedConditionalColon, context) {
 				p.operand(&b, 0, context)
 			}
-			left = p.finish(ConditionalExpression, b)
+			left = b.finish(ConditionalExpression)
 			continue
 		}
 		power := binaryPower(kind)
@@ -74,7 +74,7 @@ func (p *parser) expression(minimum int, context expressionContext) SyntaxNode {
 		// A same-precedence operator cannot enter the RHS. This loop consumes it
 		// next, wrapping the previous result on the left rather than the right.
 		p.operand(&b, power+1, context)
-		left = p.finish(BinaryExpression, b)
+		left = b.finish(BinaryExpression)
 	}
 	return left
 }
@@ -136,12 +136,12 @@ func (p *parser) prefix(context expressionContext) SyntaxNode {
 		p.report(ExpectedExpression, token.span)
 		p.consumeLookahead(&b, context)
 	}
-	left := p.finish(kind, b)
+	left := b.finish(kind)
 	if p.peek(context) == Dot || p.peek(context) == OpenBracket {
 		b = nodeBuilder{start: left.span.Start}
 		b.node(left)
 		p.steps(&b, context, allTraversalSteps)
-		left = p.finish(TraversalExpression, b)
+		left = b.finish(TraversalExpression)
 	}
 	return left
 }
@@ -227,7 +227,7 @@ func (p *parser) recoverArgument(parent *nodeBuilder) {
 		switch p.peek(delimitedExpression) {
 		case EOF, Comma, CloseParen, CloseBracket, CloseBrace:
 			if len(b.children) > 0 {
-				parent.node(p.finish(Error, b))
+				parent.node(b.finish(Error))
 			}
 			return
 		}

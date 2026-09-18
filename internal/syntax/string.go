@@ -2,7 +2,7 @@ package syntax
 
 import "strconv"
 
-var kindNames = [kindCount]string{
+var tokenKindNames = [tokenKindCount]string{
 	Invalid:             "Invalid",
 	EOF:                 "EOF",
 	BOM:                 "BOM",
@@ -98,8 +98,8 @@ var diagnosticKindNames = [diagnosticKindCount]string{
 
 // String returns the source-facing name used in diagnostics and debug output.
 func (k TokenKind) String() string {
-	if k < kindCount && kindNames[k] != "" {
-		return kindNames[k]
+	if k < tokenKindCount && tokenKindNames[k] != "" {
+		return tokenKindNames[k]
 	}
 	return "TokenKind(" + strconv.FormatUint(uint64(k), 10) + ")"
 }

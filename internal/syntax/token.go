@@ -62,7 +62,7 @@ const (
 	// HeredocEndMarker includes the closing line's indentation and trailing
 	// whitespace; its LF/CRLF is a separate Newline token.
 	HeredocEndMarker
-	kindCount
+	tokenKindCount
 )
 
 // Span is a half-open byte interval [Start, End) in the original source.

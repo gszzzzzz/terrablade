@@ -56,7 +56,7 @@ func TestParserCursorPreservesTriviaAndEOF(t *testing.T) {
 	p.consumeUntil(&root, p.look(delimitedExpression))
 	expression := p.begin()
 	p.consumeLookahead(&expression, lineExpression)
-	root.node(p.finish(LiteralExpression, expression))
+	root.node(expression.finish(LiteralExpression))
 	if p.peek(lineExpression) != LineComment {
 		t.Fatal("line comment must remain outside the expression")
 	}
@@ -182,7 +182,7 @@ func TestLimitStopsGrammarAndRetainsUnparsedTokens(t *testing.T) {
 	root := p.begin()
 	variable := p.begin()
 	p.consumeLookahead(&variable, lineExpression)
-	root.node(p.finish(VariableExpression, variable))
+	root.node(variable.finish(VariableExpression))
 	position := p.pos
 	limitSpan := p.tokens[p.look(lineExpression)].span
 	p.haltAtLimit(limitSpan)

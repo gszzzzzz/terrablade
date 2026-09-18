@@ -152,7 +152,7 @@ func (p *parser) haltAtLimit(span Span) {
 	p.halted = true
 }
 
-func (p *parser) finish(kind NodeKind, b nodeBuilder) SyntaxNode {
+func (b nodeBuilder) finish(kind NodeKind) SyntaxNode {
 	span := Span{Start: b.start, End: b.start}
 	if len(b.children) > 0 {
 		span.End = b.children[len(b.children)-1].Span().End
@@ -195,7 +195,7 @@ func (p *parser) retainRemainder(root *nodeBuilder) {
 		}
 		rest := p.begin()
 		p.retainUntil(&rest, end)
-		root.node(p.finish(Error, rest))
+		root.node(rest.finish(Error))
 	}
 	p.retainUntil(root, len(p.tokens)-1)
 }

@@ -82,6 +82,17 @@ func TestLexTokens(t *testing.T) {
 			},
 		},
 		{
+			"invalid heredoc opener remains less-than tokens",
+			"a <<b",
+			[]tokenText{
+				{Identifier, "a"},
+				{Whitespace, " "},
+				{Less, "<"},
+				{Less, "<"},
+				{Identifier, "b"},
+			},
+		},
+		{
 			"trivia",
 			" \t\t \n\r\n\n",
 			[]tokenText{

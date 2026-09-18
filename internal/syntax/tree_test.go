@@ -16,16 +16,14 @@ func TestFileOwnsSourceAndTree(t *testing.T) {
 	for i := range source {
 		source[i] = 'z'
 	}
+	var zero SyntaxNode
+	if zero.Kind() != InvalidNode {
+		t.Fatal("zero node must have the invalid kind")
+	}
 	child := file.root.Child(0).(SyntaxNode)
-	child = SyntaxNode{}
-	if child.Kind() != InvalidNode {
-		t.Fatal("zero node must not claim to be an expression")
-	}
+	child.kind = InvalidNode
 	root := file.root
-	root = SyntaxNode{}
-	if root.Kind() != InvalidNode {
-		t.Fatal("zero node must not claim to be a file")
-	}
+	root.kind = InvalidNode
 	assertFilePartition(t, original, file)
 	first := file.root.Child(0).(SyntaxNode)
 	if first.Kind() != BinaryExpression {
