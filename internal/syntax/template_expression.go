@@ -70,39 +70,12 @@ func (p *parser) templateSequenceEnd(b *nodeBuilder) {
 	kind := p.peek(delimitedExpression)
 	if kind != TemplateSequenceEnd && kind != StripMarker && kind != EOF {
 		p.report(ExpectedTemplateSequenceEnd, p.tokens[p.look(delimitedExpression)].span)
-		p.recoverTemplateSequence(b)
+		p.recoverUntil(b, delimitedExpression, templateBoundaries)
 	}
 	if p.peek(delimitedExpression) == StripMarker {
 		p.consumeLookahead(b, delimitedExpression)
 	}
 	if p.peek(delimitedExpression) == TemplateSequenceEnd {
 		p.consumeLookahead(b, delimitedExpression)
-	}
-}
-
-// Expression closers such as ')' are malformed inside a sequence's remainder,
-// but an outer template closer must survive. Balanced nested constructs are
-// skipped without mistaking an inner interpolation's '}' for this sequence's end.
-func (p *parser) recoverTemplateSequence(parent *nodeBuilder) {
-	switch p.peek(delimitedExpression) {
-	case EOF, TemplateSequenceEnd, StripMarker, QuoteClose, HeredocEndMarker:
-		return
-	}
-	p.consumeUntil(parent, p.look(delimitedExpression))
-	b := p.begin()
-	for {
-		switch p.peek(delimitedExpression) {
-		case EOF, TemplateSequenceEnd, StripMarker, QuoteClose, HeredocEndMarker:
-			if len(p.pending) > b.mark {
-				parent.node(b.finish(Error))
-			}
-			return
-		}
-		p.consumeUntil(&b, p.look(delimitedExpression))
-		if closing(p.current().kind) != Invalid {
-			p.skipConstruct(&b)
-		} else {
-			p.consumeLookahead(&b, delimitedExpression)
-		}
 	}
 }

@@ -21,9 +21,7 @@ func parseExpressionSource(source []byte) syntaxFile {
 // and trailing trivia remains available to the enclosing structure.
 func (p *parser) operand(b *nodeBuilder, minimum int, context expressionContext) {
 	i := p.look(context)
-	switch p.tokens[i].kind {
-	case EOF, CloseParen, CloseBracket, CloseBrace, Comma, Colon, Arrow, Ellipsis,
-		TemplateSequenceEnd, StripMarker, QuoteClose, HeredocEndMarker, Newline, LineComment:
+	if operandTerminators.has(p.tokens[i].kind) {
 		p.report(ExpectedExpression, p.tokens[i].span)
 		b.node(p.begin().finish(Error))
 		return
@@ -201,23 +199,21 @@ func (p *parser) call(b *nodeBuilder, context expressionContext) {
 			return
 		}
 		p.operand(b, 0, delimitedExpression)
-		switch p.peek(delimitedExpression) {
-		case CloseParen:
-			p.consumeLookahead(b, delimitedExpression)
+		kind := p.peek(delimitedExpression)
+		switch {
+		case expressionBoundaries.has(kind):
+			p.expect(b, CloseParen, ExpectedClosingParen, delimitedExpression)
 			return
-		case Ellipsis:
+		case kind == Ellipsis:
 			// Expansion is final: a following comma must not reopen the argument loop.
 			p.consumeLookahead(b, delimitedExpression)
 			p.expect(b, CloseParen, ExpectedClosingParen, delimitedExpression)
 			return
-		case Comma:
+		case kind == Comma:
 			p.consumeLookahead(b, delimitedExpression)
-		case EOF, CloseBracket, CloseBrace:
-			p.expect(b, CloseParen, ExpectedClosingParen, delimitedExpression)
-			return
 		default:
 			p.report(ExpectedArgumentSeparator, p.tokens[p.look(delimitedExpression)].span)
-			p.recoverArgument(b)
+			p.recoverUntil(b, delimitedExpression, itemBoundaries)
 			if p.peek(delimitedExpression) != Comma {
 				p.expect(b, CloseParen, ExpectedClosingParen, delimitedExpression)
 				return
@@ -225,83 +221,4 @@ func (p *parser) call(b *nodeBuilder, context expressionContext) {
 			p.consumeLookahead(b, delimitedExpression)
 		}
 	}
-}
-
-// recoverArgument preserves malformed material until a separator or closer.
-// The next argument may still be parsed. Every non-boundary iteration consumes
-// at least one token; missing expressions can return without consuming only when
-// their caller will consume the delimiter or leave this production.
-func (p *parser) recoverArgument(parent *nodeBuilder) {
-	p.consumeUntil(parent, p.look(delimitedExpression))
-	b := p.begin()
-	for {
-		switch p.peek(delimitedExpression) {
-		case EOF, Comma, CloseParen, CloseBracket, CloseBrace:
-			if len(p.pending) > b.mark {
-				parent.node(b.finish(Error))
-			}
-			return
-		}
-		p.consumeLookahead(&b, delimitedExpression)
-	}
-}
-
-// skipConstruct retains one balanced construct as raw tokens without recursion
-// during error recovery. Nested template/interpolation delimiters remain visible
-// in the lexical stream.
-func (p *parser) skipConstruct(b *nodeBuilder) {
-	if p.halted {
-		return
-	}
-	// Raw tokens preserve template whitespace and delimiters in the Error subtree;
-	// expression lookahead would interpret trivia in the wrong sub-language.
-	// An unterminated construct still ends at its last non-trivia token, so the
-	// trailing trivia of the file stays with the parent like any other node.
-	var ends []TokenKind
-	end := p.pos
-	for i := p.pos; p.tokens[i].kind != EOF; i++ {
-		kind := p.tokens[i].kind
-		if close := closing(kind); close != Invalid {
-			ends = append(ends, close)
-		} else if len(ends) > 0 && ends[len(ends)-1] == kind {
-			ends = ends[:len(ends)-1]
-		} else if isClosingDelimiter(kind) {
-			// A mismatched closer can belong to an enclosing expression or
-			// template. Leave it available instead of swallowing the outer tail.
-			break
-		}
-		if !isTrivia(kind) {
-			end = i + 1
-		}
-		if len(ends) == 0 {
-			break
-		}
-	}
-	p.consumeUntil(b, end)
-}
-
-func isClosingDelimiter(kind TokenKind) bool {
-	switch kind {
-	case CloseParen, CloseBracket, CloseBrace, QuoteClose, HeredocEndMarker, TemplateSequenceEnd:
-		return true
-	}
-	return false
-}
-
-func closing(kind TokenKind) TokenKind {
-	switch kind {
-	case OpenParen:
-		return CloseParen
-	case OpenBracket:
-		return CloseBracket
-	case OpenBrace:
-		return CloseBrace
-	case QuoteOpen:
-		return QuoteClose
-	case HeredocOpen:
-		return HeredocEndMarker
-	case InterpolationOpen, DirectiveOpen:
-		return TemplateSequenceEnd
-	}
-	return Invalid
 }

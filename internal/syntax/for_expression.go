@@ -11,7 +11,7 @@ func (p *parser) forExpression(b *nodeBuilder) {
 	p.consumeLookahead(b, delimitedExpression) // opening bracket or brace
 	p.consumeLookahead(b, delimitedExpression) // contextual for
 	if !p.forIntroduction(b) || !p.expect(b, Colon, ExpectedForColon, delimitedExpression) {
-		p.recoverDelimited(b)
+		p.recoverUntil(b, delimitedExpression, expressionBoundaries)
 		p.expect(b, close, missingClose, delimitedExpression)
 		return
 	}
@@ -39,7 +39,7 @@ func (p *parser) forExpression(b *nodeBuilder) {
 	if !p.expect(b, close, missingClose, delimitedExpression) {
 		// A for-expression has no item separators. Recover its remaining tail as
 		// one region rather than interpreting a stray comma as a new projection.
-		p.recoverDelimited(b)
+		p.recoverUntil(b, delimitedExpression, expressionBoundaries)
 		if p.peek(delimitedExpression) == close {
 			p.consumeLookahead(b, delimitedExpression)
 		}
@@ -70,35 +70,4 @@ func (p *parser) forIntroduction(b *nodeBuilder) bool {
 func (p *parser) keyword(word string, context expressionContext) bool {
 	token := p.tokens[p.look(context)]
 	return token.kind == Identifier && p.source[token.span.Start:token.span.End] == word
-}
-
-// recoverDelimited retains malformed expression material up to a closer owned
-// by this or an enclosing production. Nested constructs are kept intact, and
-// commas are ordinary malformed material rather than recovery boundaries.
-func (p *parser) recoverDelimited(parent *nodeBuilder) {
-	switch p.peek(delimitedExpression) {
-	case EOF, CloseParen, CloseBracket, CloseBrace, TemplateSequenceEnd,
-		QuoteClose, HeredocEndMarker, StripMarker:
-		// Nothing malformed precedes this boundary. In particular, unused trivia
-		// at EOF must remain available to the enclosing production or File.
-		return
-	}
-	p.consumeUntil(parent, p.look(delimitedExpression))
-	b := p.begin()
-	for {
-		switch p.peek(delimitedExpression) {
-		case EOF, CloseParen, CloseBracket, CloseBrace, TemplateSequenceEnd,
-			QuoteClose, HeredocEndMarker, StripMarker:
-			if len(p.pending) > b.mark {
-				parent.node(b.finish(Error))
-			}
-			return
-		}
-		p.consumeUntil(&b, p.look(delimitedExpression))
-		if closing(p.current().kind) != Invalid {
-			p.skipConstruct(&b)
-		} else {
-			p.consumeLookahead(&b, delimitedExpression)
-		}
-	}
 }

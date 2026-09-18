@@ -214,11 +214,13 @@ func TestLimitStopsGrammarAndRetainsUnparsedTokens(t *testing.T) {
 	p.report(ExpectedExpression, limitSpan)
 	p.call(&root, lineExpression)
 	p.steps(&root, lineExpression, allTraversalSteps)
-	p.recoverArgument(&root)
+	p.recoverUntil(&root, delimitedExpression, itemBoundaries)
 	p.skipConstruct(&root)
 	p.tuple(&root)
 	p.object(&root)
-	p.recoverCollection(&root, lineExpression)
+	p.recoverUntil(&root, lineExpression, itemBoundaries)
+	p.recoverUntil(&root, delimitedExpression, expressionBoundaries)
+	p.recoverUntil(&root, delimitedExpression, templateBoundaries)
 	if p.pos != position {
 		t.Fatal("grammar consumed tokens after shutdown")
 	}

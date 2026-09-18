@@ -9,7 +9,7 @@ func (p *parser) templateDirective() (SyntaxNode, string) {
 	keyword := p.tokens[p.look(delimitedExpression)]
 	if keyword.kind != Identifier {
 		p.report(ExpectedTemplateDirective, keyword.span)
-		p.recoverTemplateSequence(&b)
+		p.recoverUntil(&b, delimitedExpression, templateBoundaries)
 		p.templateSequenceEnd(&b)
 		return b.finish(TemplateDirective), ""
 	}
@@ -20,13 +20,13 @@ func (p *parser) templateDirective() (SyntaxNode, string) {
 		p.operand(&b, 0, delimitedExpression)
 	case "for":
 		if !p.forIntroduction(&b) {
-			p.recoverTemplateSequence(&b)
+			p.recoverUntil(&b, delimitedExpression, templateBoundaries)
 		}
 	case "else", "endif", "endfor":
 		// These boundaries contain no expression; the sequence closer follows.
 	default:
 		p.report(UnknownTemplateDirective, keyword.span)
-		p.recoverTemplateSequence(&b)
+		p.recoverUntil(&b, delimitedExpression, templateBoundaries)
 		name = ""
 	}
 	p.templateSequenceEnd(&b)

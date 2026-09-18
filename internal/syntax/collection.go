@@ -12,29 +12,23 @@ func (p *parser) collectionFor() bool {
 func (p *parser) tuple(b *nodeBuilder) {
 	p.consumeLookahead(b, delimitedExpression)
 	for {
-		switch p.peek(delimitedExpression) {
-		case CloseBracket:
-			p.consumeLookahead(b, delimitedExpression)
-			return
-		case EOF, CloseParen, CloseBrace, TemplateSequenceEnd, QuoteClose, HeredocEndMarker, StripMarker:
+		if expressionBoundaries.has(p.peek(delimitedExpression)) {
 			p.expect(b, CloseBracket, ExpectedClosingBracket, delimitedExpression)
 			return
 		}
 		p.operand(b, 0, delimitedExpression)
-		switch p.peek(delimitedExpression) {
-		case CloseBracket:
-			p.consumeLookahead(b, delimitedExpression)
-			return
-		case Comma:
-			p.consumeLookahead(b, delimitedExpression)
-		case EOF, CloseParen, CloseBrace, TemplateSequenceEnd, QuoteClose, HeredocEndMarker, StripMarker:
+		kind := p.peek(delimitedExpression)
+		switch {
+		case expressionBoundaries.has(kind):
 			p.expect(b, CloseBracket, ExpectedClosingBracket, delimitedExpression)
 			return
+		case kind == Comma:
+			p.consumeLookahead(b, delimitedExpression)
 		default:
 			// Upstream requires commas even when elements occupy separate lines;
 			// a newline inside a tuple only continues its current expression.
 			p.report(ExpectedTupleSeparator, p.tokens[p.look(delimitedExpression)].span)
-			p.recoverCollection(b, delimitedExpression)
+			p.recoverUntil(b, delimitedExpression, itemBoundaries)
 			if p.peek(delimitedExpression) != Comma {
 				p.expect(b, CloseBracket, ExpectedClosingBracket, delimitedExpression)
 				return
@@ -49,37 +43,32 @@ func (p *parser) object(b *nodeBuilder) {
 	for {
 		// Between items, newlines are separators. Leave them uncommitted until
 		// another item or the closer appears, preserving outer trivia at EOF.
-		switch p.peek(delimitedExpression) {
-		case CloseBrace:
-			p.consumeLookahead(b, delimitedExpression)
-			return
-		case EOF, CloseParen, CloseBracket, TemplateSequenceEnd, QuoteClose, HeredocEndMarker, StripMarker:
+		if expressionBoundaries.has(p.peek(delimitedExpression)) {
 			p.expect(b, CloseBrace, ExpectedClosingBrace, delimitedExpression)
 			return
 		}
 		p.consumeUntil(b, p.look(delimitedExpression))
 		separated := p.objectItem(b)
-		switch p.peek(lineExpression) {
-		case CloseBrace:
-			p.consumeLookahead(b, lineExpression)
-			return
-		case Comma:
-			p.consumeLookahead(b, lineExpression)
-		case Newline, LineComment:
-			// The next loop commits these to ObjectExpression, never ObjectItem.
-		case EOF, CloseParen, CloseBracket, TemplateSequenceEnd, QuoteClose, HeredocEndMarker, StripMarker:
+		kind := p.peek(lineExpression)
+		switch {
+		case expressionBoundaries.has(kind):
 			p.expect(b, CloseBrace, ExpectedClosingBrace, lineExpression)
 			return
+		case kind == Comma:
+			p.consumeLookahead(b, lineExpression)
+		case lineSeparators.has(kind):
+			// The next loop commits these to ObjectExpression, never ObjectItem.
 		default:
 			// A missing key/value separator already diagnosed this position.
 			if separated {
 				p.report(ExpectedObjectItemSeparator, p.tokens[p.look(lineExpression)].span)
 			}
-			p.recoverCollection(b, lineExpression)
-			switch p.peek(lineExpression) {
-			case Comma:
+			p.recoverUntil(b, lineExpression, itemBoundaries)
+			kind = p.peek(lineExpression)
+			switch {
+			case kind == Comma:
 				p.consumeLookahead(b, lineExpression)
-			case Newline, LineComment:
+			case lineSeparators.has(kind):
 			default:
 				p.expect(b, CloseBrace, ExpectedClosingBrace, lineExpression)
 				return
@@ -105,29 +94,4 @@ func (p *parser) objectItem(parent *nodeBuilder) bool {
 	}
 	parent.node(b.finish(ObjectItem))
 	return separated
-}
-
-// recoverCollection keeps the next separator/closer for the collection loop.
-// Balanced nested constructs are skipped together so their commas and newlines
-// cannot accidentally restart the outer collection. Trivia outside the malformed
-// region stays with its parent, as it does around ordinary expression nodes.
-func (p *parser) recoverCollection(parent *nodeBuilder, context expressionContext) {
-	p.consumeUntil(parent, p.look(context))
-	b := p.begin()
-	for {
-		switch p.peek(context) {
-		case EOF, Comma, CloseParen, CloseBracket, CloseBrace, Newline, LineComment,
-			TemplateSequenceEnd, QuoteClose, HeredocEndMarker, StripMarker:
-			if len(p.pending) > b.mark {
-				parent.node(b.finish(Error))
-			}
-			return
-		}
-		p.consumeUntil(&b, p.look(context))
-		if closing(p.current().kind) != Invalid {
-			p.skipConstruct(&b)
-		} else {
-			p.consumeLookahead(&b, context)
-		}
-	}
 }
