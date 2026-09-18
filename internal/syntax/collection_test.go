@@ -141,9 +141,9 @@ func TestTupleDiagnostics(t *testing.T) {
 			"initial for stays reserved after trivia",
 			"[ # lead\n for, x]",
 			[]Diagnostic{
-				{UnsupportedExpression, Span{0, 1}},
+				{ExpectedForVariable, Span{13, 14}},
 			},
-			`File(Error("[", "for", ",", "x", "]"))`,
+			`File(For("[", "for", Error(",", "x"), "]"))`,
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -333,9 +333,9 @@ func TestObjectDiagnostics(t *testing.T) {
 			"first for stays reserved after trivia",
 			"{ # lead\n for=1}",
 			[]Diagnostic{
-				{UnsupportedExpression, Span{0, 1}},
+				{ExpectedForVariable, Span{13, 14}},
 			},
-			`File(Error("{", "for", "=", "1", "}"))`,
+			`File(For("{", "for", Error("=", "1"), "}"))`,
 		},
 		{
 			"quoted keys remain deferred",

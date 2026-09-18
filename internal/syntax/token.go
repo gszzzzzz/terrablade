@@ -101,6 +101,12 @@ const (
 	ExpectedClosingBrace
 	ExpectedObjectValueSeparator
 	ExpectedObjectItemSeparator
+	ExpectedForVariable
+	ExpectedForIn
+	ExpectedForColon
+	ExpectedForArrow
+	UnexpectedForKey
+	UnexpectedForGrouping
 	diagnosticKindCount
 )
 

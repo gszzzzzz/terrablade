@@ -72,6 +72,7 @@ var nodeKindNames = [nodeKindCount]string{
 	TupleExpression:         "TupleExpression",
 	ObjectExpression:        "ObjectExpression",
 	ObjectItem:              "ObjectItem",
+	ForExpression:           "ForExpression",
 }
 
 var diagnosticKindNames = [diagnosticKindCount]string{
@@ -101,6 +102,12 @@ var diagnosticKindNames = [diagnosticKindCount]string{
 	ExpectedClosingBrace:         "ExpectedClosingBrace",
 	ExpectedObjectValueSeparator: "ExpectedObjectValueSeparator",
 	ExpectedObjectItemSeparator:  "ExpectedObjectItemSeparator",
+	ExpectedForVariable:          "ExpectedForVariable",
+	ExpectedForIn:                "ExpectedForIn",
+	ExpectedForColon:             "ExpectedForColon",
+	ExpectedForArrow:             "ExpectedForArrow",
+	UnexpectedForKey:             "UnexpectedForKey",
+	UnexpectedForGrouping:        "UnexpectedForGrouping",
 }
 
 // String returns the source-facing name used in diagnostics and debug output.

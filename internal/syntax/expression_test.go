@@ -288,12 +288,6 @@ func TestExpressionDiagnostics(t *testing.T) {
 			`File(Error("<<", "END", "hello\n", "END"))`,
 		},
 		{
-			"for expression deferred",
-			"[for a in xs : a]",
-			[]Diagnostic{{UnsupportedExpression, Span{0, 1}}},
-			`File(Error("[", "for", "a", "in", "xs", ":", "a", "]"))`,
-		},
-		{
 			"template directives deferred",
 			`"%{if a}x%{endif}"`,
 			[]Diagnostic{{UnsupportedExpression, Span{0, 1}}},
@@ -304,12 +298,6 @@ func TestExpressionDiagnostics(t *testing.T) {
 			`a + "x" + b`,
 			[]Diagnostic{{UnsupportedExpression, Span{4, 5}}},
 			`File(Binary(Binary(Variable("a"), "+", Error("\"", "x", "\"")), "+", Variable("b")))`,
-		},
-		{
-			"unterminated deferred construct",
-			"[for a in xs : [1,\n\n",
-			[]Diagnostic{{UnsupportedExpression, Span{0, 1}}},
-			`File(Error("[", "for", "a", "in", "xs", ":", "[", "1", ","))`,
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -332,17 +320,17 @@ func assertDiagnosticsAndShape(t *testing.T, source string, diagnostics []Diagno
 	}
 }
 
-func TestUnterminatedUnsupportedLeavesTrailingTrivia(t *testing.T) {
+func TestUnterminatedExpressionLeavesTrailingTrivia(t *testing.T) {
 	// Quoted and heredoc bodies absorb whitespace into TemplateText, so only
 	// bracketed constructs can be followed by config-level trivia at EOF.
 	for _, source := range []string{"[for ", "{for # c\n", "{for a in xs : a => [1,\n\n", "[for a in xs : \"x\" /* c */\n"} {
 		t.Run(source, func(t *testing.T) {
 			file := parseExpressionSource([]byte(source))
 			assertExpressionPartition(t, []byte(source), file)
-			if !slices.ContainsFunc(file.diagnostics, func(d Diagnostic) bool { return d.Kind == UnsupportedExpression }) {
-				t.Fatalf("diagnostics = %+v, want UnsupportedExpression", file.diagnostics)
+			if len(file.diagnostics) == 0 {
+				t.Fatal("unterminated expression must have a diagnostic")
 			}
-			// The Error node is the first child; trivia after its last real token
+			// The expression is the first child; trivia after its last real token
 			// must follow it at File level, exactly as after a parenthesized error.
 			node, _ := file.root.Child(0).Node()
 			last, _ := node.Child(node.ChildCount() - 1).Token()
@@ -392,6 +380,9 @@ func FuzzExpression(f *testing.F) {
 		"[1 f(2, 3), 4]",
 		"{a=1\nb=[2, {c:3}]}[key]",
 		"{a=1 bad # next\n b=2}",
+		"[for k,v in xs : k+v if v]",
+		"{for v in xs : v.k => v... if v}",
+		"[for x, : [1, 2]]",
 		`f("${a}", [for a in b : a])`,
 		"a + /*\xff",
 		strings.Repeat("!", maxRecursiveExpressionDepth+1) + "a",
@@ -476,6 +467,7 @@ func expressionShape(file syntaxFile, current SyntaxElement) string {
 			AttributeSplat: "AttributeSplat", FullSplat: "FullSplat",
 			TupleExpression:  "Tuple",
 			ObjectExpression: "Object", ObjectItem: "Item",
+			ForExpression: "For",
 		}
 		var children []string
 		for i := range element.ChildCount() {
@@ -566,6 +558,12 @@ func TestExpressionDepthBoundaries(t *testing.T) {
 		{
 			"object recursion",
 			func(count int) string { return strings.Repeat("{x=", count) + "a" + strings.Repeat("}", count) },
+		},
+		{
+			"for-expression recursion",
+			func(count int) string {
+				return strings.Repeat("[for x in xs : ", count) + "a" + strings.Repeat("]", count)
+			},
 		},
 		{
 			"conditional recursion",

@@ -23,7 +23,8 @@ func parseExpressionSource(source []byte) syntaxFile {
 func (p *parser) operand(b *nodeBuilder, minimum int, context expressionContext) {
 	i := p.look(context)
 	switch p.tokens[i].kind {
-	case EOF, CloseParen, CloseBracket, CloseBrace, Comma, Colon, Newline, LineComment:
+	case EOF, CloseParen, CloseBracket, CloseBrace, Comma, Colon, Arrow, Ellipsis,
+		TemplateSequenceEnd, StripMarker, QuoteClose, HeredocEndMarker, Newline, LineComment:
 		p.report(ExpectedExpression, p.tokens[i].span)
 		b.node(p.begin().finish(Error))
 		return
@@ -131,8 +132,8 @@ func (p *parser) prefix(context expressionContext) SyntaxNode {
 		kind = UnaryExpression
 	case OpenBracket, OpenBrace:
 		if p.collectionFor() {
-			p.report(UnsupportedExpression, token.span)
-			p.skipConstruct(&b)
+			p.forExpression(&b)
+			kind = ForExpression
 		} else if token.kind == OpenBracket {
 			p.tuple(&b)
 			kind = TupleExpression

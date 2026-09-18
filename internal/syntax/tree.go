@@ -24,6 +24,7 @@ const (
 	TupleExpression
 	ObjectExpression
 	ObjectItem
+	ForExpression
 	nodeKindCount
 )
 
