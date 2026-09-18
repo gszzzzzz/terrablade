@@ -2,6 +2,7 @@ package lowering_test
 
 import (
 	"context"
+	"os"
 	"os/exec"
 	"reflect"
 	"strings"
@@ -41,6 +42,10 @@ func TestExpressionNormalization(t *testing.T) {
 		{"directive remains", `"%{if true}${a}%{endif}"`, `"%{if true}${a}%{endif}"`},
 		{"nested general template", `"${"prefix ${"${a}"}"}"`, `"prefix ${a}"`},
 		{"delimiter comments", `"${/*lead*/ a /*tail*/}"`, `(/*lead*/ a /*tail*/)`},
+		{"strip comments", `"${~/*lead*/ a /*tail*/~}"`, `(/*lead*/ a /*tail*/)`},
+		{"leading line comment", "\"${# lead\na}\"", "( # lead\n  a)"},
+		{"trailing line comment", "\"${a # tail\n}\"", "(a # tail\n)"},
+		{"line comments at both edges", "\"${# lead\na # tail\n}\"", "(   # lead\n  a # tail\n)"},
 		{"duplicate comments", `"${/*same*/ "${/*same*/ a /*same*/}" /*same*/}"`, `(/*same*/ (/*same*/ a /*same*/) /*same*/)`},
 		{"numeric index", `foo.0.bar`, `foo[0].bar`},
 		{"consecutive numeric indices", `foo.0 .0`, `foo[0][0]`},
@@ -56,6 +61,9 @@ func TestExpressionNormalization(t *testing.T) {
 		{"unwrapped traversal comment", "\"${foo # step\n.bar}\"", "(\n  foo # step\n  .bar\n)"},
 		{"unwrapped unary comment", "\"${! # why\ntrue}\"", "(! # why\n  true)"},
 		{"unwrapped heredoc traversal", "\"${<<E\nx\nE\n[0]}\"", "(\n  <<E\nx\nE\n  [0]\n)"},
+		{"numeric index line comment", "f(foo.// index\n0)", "f(\n  foo[\n    // index\n    0\n  ],\n)"},
+		{"commented traversal in object", "{a=\"${foo # step\n.bar}\"}", "{\n  a = (\n    foo # step\n    .bar\n  ),\n}"},
+		{"commented unary in call", "f(\"${! # why\ntrue}\")", "f(\n  ! # why\n  true,\n)"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			if got := render(t, test.source, 100); got != test.want {
@@ -100,8 +108,8 @@ func TestNormalizationFileAndCST(t *testing.T) {
 // catches object-key reinterpretation, reassociation, and shifted splat scope;
 // reparsing alone would accept all three classes of semantic mistake.
 func TestNormalizationOpenTofuSemantics(t *testing.T) {
-	if _, err := exec.LookPath("tofu"); err != nil {
-		t.Skip("OpenTofu is not installed")
+	if os.Getenv("TERRABLADE_COMPARE_TOFU") != "1" {
+		t.Skip("set TERRABLADE_COMPARE_TOFU=1 to evaluate with an installed OpenTofu")
 	}
 	var comparisons []string
 	for _, source := range []string{
@@ -111,6 +119,8 @@ func TestNormalizationOpenTofuSemantics(t *testing.T) {
 		`"${10 - 3}" - 2`, `"${true ? false : true}" ? 1 : 2`,
 		`true ? "${false ? 1 : 2}" : 3`,
 		`{ "${"chosen"}" = 1 }`, `{ "${true}" = 1 }`,
+		`[for key in ["chosen"] : { "${key}" = 1 }]`,
+		`[for for in [1] : ["${for}"]]`,
 		`"${[{a=1}].0}".a`, `"${[{a=1}, {a=2}][*].a}"[0]`,
 		`"${[[1], [2]].*.0}"[0]`, `[[{a=1}],[{a=2}]].*.0.a`,
 		`[[{a=1}],[{a=2}]][*].0.a`, `[[1],[2]].0 .0`,
@@ -130,5 +140,23 @@ func TestNormalizationOpenTofuSemantics(t *testing.T) {
 	output, err := command.CombinedOutput()
 	if err != nil || strings.TrimSpace(string(output)) != "true" {
 		t.Fatalf("OpenTofu semantic comparison failed: %v\n%s", err, output)
+	}
+}
+
+func TestNormalizationOpenTofuFormatting(t *testing.T) {
+	if os.Getenv("TERRABLADE_COMPARE_TOFU") != "1" {
+		t.Skip("set TERRABLADE_COMPARE_TOFU=1 to compare with an installed OpenTofu")
+	}
+	for _, source := range []string{
+		`"${foo.0.bar}"`, `"${"${a}"}"`, `a - "${b - c}"`, `-"${a+b}"`,
+		`{"${a}"="${b}"}`, `"${x[*].a}".0`, `foo.*.0`, `foo[*].0`,
+		`"${~/*lead*/ a /*tail*/~}"`,
+		"\"${# lead\na # tail\n}\"", "\"${foo # c\n.bar}\"",
+		"f(foo.// c\n0)", "\"${{\na=1\n}}\"",
+	} {
+		for _, width := range []int{16, 80} {
+			output := renderFile(t, "value = "+source+"\n", width)
+			assertOpenTofu(t, output)
+		}
 	}
 }

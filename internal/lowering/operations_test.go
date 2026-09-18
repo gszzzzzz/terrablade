@@ -13,12 +13,16 @@ func TestOperationLayouts(t *testing.T) {
 	}{
 		{"binary spaces", "a+b*c", 80, "a + b * c"},
 		{"all binary operators", "a||b&&c==d!=e<f<=g>h>=i+j - k*l/m%n", 100, "a || b && c == d != e < f <= g > h >= i + j - k * l / m % n"},
-		{"left associative chain", "alpha + beta - gamma", 15, "(\n  alpha\n  + beta\n  - gamma\n)"},
+		{"left associative chain", "alpha + beta - gamma", 15, "(\n  alpha\n  + beta\n  -gamma\n)"},
 		{"precedence group fits independently", "alpha + beta * gamma", 17, "(\n  alpha\n  + beta * gamma\n)"},
 		{"precedence group breaks independently", "alpha + beta * gamma", 12, "(\n  alpha\n  + beta\n  * gamma\n)"},
-		{"existing parentheses share inner group", "(alpha + beta - gamma)", 15, "(\n  alpha\n  + beta\n  - gamma\n)"},
+		{"existing parentheses share inner group", "(alpha + beta - gamma)", 15, "(\n  alpha\n  + beta\n  -gamma\n)"},
 		{"binary inside call already permits newlines", "f(alpha + beta)", 12, "f(\n  alpha\n  + beta,\n)"},
-		{"safe chain shares delimiter indent", "f(alpha + beta - gamma)", 14, "f(\n  alpha\n  + beta\n  - gamma,\n)"},
+		{"safe chain shares delimiter indent", "f(alpha + beta - gamma)", 14, "f(\n  alpha\n  + beta\n  -gamma,\n)"},
+		{"line leading minus before parentheses", "a - (b - c)", 8, "(\n  a\n  -(\n    b\n    -c\n  )\n)"},
+		{"line leading minus before comment", "(a - /*c*/ b)", 8, "(\n  a\n  -/*c*/ b\n)"},
+		{"template mandatory minus line", "\"prefix ${a # c\n - b}\"", 80, "\"prefix ${a # c\n  -b}\""},
+		{"template comment after minus", "\"prefix ${a - # c\n b}\"", 80, "\"prefix ${a - # c\n  b}\""},
 		{"binary comment stays inline", "(alpha # why\n + beta)", 80, "(\n  alpha # why\n  + beta\n)"},
 		{"binary comment after operator", "(alpha + # why\n beta)", 80, "(\n  alpha\n  + # why\n  beta\n)"},
 		{"binary block comment", "a/*x*/+/*y*/b", 80, "a /*x*/ + /*y*/ b"},
@@ -104,6 +108,7 @@ func TestOperationOpenTofuCompatibility(t *testing.T) {
 		"f(foo # base\n .bar)", "[foo # base\n .bar]", "(foo # base\n .bar)",
 		"(foo /*base*/\n .bar)", "(foo.\n/*step*/bar)", "foo[* /*splat*/].bar",
 		"f(alpha + beta)", "[ready ? yes : no]", "alpha + beta * gamma",
+		"alpha + beta - gamma", "a - (b - c)", "(a - /*c*/ b)",
 		"[for x in ready ? first : second : x]", "{for x in xs:long_key=>long_value}",
 	} {
 		for _, width := range []int{1, 16, 80} {

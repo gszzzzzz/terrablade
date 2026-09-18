@@ -17,16 +17,51 @@ func syntheticParentheses(body document.Doc) document.Doc {
 // matching upstream. A same-precedence chain still shares one fit decision.
 func operationContinuation(result syntax.Result, pieces []piece, endsHeredoc bool) document.Doc {
 	parts := make([]document.Doc, 0, len(pieces)*3)
+	minus, forcedMinus := false, false
 	for _, part := range pieces {
 		style := gapStyle{empty: space, beforeComment: space, afterComment: space, requiredLine: endsHeredoc}
 		if part.token {
 			style.empty, style.afterComment = line, line
 		}
+		if minus {
+			// Upstream treats a line-leading minus as a unary token for spacing,
+			// even though the parser still sees this as binary subtraction.
+			style.empty = flatSpace
+			if forcedMinus {
+				style.empty = tight
+			}
+			for _, token := range part.before {
+				if token.Kind() == syntax.LineComment {
+					break
+				}
+				if token.Kind() == syntax.BlockComment {
+					style.beforeComment = style.empty
+					break
+				}
+			}
+		}
 		gap, end := commentGap(result, part.before, style)
 		parts = append(parts, gap, end, part.doc)
+		minus = part.token && part.kind == syntax.Minus
+		forcedMinus = style.requiredLine || operationGapHasLine(part.before)
 		endsHeredoc = part.child.endsHeredoc
 	}
 	return document.Concat(parts...)
+}
+
+func operationGapHasLine(trivia []syntax.SyntaxToken) bool {
+	comment, newline := false, false
+	for _, token := range trivia {
+		switch token.Kind() {
+		case syntax.LineComment:
+			return true
+		case syntax.BlockComment:
+			comment = true
+		case syntax.Newline:
+			newline = true
+		}
+	}
+	return comment && newline
 }
 
 func traversalSequence(result syntax.Result, pieces []piece, endsNumber, endsHeredoc bool) document.Doc {

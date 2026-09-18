@@ -252,7 +252,18 @@ func parenthesized(result syntax.Result, pieces []piece) document.Doc {
 		gap, end := commentGap(result, close.before, gapStyle{empty: soft, beforeComment: space, afterComment: soft, requiredLine: inner.child.endsHeredoc})
 		return document.Group(document.Concat(pieces[0].doc, document.Indent(document.Concat(leading, start, inner.child.body, gap)), end, close.doc))
 	}
-	leading, start := commentGap(result, inner.before, gapStyle{afterComment: space})
+	openerComment := tight
+	for _, token := range inner.before {
+		if token.Kind() == syntax.LineComment {
+			// Upstream gives an inline line comment a visible opener boundary.
+			openerComment = space
+			break
+		}
+		if token.Kind() == syntax.BlockComment {
+			break
+		}
+	}
+	leading, start := commentGap(result, inner.before, gapStyle{beforeComment: openerComment, afterComment: space})
 	gap, end := commentGap(result, close.before, gapStyle{beforeComment: space, requiredLine: inner.child.endsHeredoc})
 	return document.Concat(pieces[0].doc, document.Indent(document.Concat(leading, start, inner.doc, gap)), end, close.doc)
 }

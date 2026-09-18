@@ -15,6 +15,7 @@ const (
 	soft
 	line
 	hard
+	flatSpace // Space only when the enclosing operation remains on one line.
 )
 
 func (s spacing) doc() document.Doc {
@@ -27,6 +28,8 @@ func (s spacing) doc() document.Doc {
 		return document.Line()
 	case hard:
 		return document.HardLine()
+	case flatSpace:
+		return document.IfBreak(document.Doc{}, document.Text(" "))
 	default:
 		return document.Doc{}
 	}
