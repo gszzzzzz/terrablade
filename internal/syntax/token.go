@@ -86,9 +86,22 @@ const (
 	InvalidEscape
 	NewlineInQuotedTemplate
 	UnterminatedHeredoc
+	ExpectedExpression
+	UnexpectedToken
+	ExpectedClosingParen
+	ExpectedClosingBracket
+	ExpectedConditionalColon
+	ExpectedArgumentSeparator
+	ExpectedAttributeName
+	ExpectedFunctionName
+	ExpectedOpeningParen
+	InvalidLegacyIndex
+	NestedAttributeSplat
+	UnsupportedExpression
+	NestingLimitExceeded
 )
 
-// Diagnostic points to the source responsible for a lexical error.
+// Diagnostic points to the source responsible for a lexical or syntax error.
 // An error does not require an Invalid token: an unterminated comment, for
 // example, retains its BlockComment kind so its source remains recognizable.
 type Diagnostic struct {

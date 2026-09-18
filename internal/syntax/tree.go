@@ -7,6 +7,20 @@ type NodeKind uint8
 const (
 	InvalidNode NodeKind = iota
 	File
+	Error
+	LiteralExpression
+	VariableExpression
+	ParenthesizedExpression
+	UnaryExpression
+	BinaryExpression
+	ConditionalExpression
+	FunctionCallExpression
+	TraversalExpression
+	AttributeAccess
+	IndexAccess
+	LegacyIndexAccess
+	AttributeSplat
+	FullSplat
 )
 
 // SyntaxElement is a node or a token in source order. Trees produced by this
@@ -25,6 +39,8 @@ type SyntaxNode struct {
 	kind     NodeKind
 	span     Span
 	children []SyntaxElement
+	// height is private parser bookkeeping, not a source or semantic property.
+	height int
 }
 
 func (n SyntaxNode) syntaxElement() {}
