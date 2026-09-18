@@ -30,6 +30,10 @@ const (
 	TemplateDirective
 	TemplateIf
 	TemplateFor
+	Body
+	Attribute
+	Block
+	BlockLabel
 	nodeKindCount
 )
 

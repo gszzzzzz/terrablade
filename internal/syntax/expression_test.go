@@ -410,7 +410,7 @@ func assertExpressionPartition(t *testing.T, source []byte, file syntaxFile) {
 				errors++
 			}
 			count := element.ChildCount()
-			if element.Kind() != File && count > 0 {
+			if element.Kind() != File && element.Kind() != Body && count > 0 {
 				if token, ok := element.Child(0).Token(); ok && isTrivia(token.Kind()) {
 					t.Fatalf("%v begins with %v trivia: %s", element.Kind(), token.Kind(), expressionShape(file, element.Element()))
 				}
@@ -443,20 +443,7 @@ func expressionShape(file syntaxFile, current SyntaxElement) string {
 		span := element.Span()
 		return strconv.Quote(file.source[span.Start:span.End])
 	} else if element, ok := current.Node(); ok {
-		names := map[NodeKind]string{
-			File: "File", Error: "Error", LiteralExpression: "Literal",
-			VariableExpression: "Variable", ParenthesizedExpression: "Paren",
-			UnaryExpression: "Unary", BinaryExpression: "Binary",
-			ConditionalExpression: "Conditional", FunctionCallExpression: "Call",
-			TraversalExpression: "Traversal", AttributeAccess: "Attribute",
-			IndexAccess: "Index", LegacyIndexAccess: "LegacyIndex",
-			AttributeSplat: "AttributeSplat", FullSplat: "FullSplat",
-			TupleExpression:  "Tuple",
-			ObjectExpression: "Object", ObjectItem: "Item",
-			ForExpression:      "For",
-			TemplateExpression: "Template", TemplateInterpolation: "Interpolation",
-			TemplateDirective: "Directive", TemplateIf: "TemplateIf", TemplateFor: "TemplateFor",
-		}
+		names := shapeNodeNames
 		var children []string
 		for i := range element.ChildCount() {
 			if child := expressionShape(file, element.Child(i)); child != "" {
@@ -466,6 +453,22 @@ func expressionShape(file syntaxFile, current SyntaxElement) string {
 		return names[element.Kind()] + "(" + strings.Join(children, ", ") + ")"
 	}
 	return "<invalid>"
+}
+
+var shapeNodeNames = map[NodeKind]string{
+	File: "File", Error: "Error", LiteralExpression: "Literal",
+	VariableExpression: "Variable", ParenthesizedExpression: "Paren",
+	UnaryExpression: "Unary", BinaryExpression: "Binary",
+	ConditionalExpression: "Conditional", FunctionCallExpression: "Call",
+	TraversalExpression: "Traversal", AttributeAccess: "Attribute",
+	IndexAccess: "Index", LegacyIndexAccess: "LegacyIndex",
+	AttributeSplat: "AttributeSplat", FullSplat: "FullSplat",
+	TupleExpression:  "Tuple",
+	ObjectExpression: "Object", ObjectItem: "Item",
+	ForExpression:      "For",
+	TemplateExpression: "Template", TemplateInterpolation: "Interpolation",
+	TemplateDirective: "Directive", TemplateIf: "TemplateIf", TemplateFor: "TemplateFor",
+	Body: "Body", Attribute: "Attribute", Block: "Block", BlockLabel: "Label",
 }
 
 func TestContiguousNumericCandidateDiagnostics(t *testing.T) {

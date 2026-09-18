@@ -11,9 +11,17 @@
 // semantic consumers must interpret it through ObjectItem context. Parenthesized
 // keys retain their parentheses and represent computed key expressions.
 //
-// Lexing and expression parsing are private implementation details. The private
-// expression parser validates native expressions, not configuration bodies.
-// A public Parse entry point and its Result will come with body parsing.
+// A configuration File contains one Body and a final EOF, with an optional
+// leading BOM retained before the Body for upstream compatibility. Body owns
+// inter-item and edge trivia. Attribute contains its name token, equals token,
+// and value expression. Block contains its type token, zero or more BlockLabel
+// nodes, opening brace, nested Body, and closing brace. The braces belong to
+// Block, not Body. Labels preserve either an identifier or quoted literal; they
+// are never variable-reference expressions. Malformed nodes can be incomplete.
+//
+// Lexing, expression parsing, and configuration-body parsing are private
+// implementation details. A public Parse entry point and its Result are deferred
+// until source ownership and diagnostic access contracts are settled.
 // Diagnostics describe lexical and syntax errors. Contextual keywords retain
 // their lexical Identifier kind in the tree.
 package syntax

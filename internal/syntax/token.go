@@ -112,6 +112,14 @@ const (
 	UnexpectedTemplateDirective
 	ExpectedTemplateEndIf
 	ExpectedTemplateEndFor
+	ExpectedBodyItem
+	ExpectedAttributeOrBlock
+	ExpectedBodyItemSeparator
+	ExpectedBlockOpeningBrace
+	ExpectedLiteralBlockLabel
+	ExpectedSingleLineAttribute
+	ExpectedSingleLineBlockEnd
+	DuplicateAttribute
 	diagnosticKindCount
 )
 

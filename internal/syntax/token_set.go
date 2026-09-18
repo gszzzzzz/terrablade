@@ -26,4 +26,8 @@ const (
 	itemBoundaries = expressionBoundaries | lineSeparators | 1<<Comma
 
 	operandTerminators = itemBoundaries | 1<<Colon | 1<<Arrow | 1<<Ellipsis
+
+	// A body item owns no following newline or containing block's closing brace.
+	// Other expression closers are stray body material, not recovery boundaries.
+	bodyItemBoundaries = lineSeparators | 1<<CloseBrace | 1<<EOF
 )

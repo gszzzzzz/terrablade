@@ -78,6 +78,10 @@ var nodeKindNames = [nodeKindCount]string{
 	TemplateDirective:       "TemplateDirective",
 	TemplateIf:              "TemplateIf",
 	TemplateFor:             "TemplateFor",
+	Body:                    "Body",
+	Attribute:               "Attribute",
+	Block:                   "Block",
+	BlockLabel:              "BlockLabel",
 }
 
 var diagnosticKindNames = [diagnosticKindCount]string{
@@ -118,6 +122,14 @@ var diagnosticKindNames = [diagnosticKindCount]string{
 	UnexpectedTemplateDirective:  "UnexpectedTemplateDirective",
 	ExpectedTemplateEndIf:        "ExpectedTemplateEndIf",
 	ExpectedTemplateEndFor:       "ExpectedTemplateEndFor",
+	ExpectedBodyItem:             "ExpectedBodyItem",
+	ExpectedAttributeOrBlock:     "ExpectedAttributeOrBlock",
+	ExpectedBodyItemSeparator:    "ExpectedBodyItemSeparator",
+	ExpectedBlockOpeningBrace:    "ExpectedBlockOpeningBrace",
+	ExpectedLiteralBlockLabel:    "ExpectedLiteralBlockLabel",
+	ExpectedSingleLineAttribute:  "ExpectedSingleLineAttribute",
+	ExpectedSingleLineBlockEnd:   "ExpectedSingleLineBlockEnd",
+	DuplicateAttribute:           "DuplicateAttribute",
 }
 
 // String returns the source-facing name used in diagnostics and debug output.
