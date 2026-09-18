@@ -40,7 +40,7 @@ type parser struct {
 	pos         int
 	diagnostics []Diagnostic
 	depth       int
-	limited     bool
+	halted      bool
 }
 
 func newParser(source []byte) *parser {
@@ -57,7 +57,14 @@ func newParser(source []byte) *parser {
 // Committing a grammatical token later also commits its intervening trivia to
 // the enclosing node. Unused lookahead leaves trailing trivia with the parent.
 func (p *parser) look(context expressionContext) int {
-	i := p.pos
+	if p.halted {
+		return len(p.tokens) - 1
+	}
+	return p.lookFrom(p.pos, context)
+}
+
+func (p *parser) lookFrom(index int, context expressionContext) int {
+	i := index
 	for i < len(p.tokens)-1 {
 		switch classifyTrivia(p.tokens[i].Kind) {
 		case inlineTrivia:
@@ -78,6 +85,13 @@ func (p *parser) peek(context expressionContext) Kind {
 	return p.tokens[p.look(context)].Kind
 }
 
+func (p *parser) current() token {
+	if p.halted {
+		return p.tokens[len(p.tokens)-1]
+	}
+	return p.tokens[p.pos]
+}
+
 type nodeBuilder struct {
 	start    int
 	children []SyntaxElement
@@ -95,6 +109,14 @@ func (b *nodeBuilder) node(node SyntaxNode) {
 
 // consumeUntil appends raw tokens before index, leaving index unconsumed.
 func (p *parser) consumeUntil(b *nodeBuilder, index int) {
+	if p.halted {
+		return
+	}
+	p.retainUntil(b, index)
+}
+
+// retainUntil bypasses grammar shutdown only for final lossless file assembly.
+func (p *parser) retainUntil(b *nodeBuilder, index int) {
 	for p.pos < index {
 		token := p.tokens[p.pos]
 		b.children = append(b.children, SyntaxToken{kind: token.Kind, span: token.Span})
@@ -113,14 +135,18 @@ func (p *parser) consumeLookahead(b *nodeBuilder, context expressionContext) {
 }
 
 func (p *parser) report(kind DiagnosticKind, span Span) {
+	if p.halted {
+		return
+	}
 	p.diagnostics = append(p.diagnostics, Diagnostic{Kind: kind, Span: span})
 }
 
-func (p *parser) limit(span Span) {
-	if !p.limited {
-		p.report(NestingLimitExceeded, span)
-		p.limited = true
-	}
+// haltAtLimit makes the cursor appear exhausted to every production. The real
+// position is frozen so file assembly can retain the rest without parsing it.
+// Reporting through the same gate prevents cascades after this one diagnostic.
+func (p *parser) haltAtLimit(span Span) {
+	p.report(NestingLimitExceeded, span)
+	p.halted = true
 }
 
 func (p *parser) finish(kind NodeKind, b nodeBuilder) SyntaxNode {
@@ -129,7 +155,7 @@ func (p *parser) finish(kind NodeKind, b nodeBuilder) SyntaxNode {
 		span.End = b.children[len(b.children)-1].Span().End
 	}
 	if b.height > maxExpressionDepth {
-		p.limit(span)
+		p.haltAtLimit(span)
 		// Flatten only the overflowing structure into a lossless Error node.
 		// This also bounds the tree seen by future recursive consumers.
 		var leaves []SyntaxElement
@@ -153,6 +179,7 @@ func (p *parser) finish(kind NodeKind, b nodeBuilder) SyntaxNode {
 }
 
 func (p *parser) file(root nodeBuilder) syntaxFile {
+	p.retainRemainder(&root)
 	// Lexical diagnostics can overlap later parser diagnostics; ties retain their
 	// original order, with lexical diagnostics first.
 	sort.SliceStable(p.diagnostics, func(i, j int) bool {
@@ -172,4 +199,22 @@ func (p *parser) file(root nodeBuilder) syntaxFile {
 		},
 		diagnostics: p.diagnostics,
 	}
+}
+
+// retainRemainder is deliberately outside the grammar cursor. It must see the
+// original tail even when productions see EOF after a limit. Outer trivia stays
+// at File level, and unparsed non-trivia remains a flat, bounded Error node.
+func (p *parser) retainRemainder(root *nodeBuilder) {
+	p.retainUntil(root, p.lookFrom(p.pos, delimitedExpression))
+	if p.tokens[p.pos].Kind != EOF {
+		p.report(UnexpectedToken, p.tokens[p.pos].Span)
+		end := len(p.tokens) - 1
+		for end > p.pos && isTrivia(p.tokens[end-1].Kind) {
+			end--
+		}
+		rest := p.begin()
+		p.retainUntil(&rest, end)
+		root.node(p.finish(Error, rest))
+	}
+	p.retainUntil(root, len(p.tokens)-1)
 }

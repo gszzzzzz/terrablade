@@ -175,3 +175,50 @@ func TestLexicalDiagnosticsPrecedeSyntaxDiagnosticsAtSameSpan(t *testing.T) {
 		t.Fatalf("diagnostics = %+v, want %+v", file.diagnostics, want)
 	}
 }
+
+func TestLimitStopsGrammarAndRetainsUnparsedTokens(t *testing.T) {
+	source := []byte("a + \xff # tail\n")
+	p := newParser(source)
+	root := p.begin()
+	variable := p.begin()
+	p.consumeLookahead(&variable, lineExpression)
+	root.node(p.finish(VariableExpression, variable))
+	position := p.pos
+	limitSpan := p.tokens[p.look(lineExpression)].Span
+	p.haltAtLimit(limitSpan)
+	p.haltAtLimit(limitSpan)
+
+	if p.current().Kind != EOF || p.peek(lineExpression) != EOF || p.peek(delimitedExpression) != EOF {
+		t.Fatal("all grammar cursor views must appear exhausted after a limit")
+	}
+	// A production need not know about the halt flag to stop consuming/reporting.
+	p.consumeUntil(&root, len(p.tokens)-1)
+	p.consumeLookahead(&root, delimitedExpression)
+	p.report(ExpectedExpression, limitSpan)
+	p.call(&root, lineExpression)
+	p.steps(&root, lineExpression, allTraversalSteps)
+	p.recoverArgument(&root)
+	p.unsupported(&root)
+	if p.pos != position {
+		t.Fatal("grammar consumed tokens after shutdown")
+	}
+
+	file := p.file(root)
+	assertExpressionPartition(t, source, file)
+	if file.root.Child(2).(SyntaxNode).Kind() != Error {
+		t.Fatal("unparsed non-trivia must remain in a file-level Error node")
+	}
+	want := []Diagnostic{
+		{
+			Kind: NestingLimitExceeded,
+			Span: limitSpan,
+		},
+		{
+			Kind: InvalidUTF8,
+			Span: Span{Start: 4, End: 5},
+		},
+	}
+	if !reflect.DeepEqual(file.diagnostics, want) {
+		t.Fatalf("diagnostics = %+v, want one limit and original lexical error: %+v", file.diagnostics, want)
+	}
+}

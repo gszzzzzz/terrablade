@@ -16,12 +16,12 @@ func (p *parser) steps(parent *nodeBuilder, context expressionContext, mode trav
 		return
 	}
 	if p.depth == maxExpressionDepth {
-		p.limit(p.tokens[p.look(context)].Span)
+		p.haltAtLimit(p.tokens[p.look(context)].Span)
 		return
 	}
 	p.depth++
 	defer func() { p.depth-- }()
-	for !p.limited {
+	for {
 		kind := p.peek(context)
 		if kind != Dot && (kind != OpenBracket || mode == attributeTraversalSteps) {
 			return

@@ -14,20 +14,6 @@ func parseExpressionSource(source []byte) syntaxFile {
 	root := p.begin()
 	p.consumeUntil(&root, p.look(delimitedExpression))
 	p.operand(&root, 0, lineExpression)
-	p.consumeUntil(&root, p.look(delimitedExpression))
-	if p.peek(delimitedExpression) != EOF {
-		if !p.limited {
-			p.report(UnexpectedToken, p.tokens[p.pos].Span)
-		}
-		end := len(p.tokens) - 1
-		for end > p.pos && isTrivia(p.tokens[end-1].Kind) {
-			end--
-		}
-		rest := p.begin()
-		p.consumeUntil(&rest, end)
-		root.node(p.finish(Error, rest))
-	}
-	p.consumeUntil(&root, len(p.tokens)-1)
 	return p.file(root)
 }
 
@@ -38,9 +24,7 @@ func (p *parser) operand(b *nodeBuilder, minimum int, context expressionContext)
 	i := p.look(context)
 	switch p.tokens[i].Kind {
 	case EOF, CloseParen, CloseBracket, CloseBrace, Comma, Colon, Newline, LineComment:
-		if !p.limited {
-			p.report(ExpectedExpression, p.tokens[i].Span)
-		}
+		p.report(ExpectedExpression, p.tokens[i].Span)
 		b.node(p.finish(Error, p.begin()))
 		return
 	}
@@ -52,15 +36,16 @@ func (p *parser) operand(b *nodeBuilder, minimum int, context expressionContext)
 // binary 1..6 (left associative), unary 7, then postfix traversal.
 func (p *parser) expression(minimum int, context expressionContext) SyntaxNode {
 	if p.depth == maxExpressionDepth {
-		p.limit(p.tokens[p.pos].Span)
+		span := p.current().Span
 		b := p.begin()
 		p.consumeLookahead(&b, context)
+		p.haltAtLimit(span)
 		return p.finish(Error, b)
 	}
 	p.depth++
 	defer func() { p.depth-- }()
 	left := p.prefix(context)
-	for !p.limited {
+	for {
 		kind := p.peek(context)
 		if kind == Question && minimum == 0 {
 			b := nodeBuilder{start: left.span.Start, height: 1}
@@ -106,7 +91,7 @@ func binaryPower(kind Kind) int {
 
 func (p *parser) prefix(context expressionContext) SyntaxNode {
 	b := p.begin()
-	token := p.tokens[p.pos]
+	token := p.current()
 	kind := Error
 	switch token.Kind {
 	case Number:
@@ -142,7 +127,7 @@ func (p *parser) prefix(context expressionContext) SyntaxNode {
 		p.consumeLookahead(&b, context)
 	}
 	left := p.finish(kind, b)
-	if !p.limited && (p.peek(context) == Dot || p.peek(context) == OpenBracket) {
+	if p.peek(context) == Dot || p.peek(context) == OpenBracket {
 		b = nodeBuilder{start: left.span.Start, height: 1}
 		b.node(left)
 		p.steps(&b, context, allTraversalSteps)
@@ -167,9 +152,6 @@ func (p *parser) number(b *nodeBuilder, context expressionContext, legacy bool) 
 }
 
 func (p *parser) expect(b *nodeBuilder, kind Kind, diagnostic DiagnosticKind, context expressionContext) bool {
-	if p.limited {
-		return false
-	}
 	if p.peek(context) == kind {
 		p.consumeLookahead(b, context)
 		return true
@@ -188,7 +170,7 @@ func (p *parser) call(b *nodeBuilder, context expressionContext) {
 	if !p.expect(b, OpenParen, ExpectedOpeningParen, context) {
 		return
 	}
-	for !p.limited {
+	for {
 		if p.peek(delimitedExpression) == CloseParen {
 			p.consumeLookahead(b, delimitedExpression)
 			return
@@ -208,9 +190,7 @@ func (p *parser) call(b *nodeBuilder, context expressionContext) {
 			p.expect(b, CloseParen, ExpectedClosingParen, delimitedExpression)
 			return
 		default:
-			if !p.limited {
-				p.report(ExpectedArgumentSeparator, p.tokens[p.look(delimitedExpression)].Span)
-			}
+			p.report(ExpectedArgumentSeparator, p.tokens[p.look(delimitedExpression)].Span)
 			p.recoverArgument(b)
 			if p.peek(delimitedExpression) != Comma {
 				p.expect(b, CloseParen, ExpectedClosingParen, delimitedExpression)
@@ -244,8 +224,8 @@ func (p *parser) recoverArgument(parent *nodeBuilder) {
 // Nested template/interpolation delimiters remain visible in the lexical stream.
 func (p *parser) unsupported(b *nodeBuilder) {
 	var ends []Kind
-	for p.tokens[p.pos].Kind != EOF {
-		kind := p.tokens[p.pos].Kind
+	for p.current().Kind != EOF {
+		kind := p.current().Kind
 		if close := closing(kind); close != Invalid {
 			ends = append(ends, close)
 		} else if len(ends) > 0 && ends[len(ends)-1] == kind {
