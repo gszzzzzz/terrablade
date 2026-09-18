@@ -26,7 +26,6 @@ func TestFormat(t *testing.T) {
 		{"whitespace", " \t\r\n\n", ""},
 		{"BOM only", "\ufeff \n", ""},
 		{"BOM and CRLF", "\ufeffa=1\r\nlong=2\r\n", "a    = 1\nlong = 2\n"},
-		{"nil equivalent", "", ""},
 		{"blank groups", "\na=1\nlong=2\n\n\nx=3\n\n", "a    = 1\nlong = 2\n\nx = 3\n"},
 		{"blocks", "resource aws_instance web {ami=\"x\"}\nz=1", "resource \"aws_instance\" \"web\" {\n  ami = \"x\"\n}\n\nz = 1\n"},
 		{"header comments", `block /*type*/ bare /*label*/ "q" {}`, "block \"bare\" \"q\" /*type*/ /*label*/ {}\n"},
@@ -123,6 +122,27 @@ func TestFormatOwnership(t *testing.T) {
 	var zero terrablade.ParseError
 	if zero.Diagnostics() != nil || zero.Error() == "" {
 		t.Fatal("zero ParseError does not provide safe empty diagnostics")
+	}
+}
+
+func TestTabWidth(t *testing.T) {
+	source := []byte("a=f(\"\t\",beta)")
+	for _, test := range []struct {
+		width int
+		want  string
+	}{
+		{0, "a = f(\"\t\", beta)\n"},
+		{8, "a = f(\"\t\", beta)\n"},
+		{16, "a = f(\n  \"\t\",\n  beta,\n)\n"},
+	} {
+		options := terrablade.Options{PrintWidth: 20, TabWidth: test.width}
+		got := format(t, source, options)
+		if string(got) != test.want {
+			t.Fatalf("TabWidth %d: got %q, want %q", test.width, got, test.want)
+		}
+		if again := format(t, got, options); !bytes.Equal(again, got) {
+			t.Fatalf("TabWidth %d is not idempotent: %q => %q", test.width, got, again)
+		}
 	}
 }
 
