@@ -23,6 +23,10 @@ func alignCells(output string, cells []renderedCell) string {
 	}
 	var columns [256][]int
 	for i, cell := range cells {
+		indices := columns[cell.column]
+		if len(indices) > 0 && cells[indices[len(indices)-1]].firstRow == cell.firstRow {
+			continue
+		}
 		columns[cell.column] = append(columns[cell.column], i)
 	}
 	rowPadding := make(map[int]int)

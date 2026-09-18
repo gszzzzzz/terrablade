@@ -35,7 +35,8 @@
 //     are omitted in flat layouts and after final heredocs; required commas
 //     after non-final heredocs stay on the next line.
 //     Empty delimiters stay compact unless comments require a line break.
-//   - Objects: entries use key = value with no alignment. Flat entries have
+//   - Objects: entries use key = value, aligned on consecutive broken rows.
+//     Flat entries have
 //     comma separators and spaces inside braces; broken entries use one line
 //     per entry and a trailing comma. Bare identifier keys retain their spelling
 //     and key context, and computed keys retain explicit parentheses. Keys and

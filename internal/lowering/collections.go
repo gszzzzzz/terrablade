@@ -29,6 +29,19 @@ func object(result syntax.Result, pieces []piece, inSequence bool) document.Doc 
 	return delimited(result, withCommas, 0, true, edge)
 }
 
+func assignment(result syntax.Result, pieces []piece, objectItem bool) document.Doc {
+	before, separator := commentGap(result, pieces[1].before, gapStyle{empty: space, beforeComment: space, afterComment: space})
+	gap, start := commentGap(result, pieces[2].before, gapStyle{empty: space, beforeComment: space, afterComment: space})
+	tail := document.Concat(separator, pieces[1].doc, gap, start, pieces[2].doc)
+	aligned := document.Cell(0, tail)
+	if objectItem {
+		// A flat object shares its enclosing expression's row. Only entries
+		// in a broken object establish assignment columns of their own.
+		aligned = document.IfBreak(aligned, tail)
+	}
+	return document.Concat(pieces[0].doc, before, aligned)
+}
+
 func spacedSequence(result syntax.Result, pieces []piece) document.Doc {
 	moveCommaTrivia(pieces)
 	parts := make([]document.Doc, 0, len(pieces)*3)

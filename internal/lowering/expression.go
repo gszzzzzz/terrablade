@@ -155,7 +155,7 @@ func lowerNode(result syntax.Result, node syntax.SyntaxNode, safe, inSequence bo
 		lowered.doc = object(result, pieces, inSequence)
 	case syntax.ObjectItem:
 		pieces[1].doc = document.Text("=")
-		lowered.doc = spacedSequence(result, pieces)
+		lowered.doc = assignment(result, pieces, true)
 	case syntax.ForExpression:
 		lowered.doc = forExpression(result, pieces)
 	case syntax.TemplateInterpolation, syntax.TemplateDirective:

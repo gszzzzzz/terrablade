@@ -94,11 +94,7 @@ func attribute(result syntax.Result, node syntax.SyntaxNode) (document.Doc, erro
 		}
 		trivia = nil
 	}
-	before, separator := commentGap(result, parts[1].before, gapStyle{empty: space, beforeComment: space, afterComment: space})
-	value := parts[2]
-	gap, start := commentGap(result, value.before, gapStyle{empty: space, beforeComment: space, afterComment: space})
-	return document.Concat(parts[0].doc, before,
-		document.Cell(0, document.Concat(separator, parts[1].doc, gap, start, value.doc))), nil
+	return assignment(result, parts, false), nil
 }
 
 func block(result syntax.Result, node syntax.SyntaxNode, docs map[syntax.SyntaxNode]bodyLayout) document.Doc {

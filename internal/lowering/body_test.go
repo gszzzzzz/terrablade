@@ -133,6 +133,10 @@ func TestBodyOpenTofuCompatibility(t *testing.T) {
 		`block /*type*/ bare /*between*/ "quoted" /*brace*/ {}`,
 		`block /*type*/ {}`,
 		"a=1\n/*first*/ /*second*/ # third\n\nb=2",
+		"value={\na=1 # first\nlonger=222 # second\n}\n",
+		"a=1\nvalue={ a=1, longer=2 }\nz=3",
+		"a=1\nvalue={\nx=1\nlonger=2\n}\nz=3",
+		"value=[{a=1},{longer=2}]",
 	} {
 		for _, width := range []int{16, 80} {
 			output := renderFile(t, source, width)

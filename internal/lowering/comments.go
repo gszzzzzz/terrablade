@@ -57,7 +57,11 @@ func commentGap(result syntax.Result, trivia []syntax.SyntaxToken, style gapStyl
 			if comment {
 				prefix = space
 			}
-			parts = append(parts, commentSeparator(newlines, lineComment || requiredLine, prefix, style.blankLine), literal(result.Text(token.Span())))
+			commentDoc := document.Concat(commentSeparator(newlines, lineComment || requiredLine, prefix, style.blankLine), literal(result.Text(token.Span())))
+			if token.Kind() == syntax.LineComment && newlines == 0 && !lineComment && !requiredLine {
+				commentDoc = document.Cell(1, commentDoc)
+			}
+			parts = append(parts, commentDoc)
 			newlines = 0
 			requiredLine = false
 			lineComment = token.Kind() == syntax.LineComment

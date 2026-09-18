@@ -111,8 +111,9 @@ func ForceFlat(content Doc) Doc { return wrap(forceFlatKind, content) }
 func Indent(content Doc) Doc { return wrap(indentKind, content) }
 
 // Cell marks content for vertical alignment with the same column on adjacent
-// rendered rows. A row must contain at most one cell per column, lower-numbered
-// columns must precede higher-numbered columns, and cells must not nest.
+// rendered rows. Lower-numbered columns must precede higher-numbered columns.
+// Only the first cell in each column on a row participates, even if it spans
+// multiple rows; later nested cells may participate on their own starting rows.
 // Content supplies its own minimum separator. Alignment
 // adds spaces before it after all line breaks have been chosen, so padding may
 // exceed PrintWidth. Columns count grapheme clusters, not terminal display cells.
