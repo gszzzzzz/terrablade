@@ -39,6 +39,7 @@ func Expression(result syntax.Result, node syntax.SyntaxNode) (document.Doc, err
 					safe = false // Object keys and values are newline-sensitive.
 				case syntax.ParenthesizedExpression, syntax.FunctionCallExpression,
 					syntax.TupleExpression, syntax.IndexAccess, syntax.ForExpression,
+					syntax.TemplateInterpolation, syntax.TemplateDirective,
 					syntax.BinaryExpression, syntax.ConditionalExpression, syntax.TraversalExpression:
 					// Operations enclose themselves when their caller is not safe;
 					// their descendants can share that pair of parentheses.
@@ -91,9 +92,14 @@ type layout struct {
 	endsNumber                    bool
 	startsDot                     bool
 	fusesNumber                   bool
+	endsHeredoc                   bool
 }
 
 func lowerNode(result syntax.Result, node syntax.SyntaxNode, safe bool, docs map[syntax.SyntaxNode]layout) (layout, error) {
+	switch node.Kind() {
+	case syntax.TemplateExpression, syntax.TemplateIf, syntax.TemplateFor:
+		return templateParts(result, node, docs), nil
+	}
 	switch node.Kind() {
 	case syntax.LiteralExpression, syntax.VariableExpression,
 		syntax.UnaryExpression, syntax.ParenthesizedExpression,
@@ -102,6 +108,7 @@ func lowerNode(result syntax.Result, node syntax.SyntaxNode, safe bool, docs map
 		syntax.TraversalExpression, syntax.AttributeAccess, syntax.IndexAccess,
 		syntax.LegacyIndexAccess, syntax.AttributeSplat, syntax.FullSplat:
 	case syntax.ObjectExpression, syntax.ObjectItem, syntax.ForExpression:
+	case syntax.TemplateInterpolation, syntax.TemplateDirective:
 	default:
 		return layout{}, fmt.Errorf("lowering: unsupported expression form %s", node.Kind())
 	}
@@ -124,8 +131,9 @@ func lowerNode(result syntax.Result, node syntax.SyntaxNode, safe bool, docs map
 	}
 	last := pieces[len(pieces)-1]
 	lowered := layout{
-		endsNumber: last.token && last.kind == syntax.Number || !last.token && last.child.endsNumber,
-		startsDot:  pieces[0].token && pieces[0].kind == syntax.Dot,
+		endsNumber:  last.token && last.kind == syntax.Number || !last.token && last.child.endsNumber,
+		startsDot:   pieces[0].token && pieces[0].kind == syntax.Dot,
+		endsHeredoc: !last.token && last.child.endsHeredoc,
 	}
 	switch node.Kind() {
 	case syntax.LiteralExpression, syntax.VariableExpression, syntax.UnaryExpression:
@@ -141,10 +149,12 @@ func lowerNode(result syntax.Result, node syntax.SyntaxNode, safe bool, docs map
 		lowered.doc = spacedSequence(result, pieces)
 	case syntax.ForExpression:
 		lowered.doc = forExpression(result, pieces)
+	case syntax.TemplateInterpolation, syntax.TemplateDirective:
+		lowered.doc = templateSequence(result, pieces)
 	case syntax.BinaryExpression:
 		lowered.power = binaryPower(pieces[1].kind)
 		lowered.head = pieces[0].doc
-		lowered.continuation = operationContinuation(result, pieces[1:])
+		lowered.continuation = operationContinuation(result, pieces[1:], pieces[0].child.endsHeredoc)
 		if pieces[0].child.power == lowered.power {
 			lowered.head = pieces[0].child.head
 			lowered.continuation = document.Concat(pieces[0].child.continuation, lowered.continuation)
@@ -152,11 +162,11 @@ func lowerNode(result syntax.Result, node syntax.SyntaxNode, safe bool, docs map
 		lowered.operation = true
 	case syntax.ConditionalExpression:
 		lowered.head = pieces[0].doc
-		lowered.continuation = operationContinuation(result, pieces[1:])
+		lowered.continuation = operationContinuation(result, pieces[1:], pieces[0].child.endsHeredoc)
 		lowered.operation = true
 	case syntax.TraversalExpression:
 		lowered.head = pieces[0].doc
-		lowered.continuation = document.Group(traversalSequence(result, pieces[1:], pieces[0].child.endsNumber))
+		lowered.continuation = document.Group(traversalSequence(result, pieces[1:], pieces[0].child.endsNumber, pieces[0].child.endsHeredoc))
 		lowered.operation = true
 	case syntax.AttributeAccess, syntax.LegacyIndexAccess:
 		lowered.doc = sequence(result, pieces)
@@ -174,7 +184,7 @@ func lowerNode(result syntax.Result, node syntax.SyntaxNode, safe bool, docs map
 		if node.Kind() == syntax.FullSplat {
 			prefix = 3
 		}
-		lowered.doc = document.Concat(sequence(result, pieces[:prefix]), traversalSequence(result, pieces[prefix:], false))
+		lowered.doc = document.Concat(sequence(result, pieces[:prefix]), traversalSequence(result, pieces[prefix:], false, false))
 	default: // FunctionCallExpression, including namespace prefixes.
 		for i, part := range pieces {
 			if part.kind == syntax.OpenParen {
@@ -189,6 +199,7 @@ func lowerNode(result syntax.Result, node syntax.SyntaxNode, safe bool, docs map
 		lowered.doc = document.Group(document.Concat(lowered.head, document.Indent(lowered.continuation)))
 		if !safe {
 			lowered.doc = syntheticParentheses(lowered.body)
+			lowered.endsHeredoc = false
 		}
 	}
 	return lowered, nil
@@ -198,6 +209,7 @@ func sequence(result syntax.Result, pieces []piece) document.Doc {
 	parts := make([]document.Doc, 0, len(pieces)*2)
 	for i, part := range pieces {
 		style := gapStyle{beforeComment: space, afterComment: space}
+		style.requiredLine = i > 0 && pieces[i-1].child.endsHeredoc
 		if i > 0 && pieces[i-1].kind == syntax.OpenBracket {
 			style.beforeComment = soft
 		}
@@ -217,32 +229,26 @@ func parenthesized(result syntax.Result, pieces []piece) document.Doc {
 		// Synthetic parentheses become explicit on the next parse. Both paths
 		// share the inner operation's group, so formatting remains idempotent.
 		leading, start := commentGap(result, inner.before, gapStyle{empty: soft, beforeComment: soft, afterComment: space})
-		gap, end := commentGap(result, close.before, gapStyle{empty: soft, beforeComment: space, afterComment: soft})
+		gap, end := commentGap(result, close.before, gapStyle{empty: soft, beforeComment: space, afterComment: soft, requiredLine: inner.child.endsHeredoc})
 		return document.Group(document.Concat(pieces[0].doc, document.Indent(document.Concat(leading, start, inner.child.body, gap)), end, close.doc))
 	}
 	leading, start := commentGap(result, inner.before, gapStyle{afterComment: space})
-	gap, end := commentGap(result, close.before, gapStyle{beforeComment: space})
+	gap, end := commentGap(result, close.before, gapStyle{beforeComment: space, requiredLine: inner.child.endsHeredoc})
 	return document.Concat(pieces[0].doc, document.Indent(document.Concat(leading, start, inner.doc, gap)), end, close.doc)
 }
 
 func delimited(result syntax.Result, pieces []piece, open int, preserveBlank bool, edge spacing) document.Doc {
-	// Commas are canonical separators rather than comment anchors. Move their
-	// leading trivia to the following gap so comments cannot swallow punctuation.
-	for i := open + 1; i < len(pieces)-1; i++ {
-		if pieces[i].kind == syntax.Comma && len(pieces[i].before) > 0 {
-			pieces[i+1].before = append(pieces[i].before, pieces[i+1].before...)
-			pieces[i].before = nil
-		}
-	}
+	moveCommaTrivia(pieces)
 	head := sequence(result, pieces[:open+1])
 	close := pieces[len(pieces)-1]
 	content := pieces[open+1 : len(pieces)-1]
 	parts := make([]document.Doc, 0, len(content)*3+3)
 	for i, part := range content {
 		style := gapStyle{beforeComment: space, afterComment: space}
+		style.requiredLine = i > 0 && content[i-1].child.endsHeredoc
 		if i == 0 {
 			style.empty, style.beforeComment = edge, edge
-		} else if content[i-1].kind == syntax.Comma {
+		} else if content[i-1].kind == syntax.Comma || content[i-1].child.endsHeredoc {
 			style.empty, style.afterComment = line, line
 			style.blankLine = preserveBlank
 		}
@@ -258,15 +264,33 @@ func delimited(result syntax.Result, pieces []piece, open int, preserveBlank boo
 	}
 	if len(content) > 0 {
 		last := content[len(content)-1].kind
-		if last != syntax.Comma && last != syntax.Ellipsis {
+		// Object newlines already separate items. A comma on the next line
+		// after a heredoc marker would instead start an invalid new object key.
+		heredocObjectValue := pieces[open].kind == syntax.OpenBrace && content[len(content)-1].child.endsHeredoc
+		if last != syntax.Comma && last != syntax.Ellipsis && !heredocObjectValue {
+			if content[len(content)-1].child.endsHeredoc {
+				parts = append(parts, document.HardLine())
+			}
 			parts = append(parts, document.IfBreak(document.Text(","), document.Doc{}))
 		}
 	}
 	style := gapStyle{empty: edge, beforeComment: space, afterComment: edge}
+	style.requiredLine = len(content) > 0 && content[len(content)-1].child.endsHeredoc
 	if len(content) == 0 {
 		style.empty, style.beforeComment, style.afterComment = tight, soft, soft
 	}
 	gap, end := commentGap(result, close.before, style)
 	parts = append(parts, gap)
 	return document.Group(document.Concat(head, document.Indent(document.Concat(parts...)), end, close.doc))
+}
+
+// Commas are canonical separators rather than comment anchors. This also
+// applies to for bindings and template directive headers, not only lists.
+func moveCommaTrivia(pieces []piece) {
+	for i := 0; i < len(pieces)-1; i++ {
+		if pieces[i].token && pieces[i].kind == syntax.Comma && len(pieces[i].before) > 0 {
+			pieces[i+1].before = append(pieces[i].before, pieces[i+1].before...)
+			pieces[i].before = nil
+		}
+	}
 }

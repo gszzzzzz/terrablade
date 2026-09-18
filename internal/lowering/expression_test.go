@@ -106,16 +106,6 @@ func TestExpressionRejectsInvalidInput(t *testing.T) {
 	}
 }
 
-func TestUnsupportedExpressionIsNotPartiallyFormatted(t *testing.T) {
-	for _, source := range []string{`"literal"`} {
-		result, node := parse(t, source)
-		doc, err := lowering.Expression(result, node)
-		if err == nil || document.Render(doc, document.Options{}) != "" {
-			t.Errorf("%q: expected error and empty Doc, got %v", source, err)
-		}
-	}
-}
-
 func TestEnclosingTriviaIsNotLowered(t *testing.T) {
 	result := syntax.Parse([]byte("# before\na = /* before value */ f(x) # after\n"))
 	if diagnostics := result.Diagnostics(); len(diagnostics) != 0 {

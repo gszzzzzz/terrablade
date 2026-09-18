@@ -18,10 +18,23 @@
 //     per entry and a trailing comma. Bare identifier keys retain their spelling
 //     and key context, and computed keys retain explicit parentheses. Keys and
 //     values remain newline-sensitive, even inside an otherwise safe context.
+//     An entry ending in a heredoc omits its comma: the marker's mandatory
+//     newline separates entries, and a comma on the next line is invalid HCL.
 //   - For expressions: flat clauses use spaces. Broken layouts put the header,
 //     projection, and optional if clause on separate indented lines. Object
 //     projection arrows may start a further-indented continuation line. Grouping
 //     ellipses stay attached to their values; no trailing comma is introduced.
+//   - Templates: quoted and heredoc literal chunks retain their spelling and
+//     line structure and never wrap for width. Interpolation and directive
+//     contents reflow in safe expression context, including source newlines.
+//     Flat boundaries use ${expr}, ${~expr~}, %{if condition}, and %{~if condition~}.
+//     Broken sequences indent their contents between boundary newlines. No
+//     whitespace is synthesized outside sequence boundaries into literal text.
+//   - Heredocs: opener, marker, literal indentation, and closing-marker spelling
+//     are preserved. Literal lines bypass automatic indentation. The marker's
+//     terminating LF belongs to the enclosing gap or body; lowering enforces
+//     it before following punctuation without adding a final LF to the expression.
+//     The literal CR-run rule below also applies at this terminating line ending.
 //   - Parentheses: explicit parentheses do not introduce width-triggered breaks;
 //     their contents may still break. Binary, conditional, and traversal groups
 //     share their break layout with explicit parentheses. Where the grammar
@@ -40,14 +53,14 @@
 //     could continue the numeric token, as with .0 or .e2 but not .id. Index
 //     expressions can break inside brackets. Calls and following traversal
 //     steps make independent fit decisions within a broken expression.
-//   - Blank lines: broken tuple and object entry gaps preserve at most one source blank
-//     line. Calls collapse blank lines.
+//   - Blank lines: broken tuple and object entry gaps preserve at most one source
+//     blank line. Calls collapse blank lines.
 //   - Comments: source order is preserved, inline comments stay inline, and
 //     source newlines retain standalone comments. Commas move before their
 //     leading comments. Line comments force a line break.
-//   - Literal comment content: indentation and lone CR are preserved. CRLF is
-//     normalized to LF except after a literal CR, where normalization would
-//     merge that CR into the line ending and lose content on a later pass.
+//   - Literal content: comment/template indentation and lone CR are preserved.
+//     CRLF is normalized to LF except after a literal CR, where normalization
+//     would merge that CR into the line ending and lose content on a later pass.
 //   - Enclosing trivia: the enclosing syntax node owns outer trivia.
 //
 // Lowering uses iterative traversal, including for deep unary chains. Returned
@@ -55,8 +68,6 @@
 // Construction takes linear time and storage in the expression's tree size;
 // rendering follows document's own resource contract. No final newline is added.
 //
-// This implementation supports literals, variable references, unary/binary and
-// conditional expressions, explicit parentheses, calls, tuples, objects, for
-// expressions, and traversals. Template expressions return an error until their
-// lowering policies are implemented.
+// All expression forms produced by a diagnostic-free native-HCL parse are
+// supported. Bodies, attributes, and blocks belong to the enclosing formatter.
 package lowering

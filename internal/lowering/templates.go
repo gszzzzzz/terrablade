@@ -1,0 +1,55 @@
+package lowering
+
+import (
+	"strings"
+
+	"terrablade/internal/document"
+	"terrablade/internal/syntax"
+)
+
+// Quoted templates, heredocs, and directive bodies share this literal/sequence
+// composition. No synthesized whitespace escapes a sequence into literal text.
+func templateParts(result syntax.Result, node syntax.SyntaxNode, docs map[syntax.SyntaxNode]layout) layout {
+	parts := make([]document.Doc, 0, node.ChildCount())
+	heredoc := false
+	for i := 0; i < node.ChildCount(); i++ {
+		child := node.Child(i)
+		if token, ok := child.Token(); ok {
+			text := result.Text(token.Span())
+			parts = append(parts, literal(text))
+			if token.Kind() == syntax.HeredocOpen {
+				heredoc = true
+			}
+			if token.Kind() == syntax.HeredocEndMarker && strings.HasSuffix(text, "\r") && strings.HasPrefix(result.Source()[token.Span().End:], "\r\n") {
+				// As with literal CR runs, retain the line-ending CR when removing
+				// it would fuse the preceding literal CR with the enclosing LF.
+				parts = append(parts, document.Text("\r"))
+			}
+		} else {
+			nested, _ := child.Node()
+			parts = append(parts, docs[nested].doc)
+		}
+	}
+	// The marker's terminating newline belongs to the enclosing gap (or body).
+	return layout{doc: document.Concat(parts...), endsHeredoc: heredoc}
+}
+
+func templateSequence(result syntax.Result, pieces []piece) document.Doc {
+	start, end := 1, len(pieces)-1
+	if pieces[start].token && pieces[start].kind == syntax.StripMarker {
+		start++
+	}
+	if pieces[end-1].token && pieces[end-1].kind == syntax.StripMarker {
+		end--
+	}
+	opener := sequence(result, pieces[:start])
+	content := append([]piece(nil), pieces[start:end]...)
+	leading, first := commentGap(result, content[0].before, gapStyle{empty: soft, beforeComment: soft, afterComment: space})
+	content[0].before = nil
+	trailing, last := commentGap(result, pieces[end].before, gapStyle{empty: soft, beforeComment: space, afterComment: soft, requiredLine: content[len(content)-1].child.endsHeredoc})
+	closer := append([]piece(nil), pieces[end:]...)
+	closer[0].before = nil
+	return document.Group(document.Concat(opener,
+		document.Indent(document.Concat(leading, first, spacedSequence(result, content), trailing)),
+		last, sequence(result, closer)))
+}

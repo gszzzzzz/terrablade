@@ -52,6 +52,7 @@ func TestForLayouts(t *testing.T) {
 		{"projection arrow breaks", "{for x in xs:long_key=>long_value}", 18, "{\n  for x in xs :\n  long_key\n    => long_value\n}"},
 		{"projection line comment", "[for x in xs: # projection\nx]", 80, "[\n  for x in xs : # projection\n  x\n]"},
 		{"header comments", "[for /*binding*/ x in /*collection*/ xs:x]", 80, "[for /*binding*/ x in /*collection*/ xs : x]"},
+		{"binding comma precedes comment", "[for k # binding\n,v in xs:k]", 80, "[\n  for k, # binding\n  v in xs :\n  k\n]"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			got := render(t, test.source, test.width)

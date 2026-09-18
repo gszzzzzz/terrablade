@@ -15,20 +15,21 @@ func syntheticParentheses(body document.Doc) document.Doc {
 
 // Operators start continuation lines. A binary chain's left spine shares one
 // continuation indent instead of increasing indentation at each operator.
-func operationContinuation(result syntax.Result, pieces []piece) document.Doc {
+func operationContinuation(result syntax.Result, pieces []piece, endsHeredoc bool) document.Doc {
 	parts := make([]document.Doc, 0, len(pieces)*3)
 	for _, part := range pieces {
-		style := gapStyle{empty: space, beforeComment: space, afterComment: space}
+		style := gapStyle{empty: space, beforeComment: space, afterComment: space, requiredLine: endsHeredoc}
 		if part.token {
 			style.empty, style.afterComment = line, line
 		}
 		gap, end := commentGap(result, part.before, style)
 		parts = append(parts, gap, end, part.doc)
+		endsHeredoc = part.child.endsHeredoc
 	}
 	return document.Concat(parts...)
 }
 
-func traversalSequence(result syntax.Result, pieces []piece, endsNumber bool) document.Doc {
+func traversalSequence(result syntax.Result, pieces []piece, endsNumber, endsHeredoc bool) document.Doc {
 	parts := make([]document.Doc, 0, len(pieces)*3)
 	for _, part := range pieces {
 		separator := tight
@@ -43,9 +44,10 @@ func traversalSequence(result syntax.Result, pieces []piece, endsNumber bool) do
 			// A retained comment already separates the previous numeric token.
 			afterComment = soft
 		}
-		gap, end := commentGap(result, part.before, gapStyle{empty: separator, beforeComment: space, afterComment: afterComment})
+		gap, end := commentGap(result, part.before, gapStyle{empty: separator, beforeComment: space, afterComment: afterComment, requiredLine: endsHeredoc})
 		parts = append(parts, gap, end, part.doc)
 		endsNumber = part.child.endsNumber
+		endsHeredoc = part.child.endsHeredoc
 	}
 	return document.Concat(parts...)
 }
@@ -72,7 +74,7 @@ func numberContinuesAcrossDot(next string) bool {
 func index(result syntax.Result, pieces []piece) document.Doc {
 	inner, close := pieces[1], pieces[2]
 	leading, start := commentGap(result, inner.before, gapStyle{empty: soft, beforeComment: soft, afterComment: space})
-	trailing, end := commentGap(result, close.before, gapStyle{empty: soft, beforeComment: space, afterComment: soft})
+	trailing, end := commentGap(result, close.before, gapStyle{empty: soft, beforeComment: space, afterComment: soft, requiredLine: inner.child.endsHeredoc})
 	return document.Group(document.Concat(pieces[0].doc,
 		document.Indent(document.Concat(leading, start, inner.doc, trailing)), end, close.doc))
 }

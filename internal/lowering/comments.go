@@ -32,6 +32,7 @@ func (s spacing) doc() document.Doc {
 type gapStyle struct {
 	empty, beforeComment, afterComment spacing
 	blankLine                          bool
+	requiredLine                       bool // A preceding heredoc marker must end its line.
 }
 
 // The final separator is returned separately so a closing delimiter can resume
@@ -43,6 +44,7 @@ func commentGap(result syntax.Result, trivia []syntax.SyntaxToken, style gapStyl
 	var parts []document.Doc
 	newlines := 0
 	comment, lineComment := false, false
+	requiredLine := style.requiredLine
 	for _, token := range trivia {
 		switch token.Kind() {
 		case syntax.Newline:
@@ -52,14 +54,18 @@ func commentGap(result syntax.Result, trivia []syntax.SyntaxToken, style gapStyl
 			if comment {
 				prefix = space
 			}
-			parts = append(parts, commentSeparator(newlines, lineComment, prefix, style.blankLine), literal(result.Text(token.Span())))
+			parts = append(parts, commentSeparator(newlines, lineComment || requiredLine, prefix, style.blankLine), literal(result.Text(token.Span())))
 			newlines = 0
+			requiredLine = false
 			lineComment = token.Kind() == syntax.LineComment
 			comment = true
 		}
 	}
 	if !comment {
 		end := style.empty.doc()
+		if requiredLine {
+			end = document.HardLine()
+		}
 		if style.blankLine && newlines >= 2 {
 			end = document.IfBreak(document.Concat(document.HardLine(), document.HardLine()), end)
 		}
