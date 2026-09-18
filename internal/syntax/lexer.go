@@ -18,6 +18,8 @@ func lex(source []byte) lexResult {
 		kind := l.scan()
 		l.result.Tokens = append(l.result.Tokens, token{Kind: kind, Span: Span{start, l.offset}})
 	}
+	// Diagnose every still-open template frame at its opener, without inventing
+	// closing tokens or discarding the already-tokenized partial contents.
 	for _, frame := range l.modes {
 		kind, width := UnterminatedQuotedTemplate, 1
 		if frame.mode == modeExpression {
@@ -71,6 +73,8 @@ func (l *lexer) config() Kind {
 		l.offset += 2
 		return Newline
 	case c == '#' || l.has("//"):
+		// Keep the terminator separate so the parser can honor newline-sensitive
+		// values while preserving the exact comment spelling.
 		for l.offset < len(l.source) && l.source[l.offset] != '\n' && !l.has("\r\n") {
 			l.advanceRune()
 		}
@@ -82,6 +86,7 @@ func (l *lexer) config() Kind {
 		l.offset++
 		return QuoteOpen
 	case l.has("<<"):
+		// A complete marker commits template mode; otherwise '<' remains punctuation.
 		if marker, ok := l.heredocOpener(); ok {
 			l.modes = append(l.modes, modeFrame{mode: modeHeredoc, start: l.offset, marker: marker})
 			l.offset = marker.Start
@@ -114,6 +119,7 @@ func (l *lexer) config() Kind {
 	}
 	start := l.offset
 	l.advanceRune()
+	// advanceRune already reports malformed encoding; do not double-label it.
 	if !(r == utf8.RuneError && width == 1) {
 		l.error(InvalidCharacter, start, l.offset)
 	}
@@ -142,6 +148,8 @@ func (l *lexer) blockComment() Kind {
 // See github.com/hashicorp/hcl/blob/v2.25.0/hclsyntax/scan_tokens.rl.
 func (l *lexer) number() {
 	l.offset++
+	// i probes through dots, but offset commits only through the last digit.
+	// Trailing dots therefore remain available for attribute/ellipsis tokens.
 	for i := l.offset; i < len(l.source); {
 		switch c := l.source[i]; {
 		case digit(c):

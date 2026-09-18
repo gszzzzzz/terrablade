@@ -24,6 +24,7 @@ const (
 func classifyTrivia(kind Kind) triviaClass {
 	switch kind {
 	case Whitespace, BlockComment:
+		// HCL treats a block comment as inline whitespace even if it spans lines.
 		return inlineTrivia
 	case LineComment, Newline:
 		return lineTrivia
@@ -63,6 +64,7 @@ func (p *parser) look(context expressionContext) int {
 	return p.lookFrom(p.pos, context)
 }
 
+// File recovery needs this raw view after shutdown; grammar uses look instead.
 func (p *parser) lookFrom(index int, context expressionContext) int {
 	i := index
 	for i < len(p.tokens)-1 {
@@ -99,6 +101,8 @@ type nodeBuilder struct {
 }
 
 func (p *parser) begin() nodeBuilder {
+	// Empty error nodes stay at the real cursor, not the virtual EOF after a halt,
+	// so they cannot create a gap between consumed and still-unparsed source.
 	return nodeBuilder{start: p.tokens[p.pos].Span.Start, height: 1}
 }
 
@@ -115,7 +119,8 @@ func (p *parser) consumeUntil(b *nodeBuilder, index int) {
 	p.retainUntil(b, index)
 }
 
-// retainUntil bypasses grammar shutdown only for final lossless file assembly.
+// Raw copying is shared, but only file assembly may bypass consumeUntil's halt
+// gate. Productions must never consume from this view after a limit.
 func (p *parser) retainUntil(b *nodeBuilder, index int) {
 	for p.pos < index {
 		token := p.tokens[p.pos]
@@ -159,6 +164,8 @@ func (p *parser) finish(kind NodeKind, b nodeBuilder) SyntaxNode {
 		// Flatten only the overflowing structure into a lossless Error node.
 		// This also bounds the tree seen by future recursive consumers.
 		var leaves []SyntaxElement
+		// The LIFO walk visits rightmost leaves first. Reversing once afterward
+		// restores source order without recursion through the overflowing tree.
 		stack := append([]SyntaxElement(nil), b.children...)
 		for len(stack) > 0 {
 			element := stack[len(stack)-1]

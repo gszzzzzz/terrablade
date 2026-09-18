@@ -38,6 +38,8 @@ func (p *parser) expression(minimum int, context expressionContext) SyntaxNode {
 	if p.depth == maxExpressionDepth {
 		span := p.current().Span
 		b := p.begin()
+		// Retain the offending token in a non-empty Error before freezing the
+		// cursor: this boundary makes progress, while File recovers the remainder.
 		p.consumeLookahead(&b, context)
 		p.haltAtLimit(span)
 		return p.finish(Error, b)
@@ -47,6 +49,8 @@ func (p *parser) expression(minimum int, context expressionContext) SyntaxNode {
 	left := p.prefix(context)
 	for {
 		kind := p.peek(context)
+		// Only the weakest binding level may consume '?'. Parsing both arms at
+		// zero lets the false arm absorb another conditional, associating right.
 		if kind == Question && minimum == 0 {
 			b := nodeBuilder{start: left.span.Start, height: 1}
 			b.node(left)
@@ -59,12 +63,16 @@ func (p *parser) expression(minimum int, context expressionContext) SyntaxNode {
 			continue
 		}
 		power := binaryPower(kind)
+		// Weaker operators belong to the caller; zero also leaves delimiters and
+		// EOF untouched so the enclosing production can finish or recover.
 		if power == 0 || power < minimum {
 			break
 		}
 		b := nodeBuilder{start: left.span.Start, height: 1}
 		b.node(left)
 		p.consumeLookahead(&b, context)
+		// A same-precedence operator cannot enter the RHS. This loop consumes it
+		// next, wrapping the previous result on the left rather than the right.
 		p.operand(&b, power+1, context)
 		left = p.finish(BinaryExpression, b)
 	}
@@ -99,6 +107,7 @@ func (p *parser) prefix(context expressionContext) SyntaxNode {
 		kind = LiteralExpression
 	case Identifier:
 		p.consumeLookahead(&b, context)
+		// Keywords are contextual: true() and null::f() are function calls.
 		if p.peek(context) == OpenParen || p.peek(context) == DoubleColon {
 			p.call(&b, context)
 			kind = FunctionCallExpression
@@ -117,6 +126,7 @@ func (p *parser) prefix(context expressionContext) SyntaxNode {
 		kind = ParenthesizedExpression
 	case Minus, Bang:
 		p.consumeLookahead(&b, context)
+		// Unary operands include postfix traversal but exclude every binary level.
 		p.operand(&b, 7, context)
 		kind = UnaryExpression
 	case OpenBracket, OpenBrace, QuoteOpen, HeredocOpen:
@@ -151,6 +161,8 @@ func (p *parser) number(b *nodeBuilder, context expressionContext, legacy bool) 
 	p.consumeLookahead(b, context)
 }
 
+// A mismatch leaves the token for the enclosing production. Consuming it here
+// could steal that production's closer or attach trailing trivia to this node.
 func (p *parser) expect(b *nodeBuilder, kind Kind, diagnostic DiagnosticKind, context expressionContext) bool {
 	if p.peek(context) == kind {
 		p.consumeLookahead(b, context)
@@ -170,6 +182,8 @@ func (p *parser) call(b *nodeBuilder, context expressionContext) {
 	if !p.expect(b, OpenParen, ExpectedOpeningParen, context) {
 		return
 	}
+	// Only the arguments ignore newlines; namespace/name and '(' use the outer
+	// context. Testing ')' before an operand permits empty lists and trailing ','.
 	for {
 		if p.peek(delimitedExpression) == CloseParen {
 			p.consumeLookahead(b, delimitedExpression)
@@ -181,6 +195,7 @@ func (p *parser) call(b *nodeBuilder, context expressionContext) {
 			p.consumeLookahead(b, delimitedExpression)
 			return
 		case Ellipsis:
+			// Expansion is final: a following comma must not reopen the argument loop.
 			p.consumeLookahead(b, delimitedExpression)
 			p.expect(b, CloseParen, ExpectedClosingParen, delimitedExpression)
 			return
@@ -223,6 +238,8 @@ func (p *parser) recoverArgument(parent *nodeBuilder) {
 // unsupported consumes one balanced unsupported construct without recursion.
 // Nested template/interpolation delimiters remain visible in the lexical stream.
 func (p *parser) unsupported(b *nodeBuilder) {
+	// Raw tokens preserve template whitespace and delimiters in the Error subtree;
+	// expression lookahead would interpret trivia in the wrong sub-language.
 	var ends []Kind
 	for p.current().Kind != EOF {
 		kind := p.current().Kind
