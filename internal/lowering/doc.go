@@ -23,7 +23,25 @@
 //     matching upstream HCL formatting. Alignment happens after width-driven
 //     line breaks, so padding can exceed the preferred print width.
 //
-// Expression applies these formatting policies:
+// Both entries normalize expressions before constructing their layouts:
+//
+//   - Quoted wrappers: a quoted template containing exactly one interpolation
+//     and no literal text or directives is replaced with its inner expression.
+//     Strip markers on that wrapper disappear. Nested wrappers are removed
+//     recursively in one pass, producing an idempotent fixed point. General
+//     templates and heredoc templates retain their literal content and structure.
+//   - Numeric indices: legacy .number steps become [number], preserving numeric
+//     spelling and comments. Steps inside an attribute splat's projection retain
+//     legacy syntax: changing foo.*.0 to foo.*[0] would change its meaning.
+//     Ordinary traversals and full-splat projections use bracket indices.
+//   - Grammar and content: normalization preserves precedence, computed-key
+//     meaning, comment order and spelling, and retained token spelling. It adds
+//     parentheses where precedence, object-key grammar, comments, or mandatory
+//     newlines need them. An unwrapped, unambiguous quoted literal key needs no
+//     extra parentheses; computed and nonliteral keys retain that protection.
+//     All rewrites live in a private immutable view; the lossless CST is unchanged.
+//
+// Expression then applies these formatting policies:
 //
 //   - Expression context: the top-level Expression entry starts where the grammar
 //     forbids unparenthesized expression newlines. Internal template interpolation
@@ -68,15 +86,17 @@
 //     their contents may still break. Binary, conditional, and traversal groups
 //     share their break layout with explicit parentheses. Where the grammar
 //     forbids expression newlines, broken binary and conditional operations add
-//     synthetic parentheses. Traversals add none: their steps stay attached and
-//     calls and indices provide their own safe delimiters.
+//     synthetic parentheses. Width alone adds none to traversals: their steps
+//     stay attached, and calls and indices provide their own safe delimiters.
 //   - Operators: binary operators and conditional question marks and colons have
 //     surrounding spaces and start continuation lines. A same-precedence binary
 //     chain shares a group; different precedence and conditional arms can fit
 //     independently. Continuation lines use the enclosing delimiter's indentation.
-//     Operand order and precedence remain unchanged.
-//   - Traversals: attributes, ordinary and legacy indices, and attribute/full
-//     splats retain their syntax and projection structure. Dot and bracket steps
+//     Line-leading subtraction uses upstream's tight operand spacing. Operand
+//     order and precedence remain unchanged. Moving binary operators to line ends
+//     is a separate policy follow-up, not part of expression normalization.
+//   - Traversals: attributes, indices, and attribute/full splats retain their
+//     projection structure after the normalization above. Dot and bracket steps
 //     stay attached even beyond print width. Only mandatory comment/heredoc lines
 //     separate steps; these use the enclosing delimiter's indentation.
 //     Numeric tokens retain a separating space only when the following dot step
@@ -93,6 +113,8 @@
 //   - Literal content: comment/template indentation and lone CR are preserved.
 //     CRLF is normalized to LF except after a literal CR, where normalization
 //     would merge that CR into the line ending and lose content on a later pass.
+//     A line comment ending in a literal CR gains a protective CR before the
+//     following LF, including when File adds the newline to an EOF comment.
 //   - Enclosing trivia: the enclosing syntax node owns outer trivia.
 //
 // Lowering uses iterative traversal, including for deep unary chains. Returned
