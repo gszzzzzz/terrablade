@@ -111,6 +111,20 @@ func TestExpressionTriviaPlacement(t *testing.T) {
 			},
 		},
 		{
+			"collection trivia stays between elements and items",
+			"{ /*open*/ a /*key*/ = /*value*/ [ /*element*/ 1 /*end*/ ] /*separator*/ , /*item*/ b=2 /*close*/ }",
+			map[string]NodeKind{
+				"/*open*/":      ObjectExpression,
+				"/*key*/":       ObjectItem,
+				"/*value*/":     ObjectItem,
+				"/*element*/":   TupleExpression,
+				"/*end*/":       TupleExpression,
+				"/*separator*/": ObjectExpression,
+				"/*item*/":      ObjectExpression,
+				"/*close*/":     ObjectExpression,
+			},
+		},
+		{
 			"full splat trivia",
 			"foo /*gap*/ [ /*before*/ * /*after*/ ] /*step*/ . /*name*/ bar",
 			map[string]NodeKind{
@@ -190,6 +204,9 @@ func TestLimitStopsGrammarAndRetainsUnparsedTokens(t *testing.T) {
 	p.steps(&root, lineExpression, allTraversalSteps)
 	p.recoverArgument(&root)
 	p.skipConstruct(&root)
+	p.tuple(&root)
+	p.object(&root)
+	p.recoverCollection(&root, lineExpression)
 	if p.pos != position {
 		t.Fatal("grammar consumed tokens after shutdown")
 	}

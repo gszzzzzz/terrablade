@@ -98,6 +98,9 @@ const (
 	NestingLimitExceeded
 	InvalidNumber
 	ExpectedTupleSeparator
+	ExpectedClosingBrace
+	ExpectedObjectValueSeparator
+	ExpectedObjectItemSeparator
 	diagnosticKindCount
 )
 

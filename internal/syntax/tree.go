@@ -22,6 +22,8 @@ const (
 	AttributeSplat
 	FullSplat
 	TupleExpression
+	ObjectExpression
+	ObjectItem
 	nodeKindCount
 )
 

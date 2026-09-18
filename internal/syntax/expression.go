@@ -129,15 +129,18 @@ func (p *parser) prefix(context expressionContext) SyntaxNode {
 		// Unary operands include postfix traversal but exclude every binary level.
 		p.operand(&b, 7, context)
 		kind = UnaryExpression
-	case OpenBracket:
+	case OpenBracket, OpenBrace:
 		if p.collectionFor() {
 			p.report(UnsupportedExpression, token.span)
 			p.skipConstruct(&b)
-		} else {
+		} else if token.kind == OpenBracket {
 			p.tuple(&b)
 			kind = TupleExpression
+		} else {
+			p.object(&b)
+			kind = ObjectExpression
 		}
-	case OpenBrace, QuoteOpen, HeredocOpen:
+	case QuoteOpen, HeredocOpen:
 		p.report(UnsupportedExpression, token.span)
 		p.skipConstruct(&b)
 	default:

@@ -288,12 +288,6 @@ func TestExpressionDiagnostics(t *testing.T) {
 			`File(Error("<<", "END", "hello\n", "END"))`,
 		},
 		{
-			"object deferred",
-			"{a = 1}",
-			[]Diagnostic{{UnsupportedExpression, Span{0, 1}}},
-			`File(Error("{", "a", "=", "1", "}"))`,
-		},
-		{
 			"for expression deferred",
 			"[for a in xs : a]",
 			[]Diagnostic{{UnsupportedExpression, Span{0, 1}}},
@@ -307,15 +301,15 @@ func TestExpressionDiagnostics(t *testing.T) {
 		},
 		{
 			"deferred construct as operand",
-			"a + {x=1} + b",
+			`a + "x" + b`,
 			[]Diagnostic{{UnsupportedExpression, Span{4, 5}}},
-			`File(Binary(Binary(Variable("a"), "+", Error("{", "x", "=", "1", "}")), "+", Variable("b")))`,
+			`File(Binary(Binary(Variable("a"), "+", Error("\"", "x", "\"")), "+", Variable("b")))`,
 		},
 		{
 			"unterminated deferred construct",
-			"{a = [1,\n\n",
+			"[for a in xs : [1,\n\n",
 			[]Diagnostic{{UnsupportedExpression, Span{0, 1}}},
-			`File(Error("{", "a", "=", "[", "1", ","))`,
+			`File(Error("[", "for", "a", "in", "xs", ":", "[", "1", ","))`,
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -341,7 +335,7 @@ func assertDiagnosticsAndShape(t *testing.T, source string, diagnostics []Diagno
 func TestUnterminatedUnsupportedLeavesTrailingTrivia(t *testing.T) {
 	// Quoted and heredoc bodies absorb whitespace into TemplateText, so only
 	// bracketed constructs can be followed by config-level trivia at EOF.
-	for _, source := range []string{"{ ", "{ # c\n", "{a = [1,\n\n", "{\"x\" /* c */\n"} {
+	for _, source := range []string{"[for ", "{for # c\n", "{for a in xs : a => [1,\n\n", "[for a in xs : \"x\" /* c */\n"} {
 		t.Run(source, func(t *testing.T) {
 			file := parseExpressionSource([]byte(source))
 			assertExpressionPartition(t, []byte(source), file)
@@ -396,6 +390,8 @@ func FuzzExpression(f *testing.F) {
 		"(a /* x */ + # y\n b)",
 		"[a\n+ b, [c],]",
 		"[1 f(2, 3), 4]",
+		"{a=1\nb=[2, {c:3}]}[key]",
+		"{a=1 bad # next\n b=2}",
 		`f("${a}", [for a in b : a])`,
 		"a + /*\xff",
 		strings.Repeat("!", maxRecursiveExpressionDepth+1) + "a",
@@ -478,7 +474,8 @@ func expressionShape(file syntaxFile, current SyntaxElement) string {
 			TraversalExpression: "Traversal", AttributeAccess: "Attribute",
 			IndexAccess: "Index", LegacyIndexAccess: "LegacyIndex",
 			AttributeSplat: "AttributeSplat", FullSplat: "FullSplat",
-			TupleExpression: "Tuple",
+			TupleExpression:  "Tuple",
+			ObjectExpression: "Object", ObjectItem: "Item",
 		}
 		var children []string
 		for i := range element.ChildCount() {
@@ -565,6 +562,10 @@ func TestExpressionDepthBoundaries(t *testing.T) {
 		{
 			"tuple recursion",
 			func(count int) string { return strings.Repeat("[", count) + "a" + strings.Repeat("]", count) },
+		},
+		{
+			"object recursion",
+			func(count int) string { return strings.Repeat("{x=", count) + "a" + strings.Repeat("}", count) },
 		},
 		{
 			"conditional recursion",
