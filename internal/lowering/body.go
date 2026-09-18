@@ -18,8 +18,9 @@ func File(result syntax.Result) (document.Doc, error) {
 		return document.Doc{}, errors.New("lowering: expected a parsed file")
 	}
 	type frame struct {
-		node syntax.SyntaxNode
-		next int
+		node       syntax.SyntaxNode
+		next       int
+		nestedBody bool
 	}
 	stack := []frame{{node: result.Root()}}
 	docs := make(map[syntax.SyntaxNode]bodyLayout)
@@ -29,7 +30,7 @@ func File(result syntax.Result) (document.Doc, error) {
 			element := current.node.Child(current.next)
 			current.next++
 			if child, ok := element.Node(); ok {
-				stack = append(stack, frame{node: child})
+				stack = append(stack, frame{node: child, nestedBody: current.node.Kind() == syntax.Block && child.Kind() == syntax.Body})
 			}
 			continue
 		}
@@ -45,7 +46,7 @@ func File(result syntax.Result) (document.Doc, error) {
 			}
 			lowered.doc = document.Concat(parts...)
 		case syntax.Body:
-			lowered = body(result, current.node, len(stack) > 2, docs)
+			lowered = body(result, current.node, current.nestedBody, docs)
 		case syntax.Block:
 			lowered.doc = block(result, current.node, docs)
 		case syntax.BlockLabel:
@@ -154,15 +155,24 @@ func body(result syntax.Result, node syntax.SyntaxNode, nested bool, docs map[sy
 	return bodyLayout{doc: document.Concat(parts...), end: end}
 }
 
-// Body gaps own both item separators and comments. Blank lines depend on item
-// kinds unless a standalone comment gives an explicit source section boundary.
+// Body gaps own both item separators and comments. Classify each source gap
+// before selecting its separator; comment placement and section policy are
+// independent of document construction.
 func bodyGap(result syntax.Result, trivia []syntax.SyntaxToken, previous, next syntax.NodeKind, nested bool) document.Doc {
 	var parts []document.Doc
-	newlines := 0
-	haveContent := previous != syntax.InvalidNode
-	haveComment, standalone, lineComment := false, false, false
-	blockBoundary := previous != syntax.InvalidNode && next != syntax.InvalidNode && (previous == syntax.Block || next == syntax.Block)
-	attributeBoundary := previous == syntax.Attribute && next == syntax.Attribute
+	gap := bodyGapClass{before: bodyGapSide{kind: bodyItem}}
+	switch {
+	case previous == syntax.InvalidNode && nested:
+		gap.before.kind = bodyBlockStart
+	case previous == syntax.InvalidNode:
+		gap.before.kind = bodyFileStart
+	case next == syntax.InvalidNode:
+		// Trailing padding has no item boundary to preserve or insert.
+	case previous == syntax.Block || next == syntax.Block:
+		gap.boundary = bodyBlockBoundary
+	default:
+		gap.boundary = bodyAttributeBoundary
+	}
 	lastNewline := -1
 	for i, token := range trivia {
 		if token.Kind() == syntax.Newline {
@@ -171,7 +181,7 @@ func bodyGap(result syntax.Result, trivia []syntax.SyntaxToken, previous, next s
 	}
 	for i, token := range trivia {
 		if token.Kind() == syntax.Newline {
-			newlines++
+			gap.lines = min(gap.lines+1, 2)
 			continue
 		}
 		if token.Kind() != syntax.LineComment && token.Kind() != syntax.BlockComment {
@@ -180,42 +190,107 @@ func bodyGap(result syntax.Result, trivia []syntax.SyntaxToken, previous, next s
 		// A run can contain several block comments on the same line. They
 		// share their section status, but a prefix sharing the next item's
 		// line is not an independent comment section.
-		isStandalone := (newlines > 0 || !haveContent && !nested || standalone) && (next == syntax.InvalidNode || i < lastNewline)
-		separator := document.Text(" ")
-		if newlines > 0 || lineComment {
-			separator = document.HardLine()
-			if haveContent && (newlines >= 2 && (attributeBoundary || isStandalone || standalone) || blockBoundary) {
-				separator = document.Concat(separator, document.HardLine())
-				blockBoundary = false
-			}
+		gap.after = bodyGapSide{
+			kind:       bodyBlockComment,
+			standalone: (gap.lines > 0 || gap.before.kind == bodyFileStart || gap.before.standalone) && (next == syntax.InvalidNode || i < lastNewline),
 		}
-		if !haveContent && !nested {
-			separator = document.Doc{}
-		} else if !haveContent && nested && newlines > 0 {
-			separator = document.HardLine()
+		if token.Kind() == syntax.LineComment {
+			gap.after.kind = bodyLineComment
 		}
-		comment := document.Concat(separator, literal(result.Text(token.Span())))
-		if !isStandalone && token.Kind() == syntax.LineComment {
+		separator := gap.separator()
+		if separator == bodyBlank && gap.boundary == bodyBlockBoundary {
+			// A block boundary inserts one blank line across the whole gap,
+			// not another one after every intervening comment.
+			gap.boundary = bodyOuterBoundary
+		}
+		comment := document.Concat(separator.doc(), literal(result.Text(token.Span())))
+		if !gap.after.standalone && token.Kind() == syntax.LineComment {
 			comment = document.Cell(1, comment)
 		}
 		parts = append(parts, comment)
-		haveContent, haveComment, standalone = true, true, isStandalone
-		lineComment = token.Kind() == syntax.LineComment
-		newlines = 0
+		gap.before = gap.after
+		gap.lines = 0
 	}
 	if next != syntax.InvalidNode {
-		separator := document.HardLine()
-		if !haveContent && !nested {
-			separator = document.Doc{}
-		} else if haveComment && !lineComment && newlines == 0 {
-			separator = document.Text(" ")
-		}
-		if blockBoundary || newlines >= 2 && (attributeBoundary || haveComment && standalone) {
-			separator = document.Concat(document.HardLine(), document.HardLine())
-		}
-		parts = append(parts, separator)
+		gap.after = bodyGapSide{kind: bodyItem}
+		parts = append(parts, gap.separator().doc())
 	}
 	return document.Concat(parts...)
+}
+
+type bodyBoundary uint8
+
+const (
+	bodyOuterBoundary bodyBoundary = iota
+	bodyAttributeBoundary
+	bodyBlockBoundary
+)
+
+type bodySideKind uint8
+
+const (
+	bodyFileStart bodySideKind = iota
+	bodyBlockStart
+	bodyItem
+	bodyBlockComment
+	bodyLineComment
+)
+
+type bodyGapSide struct {
+	kind       bodySideKind
+	standalone bool
+}
+
+// lines is a capped source newline count: zero means inline, one means adjacent
+// lines, and two means a source blank line. Literal comment newlines stay opaque.
+type bodyGapClass struct {
+	lines         int
+	before, after bodyGapSide
+	boundary      bodyBoundary
+}
+
+func (gap bodyGapClass) separator() bodySeparator {
+	switch {
+	case gap.before.kind == bodyFileStart:
+		return bodyTight
+	case gap.before.kind == bodyBlockStart:
+		if gap.after.kind != bodyItem && gap.lines == 0 {
+			return bodySpace // Keep a comment attached to the opening brace.
+		}
+		return bodyLine
+	case gap.boundary == bodyBlockBoundary && (gap.lines > 0 || gap.before.kind == bodyLineComment || gap.after.kind == bodyItem):
+		return bodyBlank
+	case gap.lines == 2 && (gap.boundary == bodyAttributeBoundary || gap.before.standalone || gap.after.standalone):
+		return bodyBlank
+	case gap.lines > 0 || gap.before.kind == bodyLineComment:
+		return bodyLine
+	case gap.before.kind == bodyItem && gap.after.kind == bodyItem:
+		return bodyLine
+	default:
+		return bodySpace
+	}
+}
+
+type bodySeparator uint8
+
+const (
+	bodyTight bodySeparator = iota
+	bodySpace
+	bodyLine
+	bodyBlank
+)
+
+func (separator bodySeparator) doc() document.Doc {
+	switch separator {
+	case bodySpace:
+		return document.Text(" ")
+	case bodyLine:
+		return document.HardLine()
+	case bodyBlank:
+		return document.Concat(document.HardLine(), document.HardLine())
+	default:
+		return document.Doc{}
+	}
 }
 
 func bodyTrivia(kind syntax.TokenKind) bool {
