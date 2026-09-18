@@ -4,7 +4,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/apparentlymart/go-textseg/v17/textseg"
+	"github.com/clipperhouse/uax29/v2/graphemes"
 )
 
 // Position identifies a byte offset in a Result's source. It contains no source
@@ -47,14 +47,14 @@ func (r Result) Position(offset int) Position {
 	// Include the byte at offset and at most three following bytes, completing
 	// that code point without scanning an arbitrarily long cluster beyond it.
 	limit := offset + min(utf8.UTFMax, len(r.source)-offset)
-	data := []byte(r.source[lineStart:limit])
+	data := r.source[lineStart:limit]
 	target := offset - lineStart
 	for consumed := 0; consumed < target; {
-		// textseg does not fully validate UTF-8. Separate valid runs first so
+		// Grapheme iteration does not validate UTF-8. Separate valid runs so
 		// even overlong or surrogate encodings cannot join a preceding cluster.
 		validEnd := consumed
 		for validEnd < len(data) {
-			runeValue, width := utf8.DecodeRune(data[validEnd:])
+			runeValue, width := utf8.DecodeRuneInString(data[validEnd:])
 			if runeValue == utf8.RuneError && width == 1 {
 				break
 			}
@@ -65,14 +65,14 @@ func (r Result) Position(offset int) Position {
 			position.Column++
 			continue
 		}
-		for consumed < validEnd && consumed < target {
-			// For nonempty data at EOF this splitter always advances and never
-			// returns an error. Only the byte advance is needed, not its token view.
-			advance, _, _ := textseg.ScanGraphemeClusters(data[consumed:validEnd], true)
-			if consumed+advance > target {
+		start := consumed
+		clusters := graphemes.FromString(data[start:validEnd])
+		for consumed < target && clusters.Next() {
+			end := start + clusters.End()
+			if end > target {
 				return position
 			}
-			consumed += advance
+			consumed = end
 			position.Column++
 		}
 	}

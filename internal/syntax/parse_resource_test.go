@@ -7,7 +7,7 @@ import (
 	"testing"
 	"unicode/utf8"
 
-	"github.com/apparentlymart/go-textseg/v17/textseg"
+	"github.com/clipperhouse/uax29/v2/graphemes"
 
 	"terrablade/internal/syntax"
 )
@@ -123,12 +123,12 @@ func FuzzParse(f *testing.F) {
 		}
 		for _, offset := range offsets {
 			want := syntax.Position{Offset: offset, Line: 1, Column: 1}
-			for index := 0; index < offset; {
-				advance, cluster, _ := textseg.ScanGraphemeClusters(normalized[index:], true)
-				if index+advance > offset {
+			clusters := graphemes.FromBytes(normalized)
+			for clusters.Next() {
+				if clusters.End() > offset {
 					break
 				}
-				index += advance
+				cluster := clusters.Value()
 				if cluster[len(cluster)-1] == '\n' {
 					want.Line++
 					want.Column = 1
