@@ -26,6 +26,7 @@ func FuzzExpression(f *testing.F) {
 		"aws_instance.foo.0.id", "foo.1e1.id", "foo.0 .e٢",
 		"foo.0/*c*/.e2", "foo.0./*c*/e2", "foo.0./*c*/1",
 		"f(foo[0].first_attribute[*].second_attribute)",
+		"{a:1,b=2}", "{a=1\n\nb=2}", "{alpha + beta=1}", "[{key=alpha+beta}]",
 	} {
 		f.Add(source, uint8(20))
 	}
@@ -105,9 +106,14 @@ func BenchmarkOperationChains(b *testing.B) {
 // still detects a precedence change, because the operator tree would differ.
 func expressionTokens(result syntax.Result, node syntax.SyntaxNode) []string {
 	var tokens []string
-	stack := []syntax.SyntaxElement{node.Element()}
+	type entry struct {
+		element         syntax.SyntaxElement
+		objectSeparator bool
+	}
+	stack := []entry{{element: node.Element()}}
 	for len(stack) != 0 {
-		element := stack[len(stack)-1]
+		current := stack[len(stack)-1]
+		element := current.element
 		stack = stack[:len(stack)-1]
 		if node, ok := element.Node(); ok {
 			if node.Kind() != syntax.ParenthesizedExpression {
@@ -117,13 +123,17 @@ func expressionTokens(result syntax.Result, node syntax.SyntaxNode) []string {
 				if token, ok := node.Child(i).Token(); ok && node.Kind() == syntax.ParenthesizedExpression && (token.Kind() == syntax.OpenParen || token.Kind() == syntax.CloseParen) {
 					continue
 				}
-				stack = append(stack, node.Child(i))
+				stack = append(stack, entry{element: node.Child(i), objectSeparator: node.Kind() == syntax.ObjectItem})
 			}
 			continue
 		}
 		token, _ := element.Token()
 		switch token.Kind() {
 		case syntax.Whitespace, syntax.Newline, syntax.Comma:
+			continue
+		}
+		if current.objectSeparator && token.Kind() == syntax.Colon {
+			tokens = append(tokens, "=")
 			continue
 		}
 		tokens = append(tokens, strings.ReplaceAll(result.Text(token.Span()), "\r\n", "\n"))

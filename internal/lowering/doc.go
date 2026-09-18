@@ -13,6 +13,11 @@
 //     separate indented lines. Broken layouts have a trailing comma except
 //     after an expanded call argument; flat layouts omit source trailing commas.
 //     Empty delimiters stay compact unless comments require a line break.
+//   - Objects: entries use key = value with no alignment. Flat entries have
+//     comma separators and spaces inside braces; broken entries use one line
+//     per entry and a trailing comma. Bare identifier keys retain their spelling
+//     and key context, and computed keys retain explicit parentheses. Keys and
+//     values remain newline-sensitive, even inside an otherwise safe context.
 //   - Parentheses: explicit parentheses do not introduce width-triggered breaks;
 //     their contents may still break. Binary, conditional, and traversal groups
 //     share their break layout with explicit parentheses. Where the grammar
@@ -31,7 +36,7 @@
 //     could continue the numeric token, as with .0 or .e2 but not .id. Index
 //     expressions can break inside brackets. Calls and following traversal
 //     steps make independent fit decisions within a broken expression.
-//   - Blank lines: broken tuple entry gaps preserve at most one source blank
+//   - Blank lines: broken tuple and object entry gaps preserve at most one source blank
 //     line. Calls collapse blank lines.
 //   - Comments: source order is preserved, inline comments stay inline, and
 //     source newlines retain standalone comments. Commas move before their
@@ -47,7 +52,7 @@
 // rendering follows document's own resource contract. No final newline is added.
 //
 // This implementation supports literals, variable references, unary/binary and
-// conditional expressions, explicit parentheses, calls, tuples, and traversals.
-// Object, for, and template expressions return an error until their lowering
+// conditional expressions, explicit parentheses, calls, tuples, objects, and traversals.
+// For and template expressions return an error until their lowering
 // policies are implemented.
 package lowering

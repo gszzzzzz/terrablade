@@ -35,6 +35,8 @@ func Expression(result syntax.Result, node syntax.SyntaxNode) (document.Doc, err
 			if child, ok := element.Node(); ok {
 				safe := current.safe
 				switch current.node.Kind() {
+				case syntax.ObjectItem:
+					safe = false // Object keys and values are newline-sensitive.
 				case syntax.ParenthesizedExpression, syntax.FunctionCallExpression,
 					syntax.TupleExpression, syntax.IndexAccess,
 					syntax.BinaryExpression, syntax.ConditionalExpression, syntax.TraversalExpression:
@@ -99,6 +101,7 @@ func lowerNode(result syntax.Result, node syntax.SyntaxNode, safe bool, docs map
 		syntax.BinaryExpression, syntax.ConditionalExpression,
 		syntax.TraversalExpression, syntax.AttributeAccess, syntax.IndexAccess,
 		syntax.LegacyIndexAccess, syntax.AttributeSplat, syntax.FullSplat:
+	case syntax.ObjectExpression, syntax.ObjectItem:
 	default:
 		return layout{}, fmt.Errorf("lowering: unsupported expression form %s", node.Kind())
 	}
@@ -130,7 +133,12 @@ func lowerNode(result syntax.Result, node syntax.SyntaxNode, safe bool, docs map
 	case syntax.ParenthesizedExpression:
 		lowered.doc = parenthesized(result, pieces)
 	case syntax.TupleExpression:
-		lowered.doc = delimited(result, pieces, 0, true)
+		lowered.doc = delimited(result, pieces, 0, true, soft)
+	case syntax.ObjectExpression:
+		lowered.doc = object(result, pieces)
+	case syntax.ObjectItem:
+		pieces[1].doc = document.Text("=")
+		lowered.doc = spacedSequence(result, pieces)
 	case syntax.BinaryExpression:
 		lowered.power = binaryPower(pieces[1].kind)
 		lowered.head = pieces[0].doc
@@ -168,7 +176,7 @@ func lowerNode(result syntax.Result, node syntax.SyntaxNode, safe bool, docs map
 	default: // FunctionCallExpression, including namespace prefixes.
 		for i, part := range pieces {
 			if part.kind == syntax.OpenParen {
-				lowered.doc = delimited(result, pieces, i, false)
+				lowered.doc = delimited(result, pieces, i, false, soft)
 				return lowered, nil
 			}
 		}
@@ -215,7 +223,7 @@ func parenthesized(result syntax.Result, pieces []piece) document.Doc {
 	return document.Concat(pieces[0].doc, document.Indent(document.Concat(leading, start, inner.doc, gap)), end, close.doc)
 }
 
-func delimited(result syntax.Result, pieces []piece, open int, preserveBlank bool) document.Doc {
+func delimited(result syntax.Result, pieces []piece, open int, preserveBlank bool, edge spacing) document.Doc {
 	// Commas are canonical separators rather than comment anchors. Move their
 	// leading trivia to the following gap so comments cannot swallow punctuation.
 	for i := open + 1; i < len(pieces)-1; i++ {
@@ -231,7 +239,7 @@ func delimited(result syntax.Result, pieces []piece, open int, preserveBlank boo
 	for i, part := range content {
 		style := gapStyle{beforeComment: space, afterComment: space}
 		if i == 0 {
-			style.empty, style.beforeComment = soft, soft
+			style.empty, style.beforeComment = edge, edge
 		} else if content[i-1].kind == syntax.Comma {
 			style.empty, style.afterComment = line, line
 			style.blankLine = preserveBlank
@@ -252,9 +260,9 @@ func delimited(result syntax.Result, pieces []piece, open int, preserveBlank boo
 			parts = append(parts, document.IfBreak(document.Text(","), document.Doc{}))
 		}
 	}
-	style := gapStyle{empty: soft, beforeComment: space, afterComment: soft}
+	style := gapStyle{empty: edge, beforeComment: space, afterComment: edge}
 	if len(content) == 0 {
-		style.empty, style.beforeComment = tight, soft
+		style.empty, style.beforeComment, style.afterComment = tight, soft, soft
 	}
 	gap, end := commentGap(result, close.before, style)
 	parts = append(parts, gap)
