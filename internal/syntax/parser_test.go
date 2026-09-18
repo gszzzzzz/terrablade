@@ -53,17 +53,17 @@ func TestParserCursorPreservesTriviaAndEOF(t *testing.T) {
 	source := []byte(" /* lead */1 \t# tail\n")
 	p := newParser(source)
 	root := p.begin()
-	p.before(&root, p.look(delimitedExpression))
+	p.consumeUntil(&root, p.look(delimitedExpression))
 	expression := p.begin()
-	p.take(&expression, lineExpression)
+	p.consumeLookahead(&expression, lineExpression)
 	root.node(p.finish(LiteralExpression, expression))
 	if p.peek(lineExpression) != LineComment {
 		t.Fatal("line comment must remain outside the expression")
 	}
-	p.before(&root, len(p.tokens)-1)
+	p.consumeUntil(&root, len(p.tokens)-1)
 	// Even repeated reads at EOF do not duplicate the sentinel.
-	p.take(&root, lineExpression)
-	p.take(&root, lineExpression)
+	p.consumeLookahead(&root, lineExpression)
+	p.consumeLookahead(&root, lineExpression)
 	file := p.file(root)
 	assertFilePartition(t, source, file)
 	node := file.root.Child(2).(SyntaxNode)
@@ -144,7 +144,7 @@ func TestExpressionTriviaPlacement(t *testing.T) {
 				if node.Kind() != File {
 					for _, token := range lex([]byte(file.source[node.span.Start:node.span.End])).Tokens {
 						if token.Span.Start == 0 || token.Span.End == node.span.End-node.span.Start {
-							if trivia(token.Kind) {
+							if isTrivia(token.Kind) {
 								t.Fatalf("node %v absorbed outer trivia", node.Kind())
 							}
 						}

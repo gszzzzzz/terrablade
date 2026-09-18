@@ -321,7 +321,7 @@ func assertExpressionPartition(t *testing.T, source []byte, file syntaxFile) {
 func expressionShape(file syntaxFile, element SyntaxElement) string {
 	switch element := element.(type) {
 	case SyntaxToken:
-		if trivia(element.Kind()) || element.Kind() == EOF {
+		if isTrivia(element.Kind()) || element.Kind() == EOF {
 			return ""
 		}
 		span := element.Span()

@@ -13,6 +13,27 @@ const (
 	delimitedExpression
 )
 
+type triviaClass uint8
+
+const (
+	notTrivia triviaClass = iota
+	inlineTrivia
+	lineTrivia
+)
+
+func classifyTrivia(kind Kind) triviaClass {
+	switch kind {
+	case Whitespace, BlockComment:
+		return inlineTrivia
+	case LineComment, Newline:
+		return lineTrivia
+	default:
+		return notTrivia
+	}
+}
+
+func isTrivia(kind Kind) bool { return classifyTrivia(kind) != notTrivia }
+
 type parser struct {
 	source      string
 	tokens      []token
@@ -38,10 +59,10 @@ func newParser(source []byte) *parser {
 func (p *parser) look(context expressionContext) int {
 	i := p.pos
 	for i < len(p.tokens)-1 {
-		switch p.tokens[i].Kind {
-		case Whitespace, BlockComment:
+		switch classifyTrivia(p.tokens[i].Kind) {
+		case inlineTrivia:
 			i++
-		case LineComment, Newline:
+		case lineTrivia:
 			if context == lineExpression {
 				return i
 			}
@@ -72,7 +93,8 @@ func (b *nodeBuilder) node(node SyntaxNode) {
 	b.height = max(b.height, node.height+1)
 }
 
-func (p *parser) before(b *nodeBuilder, index int) {
+// consumeUntil appends raw tokens before index, leaving index unconsumed.
+func (p *parser) consumeUntil(b *nodeBuilder, index int) {
 	for p.pos < index {
 		token := p.tokens[p.pos]
 		b.children = append(b.children, SyntaxToken{kind: token.Kind, span: token.Span})
@@ -80,14 +102,14 @@ func (p *parser) before(b *nodeBuilder, index int) {
 	}
 }
 
-// take consumes through the looked-ahead grammatical token, but never EOF.
+// consumeLookahead includes the looked-ahead grammatical token, but never EOF.
 // The file assembler alone owns EOF, preventing duplicate sentinel leaves.
-func (p *parser) take(b *nodeBuilder, context expressionContext) {
+func (p *parser) consumeLookahead(b *nodeBuilder, context expressionContext) {
 	i := p.look(context)
 	if p.tokens[i].Kind != EOF {
 		i++
 	}
-	p.before(b, i)
+	p.consumeUntil(b, i)
 }
 
 func (p *parser) report(kind DiagnosticKind, span Span) {

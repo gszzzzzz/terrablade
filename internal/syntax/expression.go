@@ -12,31 +12,23 @@ import (
 func parseExpressionSource(source []byte) syntaxFile {
 	p := newParser(source)
 	root := p.begin()
-	p.before(&root, p.look(delimitedExpression))
+	p.consumeUntil(&root, p.look(delimitedExpression))
 	p.operand(&root, 0, lineExpression)
-	p.before(&root, p.look(delimitedExpression))
+	p.consumeUntil(&root, p.look(delimitedExpression))
 	if p.peek(delimitedExpression) != EOF {
 		if !p.limited {
 			p.report(UnexpectedToken, p.tokens[p.pos].Span)
 		}
 		end := len(p.tokens) - 1
-		for end > p.pos && trivia(p.tokens[end-1].Kind) {
+		for end > p.pos && isTrivia(p.tokens[end-1].Kind) {
 			end--
 		}
 		rest := p.begin()
-		p.before(&rest, end)
+		p.consumeUntil(&rest, end)
 		root.node(p.finish(Error, rest))
 	}
-	p.before(&root, len(p.tokens)-1)
+	p.consumeUntil(&root, len(p.tokens)-1)
 	return p.file(root)
-}
-
-func trivia(kind Kind) bool {
-	switch kind {
-	case Whitespace, BlockComment, LineComment, Newline:
-		return true
-	}
-	return false
 }
 
 // operand commits only trivia that precedes an actual expression. A missing
@@ -52,7 +44,7 @@ func (p *parser) operand(b *nodeBuilder, minimum int, context expressionContext)
 		b.node(p.finish(Error, p.begin()))
 		return
 	}
-	p.before(b, i)
+	p.consumeUntil(b, i)
 	b.node(p.expression(minimum, context))
 }
 
@@ -62,7 +54,7 @@ func (p *parser) expression(minimum int, context expressionContext) SyntaxNode {
 	if p.depth == maxExpressionDepth {
 		p.limit(p.tokens[p.pos].Span)
 		b := p.begin()
-		p.take(&b, context)
+		p.consumeLookahead(&b, context)
 		return p.finish(Error, b)
 	}
 	p.depth++
@@ -73,7 +65,7 @@ func (p *parser) expression(minimum int, context expressionContext) SyntaxNode {
 		if kind == Question && minimum == 0 {
 			b := nodeBuilder{start: left.span.Start, height: 1}
 			b.node(left)
-			p.take(&b, context)
+			p.consumeLookahead(&b, context)
 			p.operand(&b, 0, context)
 			if p.expect(&b, Colon, ExpectedConditionalColon, context) {
 				p.operand(&b, 0, context)
@@ -87,7 +79,7 @@ func (p *parser) expression(minimum int, context expressionContext) SyntaxNode {
 		}
 		b := nodeBuilder{start: left.span.Start, height: 1}
 		b.node(left)
-		p.take(&b, context)
+		p.consumeLookahead(&b, context)
 		p.operand(&b, power+1, context)
 		left = p.finish(BinaryExpression, b)
 	}
@@ -121,7 +113,7 @@ func (p *parser) prefix(context expressionContext) SyntaxNode {
 		p.number(&b, context, false)
 		kind = LiteralExpression
 	case Identifier:
-		p.take(&b, context)
+		p.consumeLookahead(&b, context)
 		if p.peek(context) == OpenParen || p.peek(context) == DoubleColon {
 			p.call(&b, context)
 			kind = FunctionCallExpression
@@ -134,12 +126,12 @@ func (p *parser) prefix(context expressionContext) SyntaxNode {
 			}
 		}
 	case OpenParen:
-		p.take(&b, context)
+		p.consumeLookahead(&b, context)
 		p.operand(&b, 0, delimitedExpression)
 		p.expect(&b, CloseParen, ExpectedClosingParen, delimitedExpression)
 		kind = ParenthesizedExpression
 	case Minus, Bang:
-		p.take(&b, context)
+		p.consumeLookahead(&b, context)
 		p.operand(&b, 7, context)
 		kind = UnaryExpression
 	case OpenBracket, OpenBrace, QuoteOpen, HeredocOpen:
@@ -147,13 +139,13 @@ func (p *parser) prefix(context expressionContext) SyntaxNode {
 		p.unsupported(&b)
 	default:
 		p.report(ExpectedExpression, token.Span)
-		p.take(&b, context)
+		p.consumeLookahead(&b, context)
 	}
 	left := p.finish(kind, b)
 	if !p.limited && (p.peek(context) == Dot || p.peek(context) == OpenBracket) {
 		b = nodeBuilder{start: left.span.Start, height: 1}
 		b.node(left)
-		p.steps(&b, context, false)
+		p.steps(&b, context, allTraversalSteps)
 		left = p.finish(TraversalExpression, b)
 	}
 	return left
@@ -171,7 +163,7 @@ func (p *parser) number(b *nodeBuilder, context expressionContext, legacy bool) 
 		// using the standard library and retaining no evaluated value in the CST.
 		p.report(InvalidNumber, span)
 	}
-	p.take(b, context)
+	p.consumeLookahead(b, context)
 }
 
 func (p *parser) expect(b *nodeBuilder, kind Kind, diagnostic DiagnosticKind, context expressionContext) bool {
@@ -179,7 +171,7 @@ func (p *parser) expect(b *nodeBuilder, kind Kind, diagnostic DiagnosticKind, co
 		return false
 	}
 	if p.peek(context) == kind {
-		p.take(b, context)
+		p.consumeLookahead(b, context)
 		return true
 	}
 	p.report(diagnostic, p.tokens[p.look(context)].Span)
@@ -188,7 +180,7 @@ func (p *parser) expect(b *nodeBuilder, kind Kind, diagnostic DiagnosticKind, co
 
 func (p *parser) call(b *nodeBuilder, context expressionContext) {
 	for p.peek(context) == DoubleColon {
-		p.take(b, context)
+		p.consumeLookahead(b, context)
 		if !p.expect(b, Identifier, ExpectedFunctionName, context) {
 			return
 		}
@@ -198,20 +190,20 @@ func (p *parser) call(b *nodeBuilder, context expressionContext) {
 	}
 	for !p.limited {
 		if p.peek(delimitedExpression) == CloseParen {
-			p.take(b, delimitedExpression)
+			p.consumeLookahead(b, delimitedExpression)
 			return
 		}
 		p.operand(b, 0, delimitedExpression)
 		switch p.peek(delimitedExpression) {
 		case CloseParen:
-			p.take(b, delimitedExpression)
+			p.consumeLookahead(b, delimitedExpression)
 			return
 		case Ellipsis:
-			p.take(b, delimitedExpression)
+			p.consumeLookahead(b, delimitedExpression)
 			p.expect(b, CloseParen, ExpectedClosingParen, delimitedExpression)
 			return
 		case Comma:
-			p.take(b, delimitedExpression)
+			p.consumeLookahead(b, delimitedExpression)
 		case EOF, CloseBracket, CloseBrace:
 			p.expect(b, CloseParen, ExpectedClosingParen, delimitedExpression)
 			return
@@ -224,7 +216,7 @@ func (p *parser) call(b *nodeBuilder, context expressionContext) {
 				p.expect(b, CloseParen, ExpectedClosingParen, delimitedExpression)
 				return
 			}
-			p.take(b, delimitedExpression)
+			p.consumeLookahead(b, delimitedExpression)
 		}
 	}
 }
@@ -234,7 +226,7 @@ func (p *parser) call(b *nodeBuilder, context expressionContext) {
 // at least one token; missing expressions can return without consuming only when
 // their caller will consume the delimiter or leave this production.
 func (p *parser) recoverArgument(parent *nodeBuilder) {
-	p.before(parent, p.look(delimitedExpression))
+	p.consumeUntil(parent, p.look(delimitedExpression))
 	b := p.begin()
 	for {
 		switch p.peek(delimitedExpression) {
@@ -244,7 +236,7 @@ func (p *parser) recoverArgument(parent *nodeBuilder) {
 			}
 			return
 		}
-		p.take(&b, delimitedExpression)
+		p.consumeLookahead(&b, delimitedExpression)
 	}
 }
 
@@ -259,7 +251,7 @@ func (p *parser) unsupported(b *nodeBuilder) {
 		} else if len(ends) > 0 && ends[len(ends)-1] == kind {
 			ends = ends[:len(ends)-1]
 		}
-		p.before(b, p.pos+1)
+		p.consumeUntil(b, p.pos+1)
 		if len(ends) == 0 {
 			return
 		}
