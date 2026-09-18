@@ -226,8 +226,9 @@ func needsGrouping(result syntax.Result, parent syntax.SyntaxNode, position int,
 	}
 	switch parent.Kind() {
 	case syntax.ObjectItem:
-		// Bare identifiers (including true/null) are literal keys in HCL.
-		return position == 0
+		// Bare identifiers (including true/null) change meaning as keys, but
+		// a literal quoted key already expresses its intent unambiguously.
+		return position == 0 && !literalQuotedTemplate(child)
 	case syntax.UnaryExpression:
 		return expressionPower(child) < 7
 	case syntax.BinaryExpression:
@@ -258,6 +259,18 @@ func needsGrouping(result syntax.Result, parent syntax.SyntaxNode, position int,
 		return position == 0 && child.kind == syntax.VariableExpression && child.children[0].token.spelling(result) == "for"
 	}
 	return false
+}
+
+func literalQuotedTemplate(node *expressionView) bool {
+	if node.kind != syntax.TemplateExpression || node.children[0].token.kind != syntax.QuoteOpen {
+		return false
+	}
+	for _, child := range node.children {
+		if child.node != nil {
+			return false // Interpolations and directives are evaluated key content.
+		}
+	}
+	return true
 }
 
 func expressionPower(node *expressionView) int {
