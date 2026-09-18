@@ -125,6 +125,18 @@ func TestExpressionTriviaPlacement(t *testing.T) {
 			},
 		},
 		{
+			"template sequence comments remain inside header nodes",
+			`"%{ /*before*/ if /*condition*/ a /*end*/ }${ /*value*/ x /*close*/ }%{ /*after*/ endif }"`,
+			map[string]NodeKind{
+				"/*before*/":    TemplateDirective,
+				"/*condition*/": TemplateDirective,
+				"/*end*/":       TemplateDirective,
+				"/*value*/":     TemplateInterpolation,
+				"/*close*/":     TemplateInterpolation,
+				"/*after*/":     TemplateDirective,
+			},
+		},
+		{
 			"full splat trivia",
 			"foo /*gap*/ [ /*before*/ * /*after*/ ] /*step*/ . /*name*/ bar",
 			map[string]NodeKind{

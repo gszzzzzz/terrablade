@@ -210,11 +210,6 @@ func TestUpstreamNumericExpressionCompatibility(t *testing.T) {
 			if valid := len(file.diagnostics) == 0; valid != test.valid {
 				t.Fatalf("valid = %v, want %v; diagnostics: %+v", valid, test.valid, file.diagnostics)
 			}
-			for _, diagnostic := range file.diagnostics {
-				if diagnostic.Kind == UnsupportedExpression {
-					t.Fatal("numeric compatibility cannot be deferred as unsupported")
-				}
-			}
 		})
 	}
 }

@@ -94,7 +94,6 @@ const (
 	ExpectedOpeningParen
 	InvalidLegacyIndex
 	NestedAttributeSplat
-	UnsupportedExpression
 	NestingLimitExceeded
 	InvalidNumber
 	ExpectedTupleSeparator
@@ -108,6 +107,11 @@ const (
 	UnexpectedForKey
 	UnexpectedForGrouping
 	ExpectedTemplateSequenceEnd
+	ExpectedTemplateDirective
+	UnknownTemplateDirective
+	UnexpectedTemplateDirective
+	ExpectedTemplateEndIf
+	ExpectedTemplateEndFor
 	diagnosticKindCount
 )
 

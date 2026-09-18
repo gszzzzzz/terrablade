@@ -7,9 +7,8 @@
 // never metadata attached to a neighboring node.
 //
 // Lexing and expression parsing are private implementation details. The private
-// expression parser validates only its supported expression subset, not
-// configuration bodies. A public Parse entry point and its Result will come
-// with body parsing.
+// expression parser validates native expressions, not configuration bodies.
+// A public Parse entry point and its Result will come with body parsing.
 // Diagnostics describe lexical and syntax errors. Contextual keywords retain
 // their lexical Identifier kind in the tree.
 package syntax

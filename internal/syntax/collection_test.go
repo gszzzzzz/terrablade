@@ -177,6 +177,11 @@ func TestObjectShapes(t *testing.T) {
 			`File(Call("f", "(", Object("{", Item(Variable("a"), "=", Literal("1")), Item(Variable("b"), "=", Literal("2")), "}"), ")"))`,
 		},
 		{
+			"quoted keys preserve template syntax",
+			`{"key"=1}`,
+			`File(Object("{", Item(Template("\"", "key", "\""), "=", Literal("1")), "}"))`,
+		},
+		{
 			"parenthesized key is explicit",
 			"{(key)=value}",
 			`File(Object("{", Item(Paren("(", Variable("key"), ")"), "=", Variable("value")), "}"))`,
@@ -336,12 +341,6 @@ func TestObjectDiagnostics(t *testing.T) {
 				{ExpectedForVariable, Span{13, 14}},
 			},
 			`File(For("{", "for", Error("=", "1"), "}"))`,
-		},
-		{
-			"quoted keys preserve template syntax",
-			`{"key"=1}`,
-			nil,
-			`File(Object("{", Item(Template("\"", "key", "\""), "=", Literal("1")), "}"))`,
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {

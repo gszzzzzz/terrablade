@@ -9,36 +9,41 @@ func (p *parser) templateExpression(b *nodeBuilder) {
 		close = HeredocEndMarker
 	}
 	p.consumeUntil(b, p.pos+1)
+	// Builders are cursor snapshots. Copying the root avoids making every
+	// caller's expression builder escape to the heap through the scope stack.
+	nesting := templateNesting{root: *b, lastIf: -1, lastFor: -1}
 	for {
+		body := nesting.current()
 		switch p.current().kind {
 		case close:
+			nesting.closeMissing(0, p.current().span)
 			p.consumeUntil(b, p.pos+1)
 			return
 		case EOF:
 			// The lexer diagnoses the unclosed template at its opening delimiter.
+			nesting.closeMissing(0, p.current().span)
 			return
 		case TemplateText, HeredocMarker:
-			p.consumeUntil(b, p.pos+1)
+			p.consumeUntil(body, p.pos+1)
 		case InterpolationOpen:
-			p.interpolation(b)
+			p.interpolation(body)
 		case DirectiveOpen:
-			p.report(UnsupportedExpression, p.current().span)
-			part := p.begin()
-			p.skipConstruct(&part)
-			b.node(part.finish(Error))
+			header, name := p.templateDirective()
+			nesting.directive(header, name)
 		case Whitespace, Newline, LineComment, BlockComment:
 			// The heredoc header owns a newline when followed by content or its
 			// closer. Trivia left at EOF by malformed sequences remains outside.
 			next := p.look(delimitedExpression)
 			if p.tokens[next].kind == EOF {
+				nesting.closeMissing(0, p.tokens[next].span)
 				return
 			}
-			p.consumeUntil(b, next)
+			p.consumeUntil(body, next)
 		default:
 			p.report(UnexpectedToken, p.current().span)
 			part := p.begin()
 			p.consumeUntil(&part, p.pos+1)
-			b.node(part.finish(Error))
+			body.node(part.finish(Error))
 		}
 	}
 }

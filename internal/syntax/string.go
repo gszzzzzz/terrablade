@@ -75,6 +75,9 @@ var nodeKindNames = [nodeKindCount]string{
 	ForExpression:           "ForExpression",
 	TemplateExpression:      "TemplateExpression",
 	TemplateInterpolation:   "TemplateInterpolation",
+	TemplateDirective:       "TemplateDirective",
+	TemplateIf:              "TemplateIf",
+	TemplateFor:             "TemplateFor",
 }
 
 var diagnosticKindNames = [diagnosticKindCount]string{
@@ -97,7 +100,6 @@ var diagnosticKindNames = [diagnosticKindCount]string{
 	ExpectedOpeningParen:         "ExpectedOpeningParen",
 	InvalidLegacyIndex:           "InvalidLegacyIndex",
 	NestedAttributeSplat:         "NestedAttributeSplat",
-	UnsupportedExpression:        "UnsupportedExpression",
 	NestingLimitExceeded:         "NestingLimitExceeded",
 	InvalidNumber:                "InvalidNumber",
 	ExpectedTupleSeparator:       "ExpectedTupleSeparator",
@@ -111,6 +113,11 @@ var diagnosticKindNames = [diagnosticKindCount]string{
 	UnexpectedForKey:             "UnexpectedForKey",
 	UnexpectedForGrouping:        "UnexpectedForGrouping",
 	ExpectedTemplateSequenceEnd:  "ExpectedTemplateSequenceEnd",
+	ExpectedTemplateDirective:    "ExpectedTemplateDirective",
+	UnknownTemplateDirective:     "UnknownTemplateDirective",
+	UnexpectedTemplateDirective:  "UnexpectedTemplateDirective",
+	ExpectedTemplateEndIf:        "ExpectedTemplateEndIf",
+	ExpectedTemplateEndFor:       "ExpectedTemplateEndFor",
 }
 
 // String returns the source-facing name used in diagnostics and debug output.

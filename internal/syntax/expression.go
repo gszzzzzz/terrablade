@@ -7,8 +7,7 @@ import (
 
 // parseExpressionSource is an internal test seam for an attribute-style value:
 // unparenthesized newlines terminate it. It is not a configuration-file parser.
-// Leading and trailing trivia belong to File. Remaining non-trivia is an error,
-// including valid HCL constructs not implemented at this checkpoint.
+// Leading and trailing trivia belong to File. Remaining non-trivia is an error.
 func parseExpressionSource(source []byte) syntaxFile {
 	p := newParser(source)
 	root := p.begin()
@@ -247,9 +246,9 @@ func (p *parser) recoverArgument(parent *nodeBuilder) {
 	}
 }
 
-// skipConstruct retains one balanced construct as raw tokens without recursion,
-// for deferred grammar and error recovery. Nested template/interpolation
-// delimiters remain visible in the lexical stream.
+// skipConstruct retains one balanced construct as raw tokens without recursion
+// during error recovery. Nested template/interpolation delimiters remain visible
+// in the lexical stream.
 func (p *parser) skipConstruct(b *nodeBuilder) {
 	if p.halted {
 		return

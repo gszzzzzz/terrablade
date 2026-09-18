@@ -27,6 +27,9 @@ const (
 	ForExpression
 	TemplateExpression
 	TemplateInterpolation
+	TemplateDirective
+	TemplateIf
+	TemplateFor
 	nodeKindCount
 )
 

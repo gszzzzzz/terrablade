@@ -275,12 +275,6 @@ func TestExpressionDiagnostics(t *testing.T) {
 			[]Diagnostic{{UnexpectedToken, Span{2, 3}}},
 			`File(Variable("a"), Error("b"))`,
 		},
-		{
-			"template directives deferred",
-			`"%{if a}x%{endif}"`,
-			[]Diagnostic{{UnsupportedExpression, Span{1, 3}}, {UnsupportedExpression, Span{9, 11}}},
-			`File(Template("\"", Error("%{", "if", "a", "}"), "x", Error("%{", "endif", "}"), "\""))`,
-		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			assertDiagnosticsAndShape(t, test.source, test.diagnostics, test.shape)
@@ -368,6 +362,9 @@ func FuzzExpression(f *testing.F) {
 		`"hello ${~ {a=1}.a ~} end"`,
 		`"${a bad(}tail"`,
 		"<<-END\n  ${a}\n  END\n",
+		`"%{if a}%{for x in xs}${x}%{endfor}%{else}none%{endif}"`,
+		`"%{if a}%{for x in xs}x%{else}y%{endif}"`,
+		"\"%{if a #tail\n",
 		`f("${a}", [for a in b : a])`,
 		"a + /*\xff",
 		strings.Repeat("!", maxRecursiveExpressionDepth+1) + "a",
@@ -454,6 +451,7 @@ func expressionShape(file syntaxFile, current SyntaxElement) string {
 			ObjectExpression: "Object", ObjectItem: "Item",
 			ForExpression:      "For",
 			TemplateExpression: "Template", TemplateInterpolation: "Interpolation",
+			TemplateDirective: "Directive", TemplateIf: "TemplateIf", TemplateFor: "TemplateFor",
 		}
 		var children []string
 		for i := range element.ChildCount() {
@@ -554,6 +552,12 @@ func TestExpressionDepthBoundaries(t *testing.T) {
 		{
 			"template interpolation recursion",
 			func(count int) string { return strings.Repeat(`"${`, count) + "a" + strings.Repeat(`}"`, count) },
+		},
+		{
+			"template directive condition recursion",
+			func(count int) string {
+				return strings.Repeat(`"%{if `, count) + "a" + strings.Repeat(`}%{endif}"`, count)
+			},
 		},
 		{
 			"conditional recursion",

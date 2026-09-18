@@ -71,7 +71,7 @@ func TestSyntaxChildBounds(t *testing.T) {
 }
 
 func TestArenaReusesTokensAndStoresEachEdgeOnce(t *testing.T) {
-	source := []byte(" /*head*/ f(a + b, g(c.d), e[ /*key*/ k ]) #tail\n")
+	source := []byte(" /*head*/ f(a + b, g(c.d), e[ /*key*/ k ], [for x in xs : {a=x}], \"%{if a}${x}%{else}y%{endif}\") #tail\n")
 	p := newParser(source)
 	tokens := p.tokens
 	root := p.begin()

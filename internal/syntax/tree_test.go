@@ -55,8 +55,8 @@ func TestChildTraversalAllocations(t *testing.T) {
 }
 
 func TestFileDeepInput(t *testing.T) {
-	// Unsupported collections are recovered iteratively rather than recursing
-	// through every balanced delimiter.
+	// The recursion guard stops grammar descent, and file recovery preserves
+	// the rest without descending through every remaining balanced delimiter.
 	source := []byte(strings.Repeat("[", 10000) + strings.Repeat("]", 10000))
 	assertFilePartition(t, source, parseExpressionSource(source))
 }
