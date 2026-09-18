@@ -131,6 +131,18 @@ func TestQuotedTemplates(t *testing.T) {
 			},
 		},
 		{
+			"expression newline",
+			"\"${\n1}\"",
+			[]tokenText{
+				{QuoteOpen, `"`},
+				{InterpolationOpen, "${"},
+				{Newline, "\n"},
+				{Number, "1"},
+				{TemplateSequenceEnd, "}"},
+				{QuoteClose, `"`},
+			},
+		},
+		{
 			"expression BOM",
 			"\"\uFEFF${\uFEFFx}\"",
 			[]tokenText{

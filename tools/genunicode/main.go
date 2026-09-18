@@ -48,7 +48,7 @@ func generate() error {
 		return err
 	}
 	if fmt.Sprintf("%x", sha256.Sum256(data)) != sourceSHA256 {
-		return fmt.Errorf("Unicode source checksum mismatch")
+		return fmt.Errorf("unicode source checksum mismatch")
 	}
 
 	tables := map[string][]interval{}

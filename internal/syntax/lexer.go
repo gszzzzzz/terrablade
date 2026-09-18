@@ -87,12 +87,15 @@ func (l *lexer) config() Kind {
 		l.offset++
 		return QuoteOpen
 	case l.has("<<"):
-		// A complete marker commits template mode; otherwise '<' remains punctuation.
+		// A complete marker commits template mode; otherwise consume only the
+		// first '<' so the second remains available to the next scan.
 		if marker, ok := l.heredocOpener(); ok {
 			l.modes = append(l.modes, modeFrame{mode: modeHeredoc, start: l.offset, marker: marker})
 			l.offset = marker.Start
 			return HeredocOpen
 		}
+		l.offset++
+		return Less
 	case digit(c):
 		l.number()
 		return Number
