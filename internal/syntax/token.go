@@ -62,6 +62,7 @@ const (
 	// HeredocEndMarker includes the closing line's indentation and trailing
 	// whitespace; its LF/CRLF is a separate Newline token.
 	HeredocEndMarker
+	kindCount
 )
 
 // Span is a half-open byte interval [Start, End) in the original source.
@@ -102,6 +103,7 @@ const (
 	UnsupportedExpression
 	NestingLimitExceeded
 	InvalidNumber
+	diagnosticKindCount
 )
 
 // Diagnostic points to the source responsible for a lexical or syntax error.

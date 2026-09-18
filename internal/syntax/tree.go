@@ -21,6 +21,7 @@ const (
 	LegacyIndexAccess
 	AttributeSplat
 	FullSplat
+	nodeKindCount
 )
 
 // SyntaxElement is a node or a token in source order. Trees produced by this
