@@ -9,19 +9,28 @@ import (
 )
 
 // Options controls formatting. Each zero field selects its default.
-// Negative fields cause Format to return an *OptionsError before parsing.
+// Out-of-range fields cause Format to return an *OptionsError before parsing.
 type Options struct {
 	// PrintWidth is the preferred terminal display width, default 80.
 	// Unbreakable text, traversals, template sequences, and alignment may exceed it.
 	PrintWidth int
 	// IndentWidth is the number of spaces per indentation level, default 2.
+	// Values from 1 through 16 are accepted; zero selects the default.
 	IndentWidth int
 	// TabWidth is the distance between tab stops, default 8. Literal tabs are
 	// preserved; generated indentation always uses spaces.
+	// Values from 1 through 16 are accepted; zero selects the default.
 	TabWidth int
 }
 
-// OptionsError identifies a negative layout option. Option is its Go field name.
+// Spacing units multiply nesting depth or tab count. Bound that amplification
+// and arithmetic while allowing common 2/4/8/16-space layouts. PrintWidth only
+// selects breaks and does not need this cap. Deep bodies retain their inherent
+// output-size cost, as described in doc.go.
+const maxSpacingWidth = 16
+
+// OptionsError identifies an out-of-range layout option. Option is its Go field
+// name. PrintWidth must be nonnegative; IndentWidth and TabWidth must be in [0, 16].
 // When several options are invalid, Format reports the first in declaration order.
 type OptionsError struct {
 	Option string
@@ -29,6 +38,9 @@ type OptionsError struct {
 }
 
 func (e *OptionsError) Error() string {
+	if (e.Option == "IndentWidth" || e.Option == "TabWidth") && e.Value > maxSpacingWidth {
+		return fmt.Sprintf("terrablade: %s must not exceed %d (got %d)", e.Option, maxSpacingWidth, e.Value)
+	}
 	return fmt.Sprintf("terrablade: %s must not be negative (got %d)", e.Option, e.Value)
 }
 
@@ -46,9 +58,6 @@ func (e *OptionsError) Error() string {
 // limit errors return a *ParseError with original-source diagnostics. Every error
 // returns nil output; recovered partial input is never formatted. Filenames and
 // diagnostic presentation belong to callers. Format performs no I/O.
-//
-// Layout arithmetic overflow panics. Positive options have no arbitrary upper
-// bound, so callers should choose widths appropriate for the desired output size.
 func Format(source []byte, options Options) ([]byte, error) {
 	for _, option := range []struct {
 		name  string
@@ -58,7 +67,7 @@ func Format(source []byte, options Options) ([]byte, error) {
 		{"IndentWidth", options.IndentWidth},
 		{"TabWidth", options.TabWidth},
 	} {
-		if option.value < 0 {
+		if option.value < 0 || option.name != "PrintWidth" && option.value > maxSpacingWidth {
 			return nil, &OptionsError{Option: option.name, Value: option.value}
 		}
 	}
