@@ -22,7 +22,7 @@ func TestFileLayouts(t *testing.T) {
 		{"BOM and attribute", "\ufeffa=1", "a = 1\n"},
 		{"final newline", "a=1", "a = 1\n"},
 		{"outer padding", "\n\na=1\n\n\n", "a = 1\n"},
-		{"attribute gap collapses", "a=1\n\n\nb=2\n", "a = 1\nb = 2\n"},
+		{"attribute blank gap caps", "a=1\n\n\nb=2\n", "a = 1\n\nb = 2\n"},
 		{"empty block", "empty { \n\n }", "empty {}\n"},
 		{"short block expands", "short { a=1 }", "short {\n  a = 1\n}\n"},
 		{"block boundaries", "a=1\nb {}\nc=2\nd {}\ne {}", "a = 1\n\nb {}\n\nc = 2\n\nd {}\n\ne {}\n"},
@@ -38,8 +38,8 @@ func TestFileLayouts(t *testing.T) {
 		{"comment sections", "a=1\n\n\n# section\n\n\nb=2\n", "a = 1\n\n# section\n\nb = 2\n"},
 		{"same-line comment run section", "a=1\n/*first*/ /*second*/ # third\n\n\nb=2", "a = 1\n/*first*/ /*second*/ # third\n\nb = 2\n"},
 		{"same-line block comments section", "a=1\n/*first*/ /*second*/\n\n\nb=2", "a = 1\n/*first*/ /*second*/\n\nb = 2\n"},
-		{"comment prefix is not independent", "a=1\n\n/*prefix*/ b=2", "a            = 1\n/*prefix*/ b = 2\n"},
-		{"inline comment does not preserve empty line", "a=1 # tail\n\n\nb=2", "a = 1 # tail\nb = 2\n"},
+		{"comment prefix follows attribute group boundary", "a=1\n\n/*prefix*/ b=2", "a = 1\n\n/*prefix*/ b = 2\n"},
+		{"inline comment preserves attribute group boundary", "a=1 # tail\n\n\nb=2", "a = 1 # tail\n\nb = 2\n"},
 		{"comment before block", "a=1\n# block\nb {}", "a = 1\n\n# block\nb {}\n"},
 		{"comment after block", "a {}\n# next\nb=1", "a {}\n\n# next\nb = 1\n"},
 		{"opener comment", "b { # open\n a=1\n}", "b { # open\n  a = 1\n}\n"},
@@ -83,7 +83,11 @@ func TestBodyAlignment(t *testing.T) {
 		width              int
 	}{
 		{"attributes", "a=1\nlong=2\nz=3", "a    = 1\nlong = 2\nz    = 3\n", 80},
-		{"removed blank line joins groups", "a=1\n\nlong=2", "a    = 1\nlong = 2\n", 80},
+		{"blank line splits groups", "a=1\n\nlong=2", "a = 1\n\nlong = 2\n", 80},
+		{"resource attribute groups", "resource x y {\n a=1\n bb=2\n\n\n longer=3\n c=4\n}", "resource \"x\" \"y\" {\n  a  = 1\n  bb = 2\n\n  longer = 3\n  c      = 4\n}\n", 80},
+		{"blank line splits comment columns", "a=1 # first\nb=222 # second\n\nlong=3 # third\nx=4 # fourth", "a = 1   # first\nb = 222 # second\n\nlong = 3 # third\nx    = 4 # fourth\n", 80},
+		{"heredoc separates attribute groups", "a=1\nlong=<<E\nx\nE\n\n\nb=2\ncc=3", "a    = 1\nlong = <<E\nx\nE\n\nb  = 2\ncc = 3\n", 80},
+		{"comment section between attribute groups", "a=1\nlong=2\n\n# group\n\nb=3\ncc=4", "a    = 1\nlong = 2\n\n# group\n\nb  = 3\ncc = 4\n", 80},
 		{"standalone comment splits groups", "a=1\n# note\nlong=2\nz=3", "a = 1\n# note\nlong = 2\nz    = 3\n", 80},
 		{"inline comments", "a=1 # first\nlong=222 # second\nz=3", "a    = 1   # first\nlong = 222 # second\nz    = 3\n", 80},
 		{"inline prefix", "/* lead */ a=1\nlong=2", "/* lead */ a = 1\nlong         = 2\n", 80},
@@ -137,6 +141,10 @@ func TestBodyOpenTofuCompatibility(t *testing.T) {
 		"a=1\nvalue={ a=1, longer=2 }\nz=3",
 		"a=1\nvalue={\nx=1\nlonger=2\n}\nz=3",
 		"value=[{a=1},{longer=2}]",
+		"resource x y {\n a=1\n bb=2\n\n\n longer=3\n c=4\n}",
+		"a=1 # first\nb=222 # second\n\nlong=3 # third\nx=4 # fourth",
+		"a=1\nlong=<<E\nx\nE\n\n\nb=2\ncc=3",
+		"a=1\nlong=2\n\n# group\n\nb=3\ncc=4",
 	} {
 		for _, width := range []int{16, 80} {
 			output := renderFile(t, source, width)

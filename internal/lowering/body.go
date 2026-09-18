@@ -161,6 +161,7 @@ func bodyGap(result syntax.Result, trivia []syntax.SyntaxToken, previous, next s
 	haveContent := previous != syntax.InvalidNode
 	haveComment, standalone, lineComment := false, false, false
 	blockBoundary := previous != syntax.InvalidNode && next != syntax.InvalidNode && (previous == syntax.Block || next == syntax.Block)
+	attributeBoundary := previous == syntax.Attribute && next == syntax.Attribute
 	lastNewline := -1
 	for i, token := range trivia {
 		if token.Kind() == syntax.Newline {
@@ -182,7 +183,7 @@ func bodyGap(result syntax.Result, trivia []syntax.SyntaxToken, previous, next s
 		separator := document.Text(" ")
 		if newlines > 0 || lineComment {
 			separator = document.HardLine()
-			if haveContent && (newlines >= 2 && (isStandalone || standalone) || blockBoundary) {
+			if haveContent && (newlines >= 2 && (attributeBoundary || isStandalone || standalone) || blockBoundary) {
 				separator = document.Concat(separator, document.HardLine())
 				blockBoundary = false
 			}
@@ -208,7 +209,7 @@ func bodyGap(result syntax.Result, trivia []syntax.SyntaxToken, previous, next s
 		} else if haveComment && !lineComment && newlines == 0 {
 			separator = document.Text(" ")
 		}
-		if blockBoundary || haveComment && standalone && newlines >= 2 {
+		if blockBoundary || newlines >= 2 && (attributeBoundary || haveComment && standalone) {
 			separator = document.Concat(document.HardLine(), document.HardLine())
 		}
 		parts = append(parts, separator)
