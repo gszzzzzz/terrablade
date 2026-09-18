@@ -1,7 +1,5 @@
 package syntax
 
-import "strings"
-
 // steps keeps traversal steps flat except where splat semantics group suffixes.
 // Attribute splats own only following dot accesses; a full splat owns every
 // following traversal, including nested splats. This follows upstream HCL's
@@ -30,13 +28,7 @@ func (p *parser) steps(parent *nodeBuilder, context expressionContext, attribute
 				p.take(&b, context)
 				parent.node(p.finish(AttributeAccess, b))
 			case Number:
-				token := p.tokens[p.look(context)]
-				if strings.Contains(p.source[token.Span.Start:token.Span.End], ".") {
-					p.report(InvalidLegacyIndex, token.Span)
-				} else {
-					p.number(token)
-				}
-				p.take(&b, context)
+				p.number(&b, context, true)
 				parent.node(p.finish(LegacyIndexAccess, b))
 			case Star:
 				if attributesOnly {

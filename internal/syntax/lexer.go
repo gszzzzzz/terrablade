@@ -134,30 +134,34 @@ func (l *lexer) blockComment() Kind {
 	return BlockComment
 }
 
-// number consumes the longest complete NumericLit. A fractional or exponent
-// suffix is included only if it has a digit; malformed adjacency is left for
-// the parser (for example, 1e+ becomes Number, Identifier, Plus).
+// number follows upstream HCL's numeric-candidate boundaries, including malformed
+// candidates such as 1.0.2. Dots and exponent fragments can repeat, but the token
+// cannot end with a dot and each exponent fragment requires at least one digit.
+// This also preserves accepted spellings such as 1.e2 and keeps the minus in
+// 1.e2-foo separate. The parser validates the candidate's numeric value.
+// See github.com/hashicorp/hcl/blob/v2.25.0/hclsyntax/scan_tokens.rl.
 func (l *lexer) number() {
-	l.digits()
-	if l.offset+1 < len(l.source) && l.source[l.offset] == '.' && digit(l.source[l.offset+1]) {
-		l.offset++
-		l.digits()
-	}
-	if l.offset < len(l.source) && (l.source[l.offset] == 'e' || l.source[l.offset] == 'E') {
-		next := l.offset + 1
-		if next < len(l.source) && (l.source[next] == '+' || l.source[next] == '-') {
-			next++
+	l.offset++
+	for i := l.offset; i < len(l.source); {
+		switch c := l.source[i]; {
+		case digit(c):
+			i++
+			l.offset = i
+		case c == '.':
+			i++
+		case c == 'e' || c == 'E':
+			next := i + 1
+			if next < len(l.source) && (l.source[next] == '+' || l.source[next] == '-') {
+				next++
+			}
+			if next >= len(l.source) || !digit(l.source[next]) {
+				return
+			}
+			i = next + 1
+			l.offset = i
+		default:
+			return
 		}
-		if next < len(l.source) && digit(l.source[next]) {
-			l.offset = next
-			l.digits()
-		}
-	}
-}
-
-func (l *lexer) digits() {
-	for l.offset < len(l.source) && digit(l.source[l.offset]) {
-		l.offset++
 	}
 }
 

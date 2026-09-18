@@ -384,6 +384,159 @@ func TestLexEveryByte(t *testing.T) {
 	}
 }
 
+// Boundaries were checked with HCL v2.25.0 LexExpression. Numeric validity is a
+// parser concern, so malformed candidates still have no lexical diagnostic.
+func TestLexNumericCandidates(t *testing.T) {
+	for _, test := range []struct {
+		name, source string
+		want         []tokenText
+	}{
+		{
+			"trailing dot",
+			"1.",
+			[]tokenText{
+				{Number, "1"},
+				{Dot, "."},
+			},
+		},
+		{
+			"attribute named e",
+			"1.e",
+			[]tokenText{
+				{Number, "1"},
+				{Dot, "."},
+				{Identifier, "e"},
+			},
+		},
+		{
+			"empty fraction with exponent",
+			"1.e2",
+			[]tokenText{
+				{Number, "1.e2"},
+			},
+		},
+		{
+			"empty fraction with signed exponent",
+			"1.e+2",
+			[]tokenText{
+				{Number, "1.e+2"},
+			},
+		},
+		{
+			"subtraction after exponent",
+			"1.e2-foo",
+			[]tokenText{
+				{Number, "1.e2"},
+				{Minus, "-"},
+				{Identifier, "foo"},
+			},
+		},
+		{
+			"ordinary attribute name",
+			"1.foo",
+			[]tokenText{
+				{Number, "1"},
+				{Dot, "."},
+				{Identifier, "foo"},
+			},
+		},
+		{
+			"multiple decimal points",
+			"1.0.2",
+			[]tokenText{
+				{Number, "1.0.2"},
+			},
+		},
+		{
+			"legacy index with exponent and decimal point",
+			"foo.0e1.0",
+			[]tokenText{
+				{Identifier, "foo"},
+				{Dot, "."},
+				{Number, "0e1.0"},
+			},
+		},
+		{
+			"space separates legacy indices",
+			"foo.0 .0",
+			[]tokenText{
+				{Identifier, "foo"},
+				{Dot, "."},
+				{Number, "0"},
+				{Whitespace, " "},
+				{Dot, "."},
+				{Number, "0"},
+			},
+		},
+		{
+			"trailing ellipsis",
+			"1...",
+			[]tokenText{
+				{Number, "1"},
+				{Ellipsis, "..."},
+			},
+		},
+		{
+			"interior ellipsis",
+			"1...2",
+			[]tokenText{
+				{Number, "1...2"},
+			},
+		},
+		{
+			"incomplete positive exponent is attribute and operator",
+			"1.e+",
+			[]tokenText{
+				{Number, "1"},
+				{Dot, "."},
+				{Identifier, "e"},
+				{Plus, "+"},
+			},
+		},
+		{
+			"incomplete negative exponent is hyphenated attribute",
+			"1.e-",
+			[]tokenText{
+				{Number, "1"},
+				{Dot, "."},
+				{Identifier, "e-"},
+			},
+		},
+		{
+			"number followed by identifier",
+			"1.e2foo",
+			[]tokenText{
+				{Number, "1.e2"},
+				{Identifier, "foo"},
+			},
+		},
+		{
+			"repeated exponent followed by identifier",
+			"1e1e2foo",
+			[]tokenText{
+				{Number, "1e1e2"},
+				{Identifier, "foo"},
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			source := []byte(test.source)
+			result := lex(source)
+			assertPartition(t, source, result)
+			if len(result.Diagnostics) != 0 {
+				t.Fatalf("unexpected lexical diagnostics: %+v", result.Diagnostics)
+			}
+			var got []tokenText
+			for _, token := range result.Tokens[:len(result.Tokens)-1] {
+				got = append(got, tokenText{token.Kind, string(source[token.Span.Start:token.Span.End])})
+			}
+			if !reflect.DeepEqual(got, test.want) {
+				t.Fatalf("tokens = %+v, want %+v", got, test.want)
+			}
+		})
+	}
+}
+
 func FuzzLex(f *testing.F) {
 	f.Add([]byte("\uFEFFa\uFEFF#\uFEFF\n/*\uFEFF*/"))
 	for _, source := range []string{

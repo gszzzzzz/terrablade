@@ -16,6 +16,8 @@ const (
 	LineComment
 	BlockComment
 	Identifier
+	// Number preserves an upstream-compatible numeric candidate. Malformed
+	// candidates such as 1.0.2 remain one token for the parser to diagnose.
 	Number
 	OpenBrace
 	CloseBrace

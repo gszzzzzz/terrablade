@@ -1,6 +1,9 @@
 package syntax
 
-import "math/big"
+import (
+	"math/big"
+	"strings"
+)
 
 // parseExpressionSource is an internal test seam for an attribute-style value:
 // unparenthesized newlines terminate it. It is not a configuration-file parser.
@@ -115,8 +118,7 @@ func (p *parser) prefix(context expressionContext) SyntaxNode {
 	kind := Error
 	switch token.Kind {
 	case Number:
-		p.number(token)
-		p.take(&b, context)
+		p.number(&b, context, false)
 		kind = LiteralExpression
 	case Identifier:
 		p.take(&b, context)
@@ -157,12 +159,19 @@ func (p *parser) prefix(context expressionContext) SyntaxNode {
 	return left
 }
 
-// number follows upstream HCL's cty.ParseNumberVal representability check using
-// only the standard library. No evaluated value is retained in this CST.
-func (p *parser) number(token token) {
-	if _, _, err := big.ParseFloat(p.source[token.Span.Start:token.Span.End], 10, 512, big.ToNearestEven); err != nil {
-		p.report(InvalidNumber, token.Span)
+// number validates the lexer's numeric candidate without evaluating the
+// expression. Legacy dot-index syntax additionally rejects any decimal point.
+func (p *parser) number(b *nodeBuilder, context expressionContext, legacy bool) {
+	span := p.tokens[p.look(context)].Span
+	text := p.source[span.Start:span.End]
+	if legacy && strings.Contains(text, ".") {
+		p.report(InvalidLegacyIndex, span)
+	} else if _, _, err := big.ParseFloat(text, 10, 512, big.ToNearestEven); err != nil {
+		// This is the same representability check as upstream cty.ParseNumberVal,
+		// using the standard library and retaining no evaluated value in the CST.
+		p.report(InvalidNumber, span)
 	}
+	p.take(b, context)
 }
 
 func (p *parser) expect(b *nodeBuilder, kind Kind, diagnostic DiagnosticKind, context expressionContext) bool {
