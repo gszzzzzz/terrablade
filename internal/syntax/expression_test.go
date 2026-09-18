@@ -121,7 +121,7 @@ func TestExpressionShapes(t *testing.T) {
 		{
 			"namespaced call and postfix",
 			"provider::aws::f(x).id",
-			`File(Traversal(Call("provider", "::", "aws", "::", "f", "(", Variable("x"), ")"), Attribute(".", "id")))`,
+			`File(Traversal(Call("provider", "::", "aws", "::", "f", "(", Variable("x"), ")"), AttrAccess(".", "id")))`,
 		},
 		{
 			"multiline call",
@@ -376,17 +376,19 @@ func FuzzExpression(f *testing.F) {
 		f.Add([]byte(source))
 	}
 	f.Fuzz(func(t *testing.T, source []byte) {
-		original := bytes.Clone(source)
-		file := parseExpressionSource(source)
-		assertExpressionPartition(t, original, file)
-		if !bytes.Equal(source, original) {
+		// Leave the fuzzer-owned input unchanged so persisted discoveries keep
+		// their original bytes; only our caller-owned clone may be cleared.
+		input := bytes.Clone(source)
+		file := parseExpressionSource(input)
+		assertExpressionPartition(t, source, file)
+		if !bytes.Equal(input, source) {
 			t.Fatal("parser mutated source")
 		}
-		if second := parseExpressionSource(source); !reflect.DeepEqual(file, second) {
+		if second := parseExpressionSource(input); !reflect.DeepEqual(file, second) {
 			t.Fatal("parser is not deterministic")
 		}
-		clear(source)
-		assertExpressionPartition(t, original, file)
+		clear(input)
+		assertExpressionPartition(t, source, file)
 	})
 }
 
@@ -460,7 +462,7 @@ var shapeNodeNames = map[NodeKind]string{
 	VariableExpression: "Variable", ParenthesizedExpression: "Paren",
 	UnaryExpression: "Unary", BinaryExpression: "Binary",
 	ConditionalExpression: "Conditional", FunctionCallExpression: "Call",
-	TraversalExpression: "Traversal", AttributeAccess: "Attribute",
+	TraversalExpression: "Traversal", AttributeAccess: "AttrAccess",
 	IndexAccess: "Index", LegacyIndexAccess: "LegacyIndex",
 	AttributeSplat: "AttributeSplat", FullSplat: "FullSplat",
 	TupleExpression:  "Tuple",
@@ -469,6 +471,19 @@ var shapeNodeNames = map[NodeKind]string{
 	TemplateExpression: "Template", TemplateInterpolation: "Interpolation",
 	TemplateDirective: "Directive", TemplateIf: "TemplateIf", TemplateFor: "TemplateFor",
 	Body: "Body", Attribute: "Attribute", Block: "Block", BlockLabel: "Label",
+}
+
+func TestShapeNodeNames(t *testing.T) {
+	seen := make(map[string]NodeKind)
+	for kind := File; kind < nodeKindCount; kind++ {
+		name := shapeNodeNames[kind]
+		if name == "" {
+			t.Errorf("missing shape name for %v", kind)
+		} else if previous, duplicate := seen[name]; duplicate {
+			t.Errorf("%v and %v share shape name %q", previous, kind, name)
+		}
+		seen[name] = kind
+	}
 }
 
 func TestContiguousNumericCandidateDiagnostics(t *testing.T) {

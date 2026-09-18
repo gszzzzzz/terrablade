@@ -9,7 +9,7 @@ func TestForExpressionShapes(t *testing.T) {
 		{
 			"tuple projection",
 			"[for x in xs : x.id]",
-			`File(For("[", "for", "x", "in", Variable("xs"), ":", Traversal(Variable("x"), Attribute(".", "id")), "]"))`,
+			`File(For("[", "for", "x", "in", Variable("xs"), ":", Traversal(Variable("x"), AttrAccess(".", "id")), "]"))`,
 		},
 		{
 			"tuple key binding and condition",

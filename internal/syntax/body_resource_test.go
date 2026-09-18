@@ -140,6 +140,8 @@ func TestBodyLongLabelsAndRecovery(t *testing.T) {
 	}
 }
 
+// Inputs the fuzzer found interesting are checked in under testdata/fuzz/FuzzBody
+// and run as part of the ordinary test suite, alongside the seeds below.
 func FuzzBody(f *testing.F) {
 	for _, test := range bodyCompatibilityCases {
 		f.Add([]byte(test.source))
@@ -158,10 +160,12 @@ func FuzzBody(f *testing.F) {
 		f.Add([]byte(source))
 	}
 	f.Fuzz(func(t *testing.T, source []byte) {
-		original := bytes.Clone(source)
-		file := parseBodySource(source)
-		assertExpressionPartition(t, original, file)
-		if !bytes.Equal(source, original) {
+		// Mutate only our clone for the ownership check: the fuzzing engine may
+		// retain its original input after this callback for corpus minimization.
+		input := bytes.Clone(source)
+		file := parseBodySource(input)
+		assertExpressionPartition(t, source, file)
+		if !bytes.Equal(input, source) {
 			t.Fatal("body parser mutated input")
 		}
 		for _, diagnostic := range lex(source).Diagnostics {
@@ -169,10 +173,10 @@ func FuzzBody(f *testing.F) {
 				t.Fatalf("lost lexical diagnostic: %+v", diagnostic)
 			}
 		}
-		if next := parseBodySource(source); !reflect.DeepEqual(file, next) {
+		if next := parseBodySource(input); !reflect.DeepEqual(file, next) {
 			t.Fatal("body parser is not deterministic")
 		}
-		clear(source)
-		assertExpressionPartition(t, original, file)
+		clear(input)
+		assertExpressionPartition(t, source, file)
 	})
 }

@@ -13,27 +13,27 @@ func TestTraversalShapes(t *testing.T) {
 		{
 			"incomplete exponent name is an attribute",
 			"1.e",
-			`File(Traversal(Literal("1"), Attribute(".", "e")))`,
+			`File(Traversal(Literal("1"), AttrAccess(".", "e")))`,
 		},
 		{
 			"ordinary attribute on number expression",
 			"1.foo",
-			`File(Traversal(Literal("1"), Attribute(".", "foo")))`,
+			`File(Traversal(Literal("1"), AttrAccess(".", "foo")))`,
 		},
 		{
 			"hyphenated attribute name is not an exponent",
 			"1.e-",
-			`File(Traversal(Literal("1"), Attribute(".", "e-")))`,
+			`File(Traversal(Literal("1"), AttrAccess(".", "e-")))`,
 		},
 		{
 			"postfix binds inside unary",
 			"-foo.bar[0]",
-			`File(Unary("-", Traversal(Variable("foo"), Attribute(".", "bar"), Index("[", Literal("0"), "]"))))`,
+			`File(Unary("-", Traversal(Variable("foo"), AttrAccess(".", "bar"), Index("[", Literal("0"), "]"))))`,
 		},
 		{
 			"index expression and following attribute",
 			"foo[1 + i].true",
-			`File(Traversal(Variable("foo"), Index("[", Binary(Literal("1"), "+", Variable("i")), "]"), Attribute(".", "true")))`,
+			`File(Traversal(Variable("foo"), Index("[", Binary(Literal("1"), "+", Variable("i")), "]"), AttrAccess(".", "true")))`,
 		},
 		{
 			"legacy dot index",
@@ -48,32 +48,32 @@ func TestTraversalShapes(t *testing.T) {
 		{
 			"legacy splat index is outside projection",
 			"foo.*.bar[0].baz",
-			`File(Traversal(Variable("foo"), AttributeSplat(".", "*", Attribute(".", "bar")), Index("[", Literal("0"), "]"), Attribute(".", "baz")))`,
+			`File(Traversal(Variable("foo"), AttributeSplat(".", "*", AttrAccess(".", "bar")), Index("[", Literal("0"), "]"), AttrAccess(".", "baz")))`,
 		},
 		{
 			"full splat index is inside projection",
 			"foo[*].bar[0].baz",
-			`File(Traversal(Variable("foo"), FullSplat("[", "*", "]", Attribute(".", "bar"), Index("[", Literal("0"), "]"), Attribute(".", "baz"))))`,
+			`File(Traversal(Variable("foo"), FullSplat("[", "*", "]", AttrAccess(".", "bar"), Index("[", Literal("0"), "]"), AttrAccess(".", "baz"))))`,
 		},
 		{
 			"nested full splats",
 			"foo[*][*].bar",
-			`File(Traversal(Variable("foo"), FullSplat("[", "*", "]", FullSplat("[", "*", "]", Attribute(".", "bar")))))`,
+			`File(Traversal(Variable("foo"), FullSplat("[", "*", "]", FullSplat("[", "*", "]", AttrAccess(".", "bar")))))`,
 		},
 		{
 			"legacy and full splat chaining",
 			"foo.*.0[*].bar",
-			`File(Traversal(Variable("foo"), AttributeSplat(".", "*", LegacyIndex(".", "0")), FullSplat("[", "*", "]", Attribute(".", "bar"))))`,
+			`File(Traversal(Variable("foo"), AttributeSplat(".", "*", LegacyIndex(".", "0")), FullSplat("[", "*", "]", AttrAccess(".", "bar"))))`,
 		},
 		{
 			"full splat then legacy splat",
 			"foo[*].*.bar",
-			`File(Traversal(Variable("foo"), FullSplat("[", "*", "]", AttributeSplat(".", "*", Attribute(".", "bar")))))`,
+			`File(Traversal(Variable("foo"), FullSplat("[", "*", "]", AttributeSplat(".", "*", AttrAccess(".", "bar")))))`,
 		},
 		{
 			"index separates two legacy splats",
 			"foo.*.bar[0].*.baz",
-			`File(Traversal(Variable("foo"), AttributeSplat(".", "*", Attribute(".", "bar")), Index("[", Literal("0"), "]"), AttributeSplat(".", "*", Attribute(".", "baz"))))`,
+			`File(Traversal(Variable("foo"), AttributeSplat(".", "*", AttrAccess(".", "bar")), Index("[", Literal("0"), "]"), AttributeSplat(".", "*", AttrAccess(".", "baz"))))`,
 		},
 		{
 			"trivia separates legacy numeric candidates",
@@ -83,7 +83,7 @@ func TestTraversalShapes(t *testing.T) {
 		{
 			"parenthesized full splat allows newlines",
 			"(foo[\n*\n].bar)",
-			`File(Paren("(", Traversal(Variable("foo"), FullSplat("[", "*", "]", Attribute(".", "bar"))), ")"))`,
+			`File(Paren("(", Traversal(Variable("foo"), FullSplat("[", "*", "]", AttrAccess(".", "bar"))), ")"))`,
 		},
 		{
 			"ordinary index allows newlines",
@@ -248,7 +248,7 @@ func TestTraversalDiagnostics(t *testing.T) {
 			"nested attribute splat",
 			"foo.*.bar.*.baz",
 			[]Diagnostic{{NestedAttributeSplat, Span{10, 11}}},
-			`File(Traversal(Variable("foo"), AttributeSplat(".", "*", Attribute(".", "bar"), Error(".", "*"), Attribute(".", "baz"))))`,
+			`File(Traversal(Variable("foo"), AttributeSplat(".", "*", AttrAccess(".", "bar"), Error(".", "*"), AttrAccess(".", "baz"))))`,
 		},
 		{
 			"newline before full splat marker",
@@ -266,7 +266,7 @@ func TestTraversalDiagnostics(t *testing.T) {
 			"index diagnostics stay inside the step",
 			"foo[1 +].bar",
 			[]Diagnostic{{ExpectedExpression, Span{7, 8}}},
-			`File(Traversal(Variable("foo"), Index("[", Binary(Literal("1"), "+", Error()), "]"), Attribute(".", "bar")))`,
+			`File(Traversal(Variable("foo"), Index("[", Binary(Literal("1"), "+", Error()), "]"), AttrAccess(".", "bar")))`,
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {

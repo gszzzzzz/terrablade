@@ -1,0 +1,2 @@
+go test fuzz v1
+[]byte("A{\nA {\nA {\nA {\nA {\nA {\nA {\nA {\nA {}\n}\n}\n}\n}\n}\n}\n}#")

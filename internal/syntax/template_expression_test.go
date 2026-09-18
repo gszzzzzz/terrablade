@@ -39,7 +39,7 @@ func TestTemplateExpressionShapes(t *testing.T) {
 		{
 			"object and quoted key inside interpolation",
 			`"${{"key"=v}.key}"`,
-			`File(Template("\"", Interpolation("${", Traversal(Object("{", Item(Template("\"", "key", "\""), "=", Variable("v")), "}"), Attribute(".", "key")), "}"), "\""))`,
+			`File(Template("\"", Interpolation("${", Traversal(Object("{", Item(Template("\"", "key", "\""), "=", Variable("v")), "}"), AttrAccess(".", "key")), "}"), "\""))`,
 		},
 		{
 			"empty heredoc",
