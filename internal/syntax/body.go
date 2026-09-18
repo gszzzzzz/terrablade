@@ -55,7 +55,7 @@ func (p *parser) body() SyntaxNode {
 				// Only the file body can encounter an unmatched brace here.
 				bad := p.begin()
 				p.consumeUntil(&bad, p.pos+1)
-				frame.body.node(bad.finish(Error))
+				frame.body.node(bad.finish(ErrorNode))
 			} else {
 				p.recoverUntil(&frame.body, lineExpression, bodyItemBoundaries)
 			}
@@ -84,7 +84,7 @@ func (p *parser) body() SyntaxNode {
 		if frame.single {
 			p.report(ExpectedSingleLineAttribute, name)
 			// Finish the partial item before recovery reuses the pending tail.
-			frame.body.node(item.finish(Error))
+			frame.body.node(item.finish(ErrorNode))
 			p.recoverUntil(&frame.body, lineExpression, bodyItemBoundaries)
 			frame.single = false
 			continue
@@ -92,7 +92,7 @@ func (p *parser) body() SyntaxNode {
 		kind = p.peek(lineExpression)
 		if kind != OpenBrace && kind != QuoteOpen && kind != Identifier {
 			p.report(ExpectedAttributeOrBlock, p.tokens[p.look(lineExpression)].span)
-			frame.body.node(item.finish(Error))
+			frame.body.node(item.finish(ErrorNode))
 			p.recoverUntil(&frame.body, lineExpression, bodyItemBoundaries)
 			continue
 		}
@@ -145,7 +145,7 @@ func (p *parser) blockHeader(block *nodeBuilder) bool {
 }
 
 // Labels allow string escapes, but never template interpolation or directives.
-// Invalid sequences remain raw Error subtrees, so they cannot be mistaken for
+// Invalid sequences remain raw ErrorNode subtrees, so they cannot be mistaken for
 // references or executable expressions by consumers of a partial tree.
 func (p *parser) quotedBlockLabel(label *nodeBuilder) {
 	p.consumeUntil(label, p.pos+1)
@@ -175,7 +175,7 @@ func (p *parser) quotedBlockLabel(label *nodeBuilder) {
 			} else {
 				p.consumeUntil(&bad, p.pos+1)
 			}
-			label.node(bad.finish(Error))
+			label.node(bad.finish(ErrorNode))
 		}
 	}
 }

@@ -46,7 +46,7 @@ func (p *parser) templateExpression(b *nodeBuilder) {
 			p.report(UnexpectedToken, p.current().span)
 			part := p.begin()
 			p.consumeUntil(&part, p.pos+1)
-			body.node(part.finish(Error))
+			body.node(part.finish(ErrorNode))
 		}
 	}
 }

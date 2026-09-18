@@ -7,7 +7,7 @@ type NodeKind uint8
 const (
 	InvalidNode NodeKind = iota
 	File
-	Error
+	ErrorNode
 	LiteralExpression
 	VariableExpression
 	ParenthesizedExpression
@@ -137,7 +137,7 @@ type syntaxArena struct {
 }
 
 // SyntaxToken is a read-only source leaf, including whitespace and comments.
-// Its text is the file's source[Span().Start:Span().End]; it owns no source bytes.
+// Its text is available through Result.Text(t.Span()); it owns no source bytes.
 type SyntaxToken struct {
 	kind TokenKind
 	span Span

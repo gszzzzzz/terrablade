@@ -46,7 +46,7 @@ func (p *parser) steps(parent *nodeBuilder, context expressionContext, mode trav
 					// bracket step would already have ended that projection.
 					p.report(NestedAttributeSplat, p.tokens[p.look(context)].span)
 					p.consumeLookahead(&b, context)
-					parent.node(b.finish(Error))
+					parent.node(b.finish(ErrorNode))
 					continue
 				}
 				p.consumeLookahead(&b, context)
@@ -55,7 +55,7 @@ func (p *parser) steps(parent *nodeBuilder, context expressionContext, mode trav
 				parent.node(b.finish(AttributeSplat))
 			default:
 				p.report(ExpectedAttributeName, p.tokens[p.look(context)].span)
-				parent.node(b.finish(Error))
+				parent.node(b.finish(ErrorNode))
 				return
 			}
 			continue

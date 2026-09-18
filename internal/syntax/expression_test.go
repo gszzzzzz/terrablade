@@ -394,10 +394,10 @@ func FuzzExpression(f *testing.F) {
 
 // assertExpressionPartition checks the invariants every expression tree must
 // satisfy beyond byte-level losslessness: leaves are exactly the lexer's tokens,
-// only File and Body may begin or end with trivia, and Error nodes imply
-// at least one diagnostic. Diagnostics without Error nodes remain legitimate,
+// only File and Body may begin or end with trivia, and ErrorNode nodes imply
+// at least one diagnostic. Diagnostics without ErrorNode nodes remain legitimate,
 // for example a missing closer or an unrepresentable number literal. Exact
-// Error-to-diagnostic relationships belong to focused recovery tests.
+// ErrorNode-to-diagnostic relationships belong to focused recovery tests.
 func assertExpressionPartition(t *testing.T, source []byte, file Result) {
 	t.Helper()
 	assertFilePartition(t, source, file)
@@ -408,7 +408,7 @@ func assertExpressionPartition(t *testing.T, source []byte, file Result) {
 		current := stack[len(stack)-1]
 		stack = stack[:len(stack)-1]
 		if element, ok := current.Node(); ok {
-			if element.Kind() == Error {
+			if element.Kind() == ErrorNode {
 				errors++
 			}
 			count := element.ChildCount()
@@ -431,7 +431,7 @@ func assertExpressionPartition(t *testing.T, source []byte, file Result) {
 		t.Fatalf("tree leaves differ from lexer tokens:\n%+v\nwant:\n%+v", tokens, want)
 	}
 	if errors > 0 && len(file.diagnostics) == 0 {
-		t.Fatalf("%d Error nodes without any diagnostic: %s", errors, expressionShape(file, file.root.Element()))
+		t.Fatalf("%d ErrorNode nodes without any diagnostic: %s", errors, expressionShape(file, file.root.Element()))
 	}
 }
 
@@ -458,7 +458,7 @@ func expressionShape(file Result, current SyntaxElement) string {
 }
 
 var shapeNodeNames = map[NodeKind]string{
-	File: "File", Error: "Error", LiteralExpression: "Literal",
+	File: "File", ErrorNode: "Error", LiteralExpression: "Literal",
 	VariableExpression: "Variable", ParenthesizedExpression: "Paren",
 	UnaryExpression: "Unary", BinaryExpression: "Binary",
 	ConditionalExpression: "Conditional", FunctionCallExpression: "Call",

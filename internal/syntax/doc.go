@@ -11,7 +11,7 @@
 // A zero Result represents no parse: its root is InvalidNode, its source is
 // empty, and its diagnostics are nil. Parse(nil) instead returns an empty File
 // containing an empty Body and EOF. Malformed input still produces a File and
-// diagnostics, with incomplete or Error nodes retaining the original bytes.
+// diagnostics, with incomplete or ErrorNode nodes retaining the original bytes.
 // All diagnostics are errors; a result with diagnostics must not be formatted.
 // Diagnostics are ordered by byte offset, with lexical errors first at equal
 // offsets. The tree and diagnostic order are deterministic for identical input.
@@ -29,7 +29,7 @@
 //
 // A configuration File contains one Body and a final EOF, with an optional
 // leading BOM retained before the Body for upstream compatibility. If a parser
-// resource limit is reached, File may also contain Error and trivia children
+// resource limit is reached, File may also contain ErrorNode and trivia children
 // preserving the unparsed remainder between Body and EOF. Body owns
 // inter-item and edge trivia. Attribute contains its name token, equals token,
 // and value expression. Block contains its type token, zero or more BlockLabel
@@ -37,15 +37,18 @@
 // Block, not Body. Labels preserve either an identifier or quoted literal; they
 // are never variable-reference expressions. Malformed nodes can be incomplete.
 //
-// Obtain node or token text by slicing Result.Source() with its Span from the
-// same parse. Kind String methods supply symbolic names for debugging rather
-// than user-facing diagnostic prose; numeric kinds are not a storage format.
+// Obtain node or token text with Result.Text and its Span from the same parse.
+// Text follows Go's byte-slicing rules and panics for invalid spans; spans carry
+// no source identity, so callers must select the intended Result. Result.Source
+// returns the complete owned text. Kind String methods supply symbolic names for
+// debugging rather than user-facing diagnostic prose; numeric kinds are not a
+// storage format.
 // Contextual keywords retain their lexical Identifier kind in the tree.
 //
 // Lexing, grammar recovery, source ownership, and tree storage are private
 // implementation details behind Parse. Parsing bounds recursive expression
 // nesting and reports NestingLimitExceeded while preserving unparsed bytes.
 // Iterative productions can still build deep trees, so consumers should use
-// iterative traversal. Child access allocates no memory; traversal stacks belong
-// to callers, and Diagnostics copies its slice only when errors are present.
+// iterative traversal. Child and text access allocate no memory; traversal stacks
+// belong to callers, and Diagnostics copies its slice only when errors are present.
 package syntax

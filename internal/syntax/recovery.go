@@ -1,6 +1,6 @@
 package syntax
 
-// recoverUntil retains malformed material in one Error node until a boundary
+// recoverUntil retains malformed material in one ErrorNode node until a boundary
 // chosen by its caller. Leading trivia stays on the parent; trailing trivia is
 // left uncommitted for the next production. If already at a boundary, even the
 // leading trivia must stay untouched, especially at EOF or a template closer.
@@ -19,7 +19,7 @@ func (p *parser) recoverUntil(parent *nodeBuilder, context expressionContext, st
 			p.consumeLookahead(&b, context)
 		}
 	}
-	parent.node(b.finish(Error))
+	parent.node(b.finish(ErrorNode))
 }
 
 // skipConstruct retains one balanced construct as raw tokens without recursion
@@ -29,7 +29,7 @@ func (p *parser) skipConstruct(b *nodeBuilder) {
 	if p.halted {
 		return
 	}
-	// Raw tokens preserve template whitespace and delimiters in the Error subtree;
+	// Raw tokens preserve template whitespace and delimiters in the ErrorNode subtree;
 	// expression lookahead would interpret trivia in the wrong sub-language.
 	// An unterminated construct still ends at its last non-trivia token, so the
 	// trailing trivia of the file stays with the parent like any other node.

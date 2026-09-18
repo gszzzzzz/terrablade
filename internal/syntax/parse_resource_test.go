@@ -22,9 +22,8 @@ func TestParseResourceRecovery(t *testing.T) {
 	root := result.Root()
 	foundTail := false
 	for i := range root.ChildCount() {
-		if node, ok := root.Child(i).Node(); ok && node.Kind() == syntax.Error {
-			span := node.Span()
-			foundTail = strings.Contains(result.Source()[span.Start:span.End], "tail=1")
+		if node, ok := root.Child(i).Node(); ok && node.Kind() == syntax.ErrorNode {
+			foundTail = strings.Contains(result.Text(node.Span()), "tail=1")
 		}
 	}
 	if !foundTail {

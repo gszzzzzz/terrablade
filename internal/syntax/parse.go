@@ -40,10 +40,20 @@ func Parse(source []byte) Result {
 func (r Result) Root() SyntaxNode { return r.root }
 
 // Source returns the owned, unmodified source bytes as an immutable string,
-// without copying. A node or token's text is source[span.Start:span.End], using
-// its Span and the Source from the same Result. Keep this string or the Result
-// when text is needed: tree handles and token values do not retain source bytes.
+// without copying. Keep this string or the Result when text is needed: tree
+// handles and token values do not retain source bytes. Use Text to read a span.
 func (r Result) Source() string { return r.source }
+
+// Text returns the source bytes within span without allocating, like the Go
+// slice expression r.Source()[span.Start:span.End]. It accepts exactly the spans
+// for which 0 <= Start <= End <= len(r.Source()), including empty spans. A zero
+// Result accepts the zero Span and returns an empty string. Negative, reversed,
+// or out-of-range spans panic.
+//
+// Spans contain only byte offsets, with no association to a particular Result.
+// A valid span from another Result slices this Result's source; the caller is
+// responsible for using spans from the intended source.
+func (r Result) Text(span Span) string { return r.source[span.Start:span.End] }
 
 // Diagnostics returns an independent copy of the lexical and syntax errors,
 // or nil when there are none. Mutating the returned slice or its values cannot
@@ -52,5 +62,5 @@ func (r Result) Source() string { return r.source }
 // Diagnostics are ordered by Span.Start. At equal offsets, lexical errors come
 // before parser errors and each phase retains its reporting order. Parsing the
 // same bytes produces the same tree and diagnostic order. Spans may overlap or
-// be empty, and missing syntax may have diagnostics without an Error node.
+// be empty, and missing syntax may have diagnostics without an ErrorNode node.
 func (r Result) Diagnostics() []Diagnostic { return slices.Clone(r.diagnostics) }

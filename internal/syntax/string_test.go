@@ -66,7 +66,7 @@ func TestNodeKindString(t *testing.T) {
 	want := []string{
 		"InvalidNode",
 		"File",
-		"Error",
+		"ErrorNode",
 		"LiteralExpression",
 		"VariableExpression",
 		"ParenthesizedExpression",

@@ -2,7 +2,6 @@ package syntax_test
 
 import (
 	"bytes"
-	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -75,6 +74,67 @@ func TestResultZeroAndEmpty(t *testing.T) {
 	}
 }
 
+func TestResultText(t *testing.T) {
+	const source = "name = \"é\"\n"
+	input := []byte(source)
+	result := syntax.Parse(input)
+	clear(input)
+	for _, test := range []struct {
+		name string
+		span syntax.Span
+		want string
+	}{
+		{"whole source", result.Root().Span(), source},
+		{"identifier", syntax.Span{Start: 0, End: 4}, "name"},
+		{"unicode", syntax.Span{Start: 8, End: 10}, "é"},
+		{"partial rune", syntax.Span{Start: 8, End: 9}, "\xc3"},
+		{"empty start", syntax.Span{}, ""},
+		{"empty middle", syntax.Span{Start: 4, End: 4}, ""},
+		{"empty end", syntax.Span{Start: len(source), End: len(source)}, ""},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := result.Text(test.span); got != test.want {
+				t.Fatalf("Text(%+v) = %q, want %q", test.span, got, test.want)
+			}
+		})
+	}
+	body, _ := result.Root().Child(0).Node()
+	attribute, _ := body.Child(0).Node()
+	name, _ := attribute.Child(0).Token()
+	if result.Text(name.Span()) != "name" {
+		t.Fatal("token text must use its original spelling from the owned source")
+	}
+	var zero syntax.Result
+	if zero.Text(syntax.Span{}) != "" {
+		t.Fatal("the zero Result must accept an empty span")
+	}
+	foreign := syntax.Parse([]byte("b=2\n"))
+	if result.Text(foreign.Root().Span()) != "name" {
+		t.Fatal("a foreign span must slice the selected Result by byte offset")
+	}
+}
+
+func TestResultTextBounds(t *testing.T) {
+	for _, result := range []syntax.Result{{}, syntax.Parse([]byte("a=1\n"))} {
+		for _, span := range []syntax.Span{
+			{Start: -1, End: 0},
+			{Start: 0, End: -1},
+			{Start: 1, End: 0},
+			{Start: 0, End: len(result.Source()) + 1},
+			{Start: len(result.Source()) + 1, End: len(result.Source()) + 1},
+		} {
+			func() {
+				defer func() {
+					if recover() == nil {
+						t.Errorf("Text(%+v) did not panic for source of length %d", span, len(result.Source()))
+					}
+				}()
+				result.Text(span)
+			}()
+		}
+	}
+}
+
 func TestResultCopiesAndHandleLifetime(t *testing.T) {
 	result := syntax.Parse([]byte("name = value\n"))
 	copied := result
@@ -85,8 +145,8 @@ func TestResultCopiesAndHandleLifetime(t *testing.T) {
 	}
 	checkResult(t, result, "other = true\n")
 
-	// Only the retained handles and source string survive this scope. No Result
-	// is needed to keep tree storage alive, and text is retained independently.
+	// Exercise handles after the local Result leaves scope. The handles own
+	// references to tree storage, and the source string retains text separately.
 	root, element, token, source := func() (syntax.SyntaxNode, syntax.SyntaxElement, syntax.SyntaxToken, string) {
 		parsed := syntax.Parse([]byte("answer = 42\n"))
 		body, _ := parsed.Root().Child(0).Node()
@@ -95,7 +155,6 @@ func TestResultCopiesAndHandleLifetime(t *testing.T) {
 		token, _ := leaf.Token()
 		return parsed.Root(), leaf, token, parsed.Source()
 	}()
-	runtime.GC()
 	if root.Kind() != syntax.File || root.Span() != (syntax.Span{Start: 0, End: len(source)}) {
 		t.Fatal("node did not retain its tree")
 	}
@@ -149,7 +208,7 @@ func TestResultConcurrentReads(t *testing.T) {
 			copied := result
 			for range 20 {
 				diagnostics := copied.Diagnostics()
-				if !slices.Equal(diagnostics, wantDiagnostics) || !slices.Equal(checkResult(t, copied, source), wantTree) {
+				if !slices.Equal(diagnostics, wantDiagnostics) || !slices.Equal(checkResult(t, copied, source), wantTree) || copied.Text(copied.Root().Span()) != source {
 					t.Error("concurrent access changed an immutable result")
 					return
 				}
@@ -169,7 +228,6 @@ func TestResultAccessAllocations(t *testing.T) {
 		if len(result.Diagnostics()) != 0 {
 			panic("valid input has diagnostics")
 		}
-		source := result.Source()
 		stack = append(stack[:0], result.Root().Element())
 		for len(stack) != 0 {
 			element := stack[len(stack)-1]
@@ -179,8 +237,7 @@ func TestResultAccessAllocations(t *testing.T) {
 					stack = append(stack, node.Child(i))
 				}
 			} else if token, ok := element.Token(); ok {
-				span := token.Span()
-				width += len(source[span.Start:span.End])
+				width += len(result.Text(token.Span()))
 			}
 		}
 	})
@@ -226,7 +283,7 @@ func checkResult(t *testing.T, result syntax.Result, source string) []treeEntry 
 		}
 		if node, ok := current.element.Node(); ok {
 			entries = append(entries, treeEntry{node: node.Kind(), span: span, children: node.ChildCount()})
-			if node.Kind() == syntax.Error {
+			if node.Kind() == syntax.ErrorNode {
 				errors++
 			}
 			stack = append(stack, frame{element: current.element, exit: true})
@@ -246,7 +303,7 @@ func checkResult(t *testing.T, result syntax.Result, source string) []treeEntry 
 			} else if span.Start == span.End {
 				t.Fatal("non-EOF token is empty")
 			}
-			reconstructed.WriteString(result.Source()[span.Start:span.End])
+			reconstructed.WriteString(result.Text(span))
 			end = span.End
 		} else {
 			t.Fatal("invalid element in parsed tree")
@@ -257,7 +314,7 @@ func checkResult(t *testing.T, result syntax.Result, source string) []treeEntry 
 	}
 	diagnostics := result.Diagnostics()
 	if errors > 0 && len(diagnostics) == 0 {
-		t.Fatal("Error nodes must be accompanied by diagnostics")
+		t.Fatal("ErrorNode nodes must be accompanied by diagnostics")
 	}
 	previous := 0
 	for _, diagnostic := range diagnostics {

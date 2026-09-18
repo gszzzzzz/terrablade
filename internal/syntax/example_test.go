@@ -15,9 +15,8 @@ func ExampleParse() {
 	body, _ := result.Root().Child(0).Node()
 	attribute, _ := body.Child(0).Node()
 	name, _ := attribute.Child(0).Token()
-	span := name.Span()
 	fmt.Println(result.Root().Kind(), attribute.Kind())
-	fmt.Println(result.Source()[span.Start:span.End])
+	fmt.Println(result.Text(name.Span()))
 	// Output:
 	// File Attribute
 	// answer

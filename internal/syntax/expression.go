@@ -17,13 +17,13 @@ func parseExpressionSource(source []byte) Result {
 }
 
 // operand commits only trivia that precedes an actual expression. A missing
-// operand gets an empty Error node at the cursor; no synthetic token is emitted
+// operand gets an empty ErrorNode node at the cursor; no synthetic token is emitted
 // and trailing trivia remains available to the enclosing structure.
 func (p *parser) operand(b *nodeBuilder, minimum int, context expressionContext) {
 	i := p.look(context)
 	if operandTerminators.has(p.tokens[i].kind) {
 		p.report(ExpectedExpression, p.tokens[i].span)
-		b.node(p.begin().finish(Error))
+		b.node(p.begin().finish(ErrorNode))
 		return
 	}
 	p.consumeUntil(b, i)
@@ -36,11 +36,11 @@ func (p *parser) expression(minimum int, context expressionContext) SyntaxNode {
 	if p.depth == maxRecursiveExpressionDepth {
 		span := p.current().span
 		b := p.begin()
-		// Retain the offending token in a non-empty Error before freezing the
+		// Retain the offending token in a non-empty ErrorNode before freezing the
 		// cursor: this boundary makes progress, while File recovers the remainder.
 		p.consumeLookahead(&b, context)
 		p.haltAtLimit(span)
-		return b.finish(Error)
+		return b.finish(ErrorNode)
 	}
 	p.depth++
 	defer func() { p.depth-- }()
@@ -98,7 +98,7 @@ func binaryPower(kind TokenKind) int {
 func (p *parser) prefix(context expressionContext) SyntaxNode {
 	b := p.begin()
 	token := p.current()
-	kind := Error
+	kind := ErrorNode
 	switch token.kind {
 	case Number:
 		p.number(&b, context, false)

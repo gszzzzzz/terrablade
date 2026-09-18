@@ -55,7 +55,7 @@ var tokenKindNames = [tokenKindCount]string{
 var nodeKindNames = [nodeKindCount]string{
 	InvalidNode:             "InvalidNode",
 	File:                    "File",
-	Error:                   "Error",
+	ErrorNode:               "ErrorNode",
 	LiteralExpression:       "LiteralExpression",
 	VariableExpression:      "VariableExpression",
 	ParenthesizedExpression: "ParenthesizedExpression",

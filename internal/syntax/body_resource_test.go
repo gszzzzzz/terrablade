@@ -52,8 +52,8 @@ func TestBodyExpressionLimitRetainsOuterTail(t *testing.T) {
 	// Once expression parsing halts, the file assembler owns the unparsed tail;
 	// unfinished bodies cannot consume it through their normal trivia lookahead.
 	last, ok := file.root.Child(file.root.ChildCount() - 3).Node()
-	if !ok || last.Kind() != Error || !strings.HasSuffix(file.source[last.Span().Start:last.Span().End], "tail=1") {
-		t.Fatal("file did not retain the unparsed body tail in its final Error")
+	if !ok || last.Kind() != ErrorNode || !strings.HasSuffix(file.source[last.Span().Start:last.Span().End], "tail=1") {
+		t.Fatal("file did not retain the unparsed body tail in its final ErrorNode")
 	}
 }
 

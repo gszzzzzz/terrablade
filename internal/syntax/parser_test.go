@@ -227,8 +227,8 @@ func TestLimitStopsGrammarAndRetainsUnparsedTokens(t *testing.T) {
 
 	file := p.file(root)
 	assertExpressionPartition(t, source, file)
-	if node, ok := file.root.Child(2).Node(); !ok || node.Kind() != Error {
-		t.Fatal("unparsed non-trivia must remain in a file-level Error node")
+	if node, ok := file.root.Child(2).Node(); !ok || node.Kind() != ErrorNode {
+		t.Fatal("unparsed non-trivia must remain in a file-level ErrorNode")
 	}
 	want := []Diagnostic{
 		{
