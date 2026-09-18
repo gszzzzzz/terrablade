@@ -2,7 +2,6 @@ package syntax
 
 import (
 	"reflect"
-	"slices"
 	"strings"
 	"testing"
 )
@@ -223,41 +222,60 @@ func TestUpstreamNumericExpressionCompatibility(t *testing.T) {
 func TestTraversalDiagnostics(t *testing.T) {
 	for _, test := range []struct {
 		name, source string
-		kind         DiagnosticKind
+		diagnostics  []Diagnostic
+		shape        string
 	}{
-
 		{
 			"missing close bracket",
 			"a[0",
-			ExpectedClosingBracket,
+			[]Diagnostic{{ExpectedClosingBracket, Span{3, 3}}},
+			`File(Traversal(Variable("a"), Index("[", Literal("0"))))`,
+		},
+		{
+			"missing index expression",
+			"a[]",
+			[]Diagnostic{{ExpectedExpression, Span{2, 3}}},
+			`File(Traversal(Variable("a"), Index("[", Error(), "]")))`,
 		},
 		{
 			"missing attribute name",
 			"foo.",
-			ExpectedAttributeName,
+			[]Diagnostic{{ExpectedAttributeName, Span{4, 4}}},
+			`File(Traversal(Variable("foo"), Error(".")))`,
+		},
+		{
+			"attribute name recovery leaves the rest to the file",
+			"foo.(bar)",
+			[]Diagnostic{{ExpectedAttributeName, Span{4, 5}}, {UnexpectedToken, Span{4, 5}}},
+			`File(Traversal(Variable("foo"), Error(".")), Error("(", "bar", ")"))`,
 		},
 		{
 			"nested attribute splat",
 			"foo.*.bar.*.baz",
-			NestedAttributeSplat,
+			[]Diagnostic{{NestedAttributeSplat, Span{10, 11}}},
+			`File(Traversal(Variable("foo"), AttributeSplat(".", "*", Attribute(".", "bar"), Error(".", "*"), Attribute(".", "baz"))))`,
 		},
 		{
 			"newline before full splat marker",
 			"foo[\n*]",
-			ExpectedExpression,
+			[]Diagnostic{{ExpectedExpression, Span{5, 6}}},
+			`File(Traversal(Variable("foo"), Index("[", Error("*"), "]")))`,
 		},
 		{
 			"newline before full splat closer",
 			"foo[*\n]",
-			ExpectedClosingBracket,
+			[]Diagnostic{{ExpectedClosingBracket, Span{5, 6}}, {UnexpectedToken, Span{6, 7}}},
+			`File(Traversal(Variable("foo"), FullSplat("[", "*")), Error("]"))`,
+		},
+		{
+			"index diagnostics stay inside the step",
+			"foo[1 +].bar",
+			[]Diagnostic{{ExpectedExpression, Span{7, 8}}},
+			`File(Traversal(Variable("foo"), Index("[", Binary(Literal("1"), "+", Error()), "]"), Attribute(".", "bar")))`,
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			file := parseExpressionSource([]byte(test.source))
-			assertExpressionPartition(t, []byte(test.source), file)
-			if !slices.ContainsFunc(file.diagnostics, func(d Diagnostic) bool { return d.Kind == test.kind }) {
-				t.Fatalf("missing diagnostic %v in %+v", test.kind, file.diagnostics)
-			}
+			assertDiagnosticsAndShape(t, test.source, test.diagnostics, test.shape)
 		})
 	}
 }

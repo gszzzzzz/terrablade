@@ -128,6 +128,16 @@ func TestExpressionShapes(t *testing.T) {
 			"f(\n a, # line\n b\n)",
 			`File(Call("f", "(", Variable("a"), ",", Variable("b"), ")"))`,
 		},
+		{
+			"parentheses allow operators after line breaks",
+			"(a\n+ b # c\n* c)",
+			`File(Paren("(", Binary(Variable("a"), "+", Binary(Variable("b"), "*", Variable("c"))), ")"))`,
+		},
+		{
+			"unary before conditional",
+			"!a ? -b : c",
+			`File(Conditional(Unary("!", Variable("a")), "?", Unary("-", Variable("b")), ":", Variable("c")))`,
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			file := parseExpressionSource([]byte(test.source))
@@ -142,99 +152,195 @@ func TestExpressionShapes(t *testing.T) {
 	}
 }
 
+// TestExpressionDiagnostics pins every diagnostic, its span, and the recovered
+// tree for malformed input. A second diagnostic is expected only where the
+// remainder genuinely cannot belong to the failed production.
 func TestExpressionDiagnostics(t *testing.T) {
 	for _, test := range []struct {
 		name, source string
-		kind         DiagnosticKind
+		diagnostics  []Diagnostic
+		shape        string
 	}{
 		{
 			"missing expression",
 			"",
-			ExpectedExpression,
+			[]Diagnostic{{ExpectedExpression, Span{0, 0}}},
+			`File(Error())`,
+		},
+		{
+			"missing expression after leading trivia",
+			" # c\n",
+			[]Diagnostic{{ExpectedExpression, Span{5, 5}}},
+			`File(Error())`,
 		},
 		{
 			"missing operand",
 			"a +  ",
-			ExpectedExpression,
+			[]Diagnostic{{ExpectedExpression, Span{5, 5}}},
+			`File(Binary(Variable("a"), "+", Error()))`,
+		},
+		{
+			"missing unary operand",
+			"!",
+			[]Diagnostic{{ExpectedExpression, Span{1, 1}}},
+			`File(Unary("!", Error()))`,
+		},
+		{
+			"operator without operand",
+			"* a",
+			[]Diagnostic{{ExpectedExpression, Span{0, 1}}, {UnexpectedToken, Span{2, 3}}},
+			`File(Error("*"), Error("a"))`,
 		},
 		{
 			"missing close paren",
 			"(a + b",
-			ExpectedClosingParen,
+			[]Diagnostic{{ExpectedClosingParen, Span{6, 6}}},
+			`File(Paren("(", Binary(Variable("a"), "+", Variable("b"))))`,
+		},
+		{
+			"empty parentheses",
+			"()",
+			[]Diagnostic{{ExpectedExpression, Span{1, 2}}},
+			`File(Paren("(", Error(), ")"))`,
 		},
 		{
 			"missing conditional colon",
 			"a ? b",
-			ExpectedConditionalColon,
+			[]Diagnostic{{ExpectedConditionalColon, Span{5, 5}}},
+			`File(Conditional(Variable("a"), "?", Variable("b")))`,
+		},
+		{
+			"missing conditional arms",
+			"a ? : ",
+			[]Diagnostic{{ExpectedExpression, Span{4, 5}}, {ExpectedExpression, Span{6, 6}}},
+			`File(Conditional(Variable("a"), "?", Error(), ":", Error()))`,
 		},
 		{
 			"missing function name",
 			"a::()",
-			ExpectedFunctionName,
+			[]Diagnostic{{ExpectedFunctionName, Span{3, 4}}, {UnexpectedToken, Span{3, 4}}},
+			`File(Call("a", "::"), Error("(", ")"))`,
 		},
 		{
 			"missing function open paren",
 			"a::b",
-			ExpectedOpeningParen,
+			[]Diagnostic{{ExpectedOpeningParen, Span{4, 4}}},
+			`File(Call("a", "::", "b"))`,
+		},
+		{
+			"missing function close paren",
+			"f(a, b",
+			[]Diagnostic{{ExpectedClosingParen, Span{6, 6}}},
+			`File(Call("f", "(", Variable("a"), ",", Variable("b")))`,
 		},
 		{
 			"missing argument separator",
 			"f(1 2, 3)",
-			ExpectedArgumentSeparator,
+			[]Diagnostic{{ExpectedArgumentSeparator, Span{4, 5}}},
+			`File(Call("f", "(", Literal("1"), Error("2"), ",", Literal("3"), ")"))`,
+		},
+		{
+			"argument recovery keeps interior trivia out of the error",
+			"f(1 /*c*/ 2 /*d*/ 3)",
+			[]Diagnostic{{ExpectedArgumentSeparator, Span{10, 11}}},
+			`File(Call("f", "(", Literal("1"), Error("2", "3"), ")"))`,
+		},
+		{
+			"argument recovery stops at the bracket closer",
+			"f(1 2]",
+			[]Diagnostic{{ExpectedArgumentSeparator, Span{4, 5}}, {ExpectedClosingParen, Span{5, 6}}, {UnexpectedToken, Span{5, 6}}},
+			`File(Call("f", "(", Literal("1"), Error("2")), Error("]"))`,
 		},
 		{
 			"expanded argument must be final",
 			"f(a..., b)",
-			ExpectedClosingParen,
+			[]Diagnostic{{ExpectedClosingParen, Span{6, 7}}, {UnexpectedToken, Span{6, 7}}},
+			`File(Call("f", "(", Variable("a"), "..."), Error(",", "b", ")"))`,
 		},
 		{
 			"line break cannot continue unparenthesized binary",
 			"a\n+ b",
-			UnexpectedToken,
+			[]Diagnostic{{UnexpectedToken, Span{2, 3}}},
+			`File(Variable("a"), Error("+", "b"))`,
 		},
 		{
 			"trailing material",
 			"a b",
-			UnexpectedToken,
+			[]Diagnostic{{UnexpectedToken, Span{2, 3}}},
+			`File(Variable("a"), Error("b"))`,
+		},
+		{
+			"trailing material keeps trailing trivia at file level",
+			"a b # c\n",
+			[]Diagnostic{{UnexpectedToken, Span{2, 3}}},
+			`File(Variable("a"), Error("b"))`,
 		},
 		{
 			"quoted template deferred",
 			`"hello ${a}"`,
-			UnsupportedExpression,
+			[]Diagnostic{{UnsupportedExpression, Span{0, 1}}},
+			`File(Error("\"", "hello ", "${", "a", "}", "\""))`,
 		},
 		{
 			"heredoc deferred",
 			"<<END\nhello\nEND\n",
-			UnsupportedExpression,
+			[]Diagnostic{{UnsupportedExpression, Span{0, 2}}},
+			`File(Error("<<", "END", "hello\n", "END"))`,
 		},
 		{
 			"tuple deferred",
 			"[1, 2]",
-			UnsupportedExpression,
+			[]Diagnostic{{UnsupportedExpression, Span{0, 1}}},
+			`File(Error("[", "1", ",", "2", "]"))`,
 		},
 		{
 			"object deferred",
 			"{a = 1}",
-			UnsupportedExpression,
+			[]Diagnostic{{UnsupportedExpression, Span{0, 1}}},
+			`File(Error("{", "a", "=", "1", "}"))`,
 		},
 		{
 			"for expression deferred",
 			"[for a in xs : a]",
-			UnsupportedExpression,
+			[]Diagnostic{{UnsupportedExpression, Span{0, 1}}},
+			`File(Error("[", "for", "a", "in", "xs", ":", "a", "]"))`,
 		},
 		{
 			"template directives deferred",
 			`"%{if a}x%{endif}"`,
-			UnsupportedExpression,
+			[]Diagnostic{{UnsupportedExpression, Span{0, 1}}},
+			`File(Error("\"", "%{", "if", "a", "}", "x", "%{", "endif", "}", "\""))`,
+		},
+		{
+			"deferred construct as operand",
+			"a + [1] + b",
+			[]Diagnostic{{UnsupportedExpression, Span{4, 5}}},
+			`File(Binary(Binary(Variable("a"), "+", Error("[", "1", "]")), "+", Variable("b")))`,
+		},
+		{
+			"unterminated deferred construct",
+			"{a = [1,\n\n",
+			[]Diagnostic{{UnsupportedExpression, Span{0, 1}}},
+			`File(Error("{", "a", "=", "[", "1", ","))`,
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			file := parseExpressionSource([]byte(test.source))
-			assertExpressionPartition(t, []byte(test.source), file)
-			if !slices.ContainsFunc(file.diagnostics, func(d Diagnostic) bool { return d.Kind == test.kind }) {
-				t.Fatalf("missing diagnostic %v in %+v", test.kind, file.diagnostics)
-			}
+			assertDiagnosticsAndShape(t, test.source, test.diagnostics, test.shape)
 		})
+	}
+}
+
+// assertDiagnosticsAndShape pins the exact diagnostics, including spans, and
+// the recovered tree so that cascading errors and recovery regressions surface.
+func assertDiagnosticsAndShape(t *testing.T, source string, diagnostics []Diagnostic, shape string) {
+	t.Helper()
+	file := parseExpressionSource([]byte(source))
+	assertExpressionPartition(t, []byte(source), file)
+	if !reflect.DeepEqual(file.diagnostics, diagnostics) {
+		t.Errorf("diagnostics = %+v\nwant %+v", file.diagnostics, diagnostics)
+	}
+	if got := expressionShape(file, file.root); got != shape {
+		t.Errorf("shape:\n%s\nwant:\n%s", got, shape)
 	}
 }
 
