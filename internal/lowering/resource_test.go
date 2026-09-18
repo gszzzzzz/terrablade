@@ -18,6 +18,10 @@ func FuzzExpression(f *testing.F) {
 		"[ # empty\n]", "f([a,b], g(x))", "f(a/*x\r\ny*/,b)",
 		"[alpha,\n\nbeta]", "[a,\n\n# note\n\nb]", "(long_name)",
 		"[a /* c */,b]", "[/* lead */ a]", "[a # keep\n,b]",
+		"alpha + beta - gamma", "ready ? yes : no", "a?b:c?d:e",
+		"foo.0 .0", "1 .e2", "f(x,y).first_attribute.second_attribute",
+		"foo.*.bar[0].baz", "foo[*][*].bar", "foo[alpha + beta]",
+		"(/*lead*/alpha+beta/*tail*/)", "foo.*.0 .0", "foo[* /*c*/].bar",
 	} {
 		f.Add(source, uint8(20))
 	}
@@ -50,8 +54,49 @@ func FuzzExpression(f *testing.F) {
 	})
 }
 
-// Commas and trivia may be canonicalized; all other token spelling, including
-// comments and explicit parentheses, must survive this feature unchanged.
+func TestDeepOperationChains(t *testing.T) {
+	const count = 20000
+	for _, source := range []string{
+		strings.Repeat("a + ", count) + "a",
+		"root" + strings.Repeat(".attribute", count),
+	} {
+		result, node := parse(t, source)
+		output := render(t, source, 30)
+		reparsed, next := parse(t, output)
+		if !reflect.DeepEqual(expressionTokens(result, node), expressionTokens(reparsed, next)) {
+			t.Fatal("deep operation changed expression structure")
+		}
+		if again := render(t, output, 30); again != output {
+			t.Fatal("deep operation is not idempotent")
+		}
+	}
+}
+
+func BenchmarkOperationChains(b *testing.B) {
+	for _, count := range []int{1000, 5000, 10000} {
+		for name, source := range map[string]string{
+			"binary":    strings.Repeat("a + ", count) + "a",
+			"traversal": "root" + strings.Repeat(".attribute", count),
+		} {
+			b.Run(name+"/"+strconv.Itoa(count), func(b *testing.B) {
+				result, node := parse(b, source)
+				b.ReportAllocs()
+				b.ResetTimer()
+				for b.Loop() {
+					doc, err := lowering.Expression(result, node)
+					if err != nil {
+						b.Fatal(err)
+					}
+					document.Render(doc, document.Options{PrintWidth: 30})
+				}
+			})
+		}
+	}
+}
+
+// Commas, trivia, and parentheses may be canonicalized; all other token spelling
+// and the expression tree shape must survive. Ignoring parentheses in the shape
+// still detects a precedence change, because the operator tree would differ.
 func expressionTokens(result syntax.Result, node syntax.SyntaxNode) []string {
 	var tokens []string
 	stack := []syntax.SyntaxElement{node.Element()}
@@ -59,7 +104,13 @@ func expressionTokens(result syntax.Result, node syntax.SyntaxNode) []string {
 		element := stack[len(stack)-1]
 		stack = stack[:len(stack)-1]
 		if node, ok := element.Node(); ok {
+			if node.Kind() != syntax.ParenthesizedExpression {
+				tokens = append(tokens, "node:"+node.Kind().String())
+			}
 			for i := node.ChildCount() - 1; i >= 0; i-- {
+				if token, ok := node.Child(i).Token(); ok && node.Kind() == syntax.ParenthesizedExpression && (token.Kind() == syntax.OpenParen || token.Kind() == syntax.CloseParen) {
+					continue
+				}
 				stack = append(stack, node.Child(i))
 			}
 			continue
