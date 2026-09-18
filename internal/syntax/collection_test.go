@@ -338,12 +338,10 @@ func TestObjectDiagnostics(t *testing.T) {
 			`File(For("{", "for", Error("=", "1"), "}"))`,
 		},
 		{
-			"quoted keys remain deferred",
+			"quoted keys preserve template syntax",
 			`{"key"=1}`,
-			[]Diagnostic{
-				{UnsupportedExpression, Span{1, 2}},
-			},
-			`File(Object("{", Item(Error("\"", "key", "\""), "=", Literal("1")), "}"))`,
+			nil,
+			`File(Object("{", Item(Template("\"", "key", "\""), "=", Literal("1")), "}"))`,
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {

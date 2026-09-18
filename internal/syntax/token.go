@@ -107,6 +107,7 @@ const (
 	ExpectedForArrow
 	UnexpectedForKey
 	UnexpectedForGrouping
+	ExpectedTemplateSequenceEnd
 	diagnosticKindCount
 )
 

@@ -25,6 +25,8 @@ const (
 	ObjectExpression
 	ObjectItem
 	ForExpression
+	TemplateExpression
+	TemplateInterpolation
 	nodeKindCount
 )
 

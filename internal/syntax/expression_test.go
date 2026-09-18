@@ -276,28 +276,10 @@ func TestExpressionDiagnostics(t *testing.T) {
 			`File(Variable("a"), Error("b"))`,
 		},
 		{
-			"quoted template deferred",
-			`"hello ${a}"`,
-			[]Diagnostic{{UnsupportedExpression, Span{0, 1}}},
-			`File(Error("\"", "hello ", "${", "a", "}", "\""))`,
-		},
-		{
-			"heredoc deferred",
-			"<<END\nhello\nEND\n",
-			[]Diagnostic{{UnsupportedExpression, Span{0, 2}}},
-			`File(Error("<<", "END", "hello\n", "END"))`,
-		},
-		{
 			"template directives deferred",
 			`"%{if a}x%{endif}"`,
-			[]Diagnostic{{UnsupportedExpression, Span{0, 1}}},
-			`File(Error("\"", "%{", "if", "a", "}", "x", "%{", "endif", "}", "\""))`,
-		},
-		{
-			"deferred construct as operand",
-			`a + "x" + b`,
-			[]Diagnostic{{UnsupportedExpression, Span{4, 5}}},
-			`File(Binary(Binary(Variable("a"), "+", Error("\"", "x", "\"")), "+", Variable("b")))`,
+			[]Diagnostic{{UnsupportedExpression, Span{1, 3}}, {UnsupportedExpression, Span{9, 11}}},
+			`File(Template("\"", Error("%{", "if", "a", "}"), "x", Error("%{", "endif", "}"), "\""))`,
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -383,6 +365,9 @@ func FuzzExpression(f *testing.F) {
 		"[for k,v in xs : k+v if v]",
 		"{for v in xs : v.k => v... if v}",
 		"[for x, : [1, 2]]",
+		`"hello ${~ {a=1}.a ~} end"`,
+		`"${a bad(}tail"`,
+		"<<-END\n  ${a}\n  END\n",
 		`f("${a}", [for a in b : a])`,
 		"a + /*\xff",
 		strings.Repeat("!", maxRecursiveExpressionDepth+1) + "a",
@@ -467,7 +452,8 @@ func expressionShape(file syntaxFile, current SyntaxElement) string {
 			AttributeSplat: "AttributeSplat", FullSplat: "FullSplat",
 			TupleExpression:  "Tuple",
 			ObjectExpression: "Object", ObjectItem: "Item",
-			ForExpression: "For",
+			ForExpression:      "For",
+			TemplateExpression: "Template", TemplateInterpolation: "Interpolation",
 		}
 		var children []string
 		for i := range element.ChildCount() {
@@ -564,6 +550,10 @@ func TestExpressionDepthBoundaries(t *testing.T) {
 			func(count int) string {
 				return strings.Repeat("[for x in xs : ", count) + "a" + strings.Repeat("]", count)
 			},
+		},
+		{
+			"template interpolation recursion",
+			func(count int) string { return strings.Repeat(`"${`, count) + "a" + strings.Repeat(`}"`, count) },
 		},
 		{
 			"conditional recursion",

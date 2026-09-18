@@ -84,6 +84,8 @@ func TestNodeKindString(t *testing.T) {
 		"ObjectExpression",
 		"ObjectItem",
 		"ForExpression",
+		"TemplateExpression",
+		"TemplateInterpolation",
 	}
 	assertEnumNames(t, want, uint8(nodeKindCount), func(value uint8) string { return NodeKind(value).String() })
 	if got := NodeKind(255).String(); got != "NodeKind(255)" {
@@ -125,6 +127,7 @@ func TestDiagnosticKindString(t *testing.T) {
 		"ExpectedForArrow",
 		"UnexpectedForKey",
 		"UnexpectedForGrouping",
+		"ExpectedTemplateSequenceEnd",
 	}
 	assertEnumNames(t, want, uint8(diagnosticKindCount), func(value uint8) string { return DiagnosticKind(value).String() })
 	if got := DiagnosticKind(255).String(); got != "DiagnosticKind(255)" {

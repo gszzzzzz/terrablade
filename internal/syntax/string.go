@@ -73,6 +73,8 @@ var nodeKindNames = [nodeKindCount]string{
 	ObjectExpression:        "ObjectExpression",
 	ObjectItem:              "ObjectItem",
 	ForExpression:           "ForExpression",
+	TemplateExpression:      "TemplateExpression",
+	TemplateInterpolation:   "TemplateInterpolation",
 }
 
 var diagnosticKindNames = [diagnosticKindCount]string{
@@ -108,6 +110,7 @@ var diagnosticKindNames = [diagnosticKindCount]string{
 	ExpectedForArrow:             "ExpectedForArrow",
 	UnexpectedForKey:             "UnexpectedForKey",
 	UnexpectedForGrouping:        "UnexpectedForGrouping",
+	ExpectedTemplateSequenceEnd:  "ExpectedTemplateSequenceEnd",
 }
 
 // String returns the source-facing name used in diagnostics and debug output.

@@ -39,9 +39,8 @@ func (l *lexer) templateExpression() TokenKind {
 	case '{':
 		frame.braces++
 	}
-	// Newlines inside an interpolation are ordinary Newline tokens. The future
-	// template parser must parse this region with delimitedExpression rules, just
-	// like expressions nested in parentheses or brackets.
+	// Newlines inside an interpolation are ordinary Newline tokens. The parser
+	// uses delimitedExpression rules here, just like inside parentheses or brackets.
 	return l.config()
 }
 

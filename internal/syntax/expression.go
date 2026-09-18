@@ -142,8 +142,8 @@ func (p *parser) prefix(context expressionContext) SyntaxNode {
 			kind = ObjectExpression
 		}
 	case QuoteOpen, HeredocOpen:
-		p.report(UnsupportedExpression, token.span)
-		p.skipConstruct(&b)
+		p.templateExpression(&b)
+		kind = TemplateExpression
 	default:
 		p.report(ExpectedExpression, token.span)
 		p.consumeLookahead(&b, context)
@@ -266,6 +266,10 @@ func (p *parser) skipConstruct(b *nodeBuilder) {
 			ends = append(ends, close)
 		} else if len(ends) > 0 && ends[len(ends)-1] == kind {
 			ends = ends[:len(ends)-1]
+		} else if isClosingDelimiter(kind) {
+			// A mismatched closer can belong to an enclosing expression or
+			// template. Leave it available instead of swallowing the outer tail.
+			break
 		}
 		if !isTrivia(kind) {
 			end = i + 1
@@ -275,6 +279,14 @@ func (p *parser) skipConstruct(b *nodeBuilder) {
 		}
 	}
 	p.consumeUntil(b, end)
+}
+
+func isClosingDelimiter(kind TokenKind) bool {
+	switch kind {
+	case CloseParen, CloseBracket, CloseBrace, QuoteClose, HeredocEndMarker, TemplateSequenceEnd:
+		return true
+	}
+	return false
 }
 
 func closing(kind TokenKind) TokenKind {
