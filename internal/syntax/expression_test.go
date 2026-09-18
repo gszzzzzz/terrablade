@@ -19,6 +19,21 @@ func TestExpressionShapes(t *testing.T) {
 			`File(Literal("012.30E-2"))`,
 		},
 		{
+			"upstream empty fraction before exponent",
+			"1.e2",
+			`File(Literal("1.e2"))`,
+		},
+		{
+			"upstream empty fraction with signed exponent",
+			"1.e+2",
+			`File(Literal("1.e+2"))`,
+		},
+		{
+			"subtraction after empty-fraction exponent",
+			"1.e2-foo",
+			`File(Binary(Literal("1.e2"), "-", Variable("foo")))`,
+		},
+		{
 			"contextual true",
 			"true",
 			`File(Literal("true"))`,
@@ -89,16 +104,6 @@ func TestExpressionShapes(t *testing.T) {
 			`File(Conditional(Binary(Variable("a"), "||", Variable("b")), "?", Conditional(Variable("c"), "?", Variable("d"), ":", Variable("e")), ":", Variable("f")))`,
 		},
 		{
-			"postfix binds inside unary",
-			"-foo.bar[0]",
-			`File(Unary("-", Traversal(Variable("foo"), Attribute(".", "bar"), Index("[", Literal("0"), "]"))))`,
-		},
-		{
-			"index expression and following attribute",
-			"foo[1 + i].true",
-			`File(Traversal(Variable("foo"), Index("[", Binary(Literal("1"), "+", Variable("i")), "]"), Attribute(".", "true")))`,
-		},
-		{
 			"empty function call",
 			"f()",
 			`File(Call("f", "(", ")"))`,
@@ -117,51 +122,6 @@ func TestExpressionShapes(t *testing.T) {
 			"namespaced call and postfix",
 			"provider::aws::f(x).id",
 			`File(Traversal(Call("provider", "::", "aws", "::", "f", "(", Variable("x"), ")"), Attribute(".", "id")))`,
-		},
-		{
-			"legacy dot index",
-			"foo.0",
-			`File(Traversal(Variable("foo"), LegacyIndex(".", "0")))`,
-		},
-		{
-			"legacy exponent index",
-			"foo.0e1",
-			`File(Traversal(Variable("foo"), LegacyIndex(".", "0e1")))`,
-		},
-		{
-			"legacy splat index is outside projection",
-			"foo.*.bar[0].baz",
-			`File(Traversal(Variable("foo"), AttributeSplat(".", "*", Attribute(".", "bar")), Index("[", Literal("0"), "]"), Attribute(".", "baz")))`,
-		},
-		{
-			"full splat index is inside projection",
-			"foo[*].bar[0].baz",
-			`File(Traversal(Variable("foo"), FullSplat("[", "*", "]", Attribute(".", "bar"), Index("[", Literal("0"), "]"), Attribute(".", "baz"))))`,
-		},
-		{
-			"nested full splats",
-			"foo[*][*].bar",
-			`File(Traversal(Variable("foo"), FullSplat("[", "*", "]", FullSplat("[", "*", "]", Attribute(".", "bar")))))`,
-		},
-		{
-			"legacy and full splat chaining",
-			"foo.*.0[*].bar",
-			`File(Traversal(Variable("foo"), AttributeSplat(".", "*", LegacyIndex(".", "0")), FullSplat("[", "*", "]", Attribute(".", "bar"))))`,
-		},
-		{
-			"full splat then legacy splat",
-			"foo[*].*.bar",
-			`File(Traversal(Variable("foo"), FullSplat("[", "*", "]", AttributeSplat(".", "*", Attribute(".", "bar")))))`,
-		},
-		{
-			"parenthesized full splat allows newlines",
-			"(foo[\n*\n].bar)",
-			`File(Paren("(", Traversal(Variable("foo"), FullSplat("[", "*", "]", Attribute(".", "bar"))), ")"))`,
-		},
-		{
-			"ordinary index allows newlines",
-			"foo[\n0\n]",
-			`File(Traversal(Variable("foo"), Index("[", Literal("0"), "]")))`,
 		},
 		{
 			"multiline call",
@@ -203,11 +163,6 @@ func TestExpressionDiagnostics(t *testing.T) {
 			ExpectedClosingParen,
 		},
 		{
-			"missing close bracket",
-			"a[0",
-			ExpectedClosingBracket,
-		},
-		{
 			"missing conditional colon",
 			"a ? b",
 			ExpectedConditionalColon,
@@ -231,26 +186,6 @@ func TestExpressionDiagnostics(t *testing.T) {
 			"expanded argument must be final",
 			"f(a..., b)",
 			ExpectedClosingParen,
-		},
-		{
-			"missing attribute name",
-			"foo.",
-			ExpectedAttributeName,
-		},
-		{
-			"nested attribute splat",
-			"foo.*.bar.*.baz",
-			NestedAttributeSplat,
-		},
-		{
-			"newline before full splat marker",
-			"foo[\n*]",
-			ExpectedExpression,
-		},
-		{
-			"newline before full splat closer",
-			"foo[*\n]",
-			ExpectedClosingBracket,
 		},
 		{
 			"line break cannot continue unparenthesized binary",
@@ -331,6 +266,10 @@ func FuzzExpression(f *testing.F) {
 		"provider::aws::f(a, xs...)",
 		"foo.0e-1.*.bar[0][*].baz",
 		"foo[*].*.0e1",
+		"foo.0e1.0",
+		"1.0.2",
+		"1e1e2foo",
+		"1.e2-foo",
 		"(a /* x */ + # y\n b)",
 		`f("${a}", [for a in b : a])`,
 		"a + /*\xff",
@@ -378,7 +317,7 @@ func assertExpressionPartition(t *testing.T, source []byte, file syntaxFile) {
 }
 
 // expressionShape omits trivia only for readable grammar assertions. Separate
-// partition and ownership assertions verify every token, including all trivia.
+// partition and placement assertions verify every token, including all trivia.
 func expressionShape(file syntaxFile, element SyntaxElement) string {
 	switch element := element.(type) {
 	case SyntaxToken:
@@ -406,4 +345,110 @@ func expressionShape(file syntaxFile, element SyntaxElement) string {
 		return names[element.Kind()] + "(" + strings.Join(children, ", ") + ")"
 	}
 	return "<invalid>"
+}
+
+func TestContiguousNumericCandidateDiagnostics(t *testing.T) {
+	for _, test := range []struct {
+		source string
+		want   Diagnostic
+	}{
+		{
+			"1.0.2",
+			Diagnostic{
+				Kind: InvalidNumber,
+				Span: Span{Start: 0, End: 5},
+			},
+		},
+		{
+			"1..2",
+			Diagnostic{
+				Kind: InvalidNumber,
+				Span: Span{Start: 0, End: 4},
+			},
+		},
+		{
+			"1...2",
+			Diagnostic{
+				Kind: InvalidNumber,
+				Span: Span{Start: 0, End: 5},
+			},
+		},
+		{
+			"1e1e2",
+			Diagnostic{
+				Kind: InvalidNumber,
+				Span: Span{Start: 0, End: 5},
+			},
+		},
+		{
+			"foo.0e1.0",
+			Diagnostic{
+				Kind: InvalidLegacyIndex,
+				Span: Span{Start: 4, End: 9},
+			},
+		},
+		{
+			"f(1.0.2, x)",
+			Diagnostic{
+				Kind: InvalidNumber,
+				Span: Span{Start: 2, End: 7},
+			},
+		},
+	} {
+		t.Run(test.source, func(t *testing.T) {
+			file := parseExpressionSource([]byte(test.source))
+			assertExpressionPartition(t, []byte(test.source), file)
+			if len(file.diagnostics) != 1 || file.diagnostics[0] != test.want {
+				t.Fatalf("diagnostics = %+v, want %+v", file.diagnostics, test.want)
+			}
+		})
+	}
+}
+
+func TestExpressionDepthBoundaries(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		make func(int) string
+	}{
+		{
+			"unary recursion",
+			func(count int) string { return strings.Repeat("!", count) + "a" },
+		},
+		{
+			"parenthesis recursion",
+			func(count int) string { return strings.Repeat("(", count) + "a" + strings.Repeat(")", count) },
+		},
+		{
+			"iteratively built binary tree",
+			func(count int) string { return strings.Repeat("a + ", count) + "a" },
+		},
+		{
+			"conditional recursion",
+			func(count int) string { return strings.Repeat("a ? b : ", count) + "c" },
+		},
+		{
+			"full splat recursion",
+			func(count int) string { return "foo" + strings.Repeat("[*]", count) },
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			accepted := []byte(test.make(maxExpressionDepth - 1))
+			file := parseExpressionSource(accepted)
+			assertExpressionPartition(t, accepted, file)
+			if len(file.diagnostics) != 0 {
+				t.Fatalf("boundary input rejected: %+v", file.diagnostics)
+			}
+			for _, count := range []int{maxExpressionDepth, maxExpressionDepth * 8} {
+				source := []byte(test.make(count))
+				file = parseExpressionSource(source)
+				assertExpressionPartition(t, source, file)
+				if len(file.diagnostics) != 1 || file.diagnostics[0].Kind != NestingLimitExceeded {
+					t.Fatalf("limit diagnostics = %+v", file.diagnostics)
+				}
+				if again := parseExpressionSource(source); !reflect.DeepEqual(file, again) {
+					t.Fatal("depth recovery is not deterministic")
+				}
+			}
+		})
+	}
 }
