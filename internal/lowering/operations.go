@@ -13,8 +13,8 @@ func syntheticParentheses(body document.Doc) document.Doc {
 	))
 }
 
-// Operators start continuation lines. A binary chain's left spine shares one
-// continuation indent instead of increasing indentation at each operator.
+// Operators start continuation lines at the surrounding delimiter's indentation,
+// matching upstream. A same-precedence chain still shares one fit decision.
 func operationContinuation(result syntax.Result, pieces []piece, endsHeredoc bool) document.Doc {
 	parts := make([]document.Doc, 0, len(pieces)*3)
 	for _, part := range pieces {
@@ -33,18 +33,12 @@ func traversalSequence(result syntax.Result, pieces []piece, endsNumber, endsHer
 	parts := make([]document.Doc, 0, len(pieces)*3)
 	for _, part := range pieces {
 		separator := tight
-		if part.child.startsDot {
-			separator = soft
-			if endsNumber && part.child.fusesNumber {
-				separator = line
-			}
+		if part.child.startsDot && endsNumber && part.child.fusesNumber {
+			separator = space
 		}
-		afterComment := tight
-		if part.child.startsDot {
-			// A retained comment already separates the previous numeric token.
-			afterComment = soft
-		}
-		gap, end := commentGap(result, part.before, gapStyle{empty: separator, beforeComment: space, afterComment: afterComment, requiredLine: endsHeredoc})
+		// Dot and bracket steps never introduce a width-driven line break.
+		// A retained comment supplies a numeric boundary and may require a line.
+		gap, end := commentGap(result, part.before, gapStyle{empty: separator, beforeComment: space, afterComment: tight, requiredLine: endsHeredoc})
 		parts = append(parts, gap, end, part.doc)
 		endsNumber = part.child.endsNumber
 		endsHeredoc = part.child.endsHeredoc
@@ -69,8 +63,26 @@ func numberContinuesAcrossDot(next string) bool {
 	return next != "" && next[0] >= '0' && next[0] <= '9'
 }
 
-func index(result syntax.Result, pieces []piece) document.Doc {
+func index(result syntax.Result, node syntax.SyntaxNode, pieces []piece) document.Doc {
 	inner, close := pieces[1], pieces[2]
+	atomic := false
+	for i := range node.ChildCount() {
+		if child, ok := node.Child(i).Node(); ok {
+			atomic = child.Kind() == syntax.LiteralExpression || child.Kind() == syntax.VariableExpression
+		}
+	}
+	for _, part := range pieces[1:] {
+		for _, token := range part.before {
+			if token.Kind() == syntax.LineComment || token.Kind() == syntax.BlockComment {
+				atomic = false
+			}
+		}
+	}
+	if atomic {
+		// A long following traversal must not peel an indivisible index onto
+		// a line of its own. There is no useful break inside [name] or [0].
+		return document.Concat(pieces[0].doc, inner.doc, close.doc)
+	}
 	leading, start := commentGap(result, inner.before, gapStyle{empty: soft, beforeComment: soft, afterComment: space})
 	trailing, end := commentGap(result, close.before, gapStyle{empty: soft, beforeComment: space, afterComment: soft, requiredLine: inner.child.endsHeredoc})
 	return document.Group(document.Concat(pieces[0].doc,

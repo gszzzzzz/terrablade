@@ -48,7 +48,7 @@
 //     for expressions do not use this source-layout rule.
 //   - For expressions: flat clauses use spaces. Broken layouts put the header,
 //     projection, and optional if clause on separate indented lines. Object
-//     projection arrows may start a further-indented continuation line. Grouping
+//     projection arrows may start a continuation line at the same indent. Grouping
 //     ellipses stay attached to their values; no trailing comma is introduced.
 //   - Templates: quoted and heredoc literal chunks retain their spelling and
 //     line structure and never wrap for width. Interpolation and directive
@@ -66,19 +66,22 @@
 //   - Parentheses: explicit parentheses do not introduce width-triggered breaks;
 //     their contents may still break. Binary, conditional, and traversal groups
 //     share their break layout with explicit parentheses. Where the grammar
-//     forbids expression newlines, broken operations add synthetic parentheses.
+//     forbids expression newlines, broken binary and conditional operations add
+//     synthetic parentheses. Traversals add none: their steps stay attached and
+//     calls and indices provide their own safe delimiters.
 //   - Operators: binary operators and conditional question marks and colons have
 //     surrounding spaces and start continuation lines. A same-precedence binary
 //     chain shares a group; different precedence and conditional arms can fit
-//     independently. In safe contexts, continuation lines indent one extra level
-//     after the first operand; parentheses supply that indentation themselves.
+//     independently. Continuation lines use the enclosing delimiter's indentation.
 //     Operand order and precedence remain unchanged.
 //   - Traversals: attributes, ordinary and legacy indices, and attribute/full
-//     splats retain their syntax and projection structure. Steps can break
-//     before a dot; bracket steps stay attached to the previous step. Safe
-//     contexts indent traversal continuation lines one extra level after the base.
+//     splats retain their syntax and projection structure. Dot and bracket steps
+//     stay attached even beyond print width. Only mandatory comment/heredoc lines
+//     separate steps; these use the enclosing delimiter's indentation.
 //     Numeric tokens retain a separating space only when the following dot step
-//     could continue the numeric token, as with .0 or .e2 but not .id. Index
+//     could continue the numeric token, as with .0 or .e2 but not .id.
+//     This reparse-safety rule deliberately differs from OpenTofu 1.12.6, whose
+//     formatter removes those spaces and then rejects its own output. Index
 //     expressions can break inside brackets. Calls and following traversal
 //     steps make independent fit decisions within a broken expression.
 //   - Blank lines: broken tuple and object entry gaps preserve at most one source

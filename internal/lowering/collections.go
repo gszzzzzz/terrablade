@@ -102,6 +102,5 @@ func forProjection(result syntax.Result, pieces []piece) document.Doc {
 	gap, end := commentGap(result, pieces[1].before, gapStyle{empty: line, beforeComment: space, afterComment: line, requiredLine: pieces[0].child.endsHeredoc})
 	tail := append([]piece(nil), pieces[1:]...)
 	tail[0].before = nil
-	return document.Group(document.Concat(pieces[0].doc,
-		document.Indent(document.Concat(gap, end, spacedSequence(result, tail)))))
+	return document.Group(document.Concat(pieces[0].doc, gap, end, spacedSequence(result, tail)))
 }

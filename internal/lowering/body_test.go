@@ -140,18 +140,23 @@ func TestBodyOpenTofuCompatibility(t *testing.T) {
 	} {
 		for _, width := range []int{16, 80} {
 			output := renderFile(t, source, width)
-			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-			command := exec.CommandContext(ctx, "tofu", "fmt", "-no-color", "-")
-			command.Stdin = strings.NewReader(output)
-			formatted, err := command.CombinedOutput()
-			cancel()
-			if err != nil {
-				t.Fatalf("OpenTofu failed: %v\n%s", err, formatted)
-			}
-			if string(formatted) != output {
-				t.Errorf("OpenTofu changed body formatting:\n%q\n=>\n%q", output, formatted)
-			}
+			assertOpenTofu(t, output)
 		}
+	}
+}
+
+func assertOpenTofu(t *testing.T, output string) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	command := exec.CommandContext(ctx, "tofu", "fmt", "-no-color", "-")
+	command.Stdin = strings.NewReader(output)
+	formatted, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("OpenTofu failed: %v\n%s", err, formatted)
+	}
+	if string(formatted) != output {
+		t.Errorf("OpenTofu changed canonical formatting:\n%q\n=>\n%q", output, formatted)
 	}
 }
 

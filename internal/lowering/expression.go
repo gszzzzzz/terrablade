@@ -91,8 +91,8 @@ type piece struct {
 	child  layout
 }
 
-// Operations keep their head and continuation separate. Safe contexts indent
-// the continuation once; parentheses indent the whole ungrouped body instead.
+// Operations keep their head and continuation separate. Enclosing delimiters
+// supply indentation; continuations do not add another indentation level.
 // Same-precedence chains concatenate continuations without rescanning a prefix.
 type layout struct {
 	doc, body, head, continuation document.Doc
@@ -190,7 +190,7 @@ func lowerNode(result syntax.Result, node syntax.SyntaxNode, safe, inSequence bo
 			}
 		}
 	case syntax.IndexAccess:
-		lowered.doc = index(result, pieces)
+		lowered.doc = index(result, node, pieces)
 	case syntax.AttributeSplat, syntax.FullSplat:
 		prefix := 2
 		if node.Kind() == syntax.FullSplat {
@@ -208,8 +208,8 @@ func lowerNode(result syntax.Result, node syntax.SyntaxNode, safe, inSequence bo
 	}
 	if lowered.operation {
 		lowered.body = document.Concat(lowered.head, lowered.continuation)
-		lowered.doc = document.Group(document.Concat(lowered.head, document.Indent(lowered.continuation)))
-		if !safe {
+		lowered.doc = document.Group(lowered.body)
+		if !safe && node.Kind() != syntax.TraversalExpression {
 			lowered.doc = syntheticParentheses(lowered.body)
 			lowered.endsHeredoc = false
 		}
@@ -224,6 +224,9 @@ func sequence(result syntax.Result, pieces []piece) document.Doc {
 		style.requiredLine = i > 0 && pieces[i-1].child.endsHeredoc
 		if i > 0 && pieces[i-1].kind == syntax.OpenBracket {
 			style.beforeComment = soft
+		}
+		if i > 0 && pieces[i-1].kind == syntax.Dot {
+			style.beforeComment = tight
 		}
 		if part.kind == syntax.CloseBracket {
 			style.afterComment = tight
