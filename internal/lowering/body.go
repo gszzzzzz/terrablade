@@ -160,7 +160,7 @@ func body(result syntax.Result, node syntax.SyntaxNode, nested bool, docs map[sy
 // independent of document construction.
 func bodyGap(result syntax.Result, trivia []syntax.SyntaxToken, previous, next syntax.NodeKind, nested bool) document.Doc {
 	var parts []document.Doc
-	gap := bodyGapClass{before: bodyGapSide{kind: bodyItem}}
+	gap := bodyGapClass{before: bodyGapSide{kind: bodyItem}, onOpener: nested && previous == syntax.InvalidNode}
 	switch {
 	case previous == syntax.InvalidNode && nested:
 		gap.before.kind = bodyBlockStart
@@ -198,6 +198,9 @@ func bodyGap(result syntax.Result, trivia []syntax.SyntaxToken, previous, next s
 			gap.after.kind = bodyLineComment
 		}
 		separator := gap.separator()
+		if separator == bodyLine || separator == bodyBlank {
+			gap.onOpener = false
+		}
 		if separator == bodyBlank && gap.boundary == bodyBlockBoundary {
 			// A block boundary inserts one blank line across the whole gap,
 			// not another one after every intervening comment.
@@ -247,6 +250,7 @@ type bodyGapClass struct {
 	lines         int
 	before, after bodyGapSide
 	boundary      bodyBoundary
+	onOpener      bool
 }
 
 func (gap bodyGapClass) separator() bodySeparator {
@@ -257,6 +261,10 @@ func (gap bodyGapClass) separator() bodySeparator {
 		if gap.after.kind != bodyItem && gap.lines == 0 {
 			return bodySpace // Keep a comment attached to the opening brace.
 		}
+		return bodyLine
+	case gap.onOpener && gap.after.kind == bodyItem:
+		// A multiline block cannot begin with an item on its opening line.
+		// Block comments may stay there, but must not keep that item inline.
 		return bodyLine
 	case gap.boundary == bodyBlockBoundary && (gap.lines > 0 || gap.before.kind == bodyLineComment || gap.after.kind == bodyItem):
 		return bodyBlank

@@ -18,6 +18,7 @@ func FuzzFile(f *testing.F) {
 		"a=1\n/*a*/ /*b*/ # c\n\nlong=2", "a=1\n\n/*prefix*/ b=2",
 		"/*a*/ x=1\nlong=2", "a /*key*/=/*value*/ 1 /*tail*/\n",
 		"b {}", "b bare \"quoted\" {}", "b { a=1 }", "b { # open\n a=1 # value\n}",
+		"b { /*open*/ a=1 }", "b { /*first*/ /*second*/ a=1 }", "b { /*first\nsecond*/ a=1 }",
 		"b /*type*/ label /*brace*/ {}", "b /*type*/ {}",
 		"b /*same*/ first /*same*/ second /*same*/ {}",
 		"# lead\nb /*first*/ bare /*second\nline*/ label /*brace*/ { # open\n # body\n} // end\n",
