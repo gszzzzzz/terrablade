@@ -109,8 +109,14 @@ func parseProperties(data []byte) (map[string][]interval, error) {
 				return nil, err
 			}
 		}
+		if hi < lo || hi > 0x10FFFF {
+			return nil, fmt.Errorf("invalid code point range %s", strings.TrimSpace(fields[0]))
+		}
 		ranges := tables[property]
-		if len(ranges) > 0 && lo == ranges[len(ranges)-1].hi+1 {
+		if len(ranges) > 0 && lo <= ranges[len(ranges)-1].hi+1 {
+			if lo <= ranges[len(ranges)-1].hi {
+				return nil, fmt.Errorf("%s: unordered or overlapping range %s", property, strings.TrimSpace(fields[0]))
+			}
 			ranges[len(ranges)-1].hi = hi
 		} else {
 			ranges = append(ranges, interval{lo, hi})
@@ -119,6 +125,11 @@ func parseProperties(data []byte) (map[string][]interval, error) {
 	}
 	if err := scanner.Err(); err != nil {
 		return nil, err
+	}
+	for _, p := range properties {
+		if len(tables[p.property]) == 0 {
+			return nil, fmt.Errorf("%s: no ranges found", p.property)
+		}
 	}
 	return tables, nil
 }
