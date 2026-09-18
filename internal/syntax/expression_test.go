@@ -384,6 +384,8 @@ func TestExpressionPreservesLexicalDiagnostics(t *testing.T) {
 	}
 }
 
+// Inputs the fuzzer found interesting are checked in under testdata/fuzz/FuzzExpression
+// and run as part of the ordinary test suite, alongside the seeds below.
 func FuzzExpression(f *testing.F) {
 	for _, source := range []string{
 		"",

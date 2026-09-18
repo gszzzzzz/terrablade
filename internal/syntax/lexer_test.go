@@ -548,6 +548,8 @@ func TestLexNumericCandidates(t *testing.T) {
 	}
 }
 
+// Inputs the fuzzer found interesting are checked in under testdata/fuzz/FuzzLex
+// and run as part of the ordinary test suite, alongside the seeds below.
 func FuzzLex(f *testing.F) {
 	f.Add([]byte("\uFEFFa\uFEFF#\uFEFF\n/*\uFEFF*/"))
 	for _, source := range []string{
