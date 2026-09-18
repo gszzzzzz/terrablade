@@ -31,7 +31,7 @@ func FuzzFormat(f *testing.F) {
 		if len(source) > 8192 {
 			t.Skip()
 		}
-		options := terrablade.Options{PrintWidth: int(width), IndentWidth: int(indent % 9), TabWidth: int(tab % 17)}
+		options := terrablade.Options{PrintWidth: int(width), IndentWidth: int(indent % 17), TabWidth: int(tab % 17)}
 		before := bytes.Clone(source)
 		output, err := terrablade.Format(source, options)
 		if !bytes.Equal(source, before) {
