@@ -163,7 +163,7 @@ func FuzzTextPartition(f *testing.F) {
 		runes := []rune(text)
 		parts := make([]document.Doc, 0, len(runes))
 		for i, r := range runes {
-			if r == '\r' || r == '\n' {
+			if r == '\n' {
 				runes[i] = ' '
 			}
 			parts = append(parts, document.Text(string(runes[i])))

@@ -174,7 +174,7 @@ func (w *lineWidth) append(text string, tabWidth int) {
 	if text == "" {
 		return
 	}
-	// Adjacent ASCII code points always break here (Text cannot contain CR/LF).
+	// Adjacent ASCII code points always break here (Text cannot contain LF).
 	// This is the common path for tokens, spaces, and punctuation: no copying.
 	if w.tail != "" && !(w.tail[len(w.tail)-1] < utf8.RuneSelf && text[0] < utf8.RuneSelf) {
 		tailBytes := len(w.tail)

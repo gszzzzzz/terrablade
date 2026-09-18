@@ -32,11 +32,12 @@ type node struct {
 	forceBreak bool
 }
 
-// Text preserves s exactly. It panics for invalid UTF-8 or CR/LF; use line
-// primitives for newlines. Tabs are preserved and measured using Options.TabWidth.
+// Text preserves s exactly. It panics for invalid UTF-8 or LF; use line
+// primitives for LF/CRLF newlines. Lone CR is preserved as a zero-width control,
+// not a line break. Tabs are preserved and measured using Options.TabWidth.
 func Text(s string) Doc {
-	if !utf8.ValidString(s) || strings.ContainsAny(s, "\r\n") {
-		panic("document: Text requires valid UTF-8 without CR or LF")
+	if !utf8.ValidString(s) || strings.ContainsRune(s, '\n') {
+		panic("document: Text requires valid UTF-8 without LF")
 	}
 	if s == "" {
 		return Doc{}

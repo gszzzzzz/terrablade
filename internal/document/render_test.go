@@ -92,6 +92,8 @@ func TestDisplayWidth(t *testing.T) {
 		{"ambiguous narrow", "·Ω", 2},
 		{"unicode 17 emoji", "\U0001FAEA", 2},
 		{"tab", "a\tb", 9},
+		{"lone CR", "a\rb", 2},
+		{"lone CR ends grapheme", "e\r\u0301", 1},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			// The same visible string must wrap identically whether lowering
@@ -162,7 +164,7 @@ func TestOptionsAndIndentationFit(t *testing.T) {
 }
 
 func TestInvalidInputs(t *testing.T) {
-	for _, text := range []string{"a\nb", "\r", "\r\n", "\xff", "\xe2\x82"} {
+	for _, text := range []string{"a\nb", "\r\n", "\xff", "\xe2\x82"} {
 		t.Run(fmt.Sprintf("Text %q", text), func(t *testing.T) {
 			mustPanic(t, func() { document.Text(text) })
 		})

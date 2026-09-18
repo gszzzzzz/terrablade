@@ -14,7 +14,9 @@
 // context. Text owns literal whitespace, including heredoc leading spaces.
 // All line primitives emit LF; callers split original CRLF or LF themselves.
 // No primitive adds a final newline implicitly or trims literal whitespace.
-// Text requires valid UTF-8 and no CR/LF. Empty constructors and a zero Doc
+// Text requires valid UTF-8 and no LF. Lone CR is preserved and measured as a
+// zero-width control, never interpreted as a cursor movement or line break.
+// Empty constructors and a zero Doc
 // render as empty. Invalid text, negative options, and integer layout overflow
 // panic because these are construction/configuration errors, not parse errors.
 //
