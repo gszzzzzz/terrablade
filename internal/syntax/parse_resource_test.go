@@ -19,6 +19,16 @@ func TestParseResourceRecovery(t *testing.T) {
 	if len(diagnostics) != 1 || diagnostics[0].Kind != syntax.NestingLimitExceeded {
 		t.Fatalf("recursive nesting produced %+v, want a single limit diagnostic", diagnostics)
 	}
+	limit := diagnostics[0]
+	if limit.Kind.Message() != "Expression nesting exceeds the parser limit." {
+		t.Fatalf("nesting limit message = %q", limit.Kind.Message())
+	}
+	if got := result.Position(limit.Span.Start); got.Offset != limit.Span.Start || got.Line != 2 || got.Column != limit.Span.Start-len("outer {\n")+1 {
+		t.Fatalf("nesting limit position = %+v for span %+v", got, limit.Span)
+	}
+	if got := result.Position(len(source)); got.Line != 5 || got.Column != 1 {
+		t.Fatalf("position in retained unparsed tail = %+v", got)
+	}
 	root := result.Root()
 	foundTail := false
 	for i := range root.ChildCount() {
@@ -63,6 +73,7 @@ func FuzzParse(f *testing.F) {
 		"a=1\na=2\n",
 		"b \"${f(}tail\" {}\na=1\n",
 		"a=\xff\nb=/*\x00",
+		"\ufeffa=\"é🙂\"\r\n\tb=\xff\rc=1\n",
 	} {
 		f.Add([]byte(source))
 	}
@@ -86,6 +97,30 @@ func FuzzParse(f *testing.F) {
 		clear(input)
 		if !slices.Equal(first, checkResult(t, result, wantSource)) {
 			t.Fatal("reusing input changed the Result")
+		}
+		// Probe arbitrary byte boundaries as well as diagnostic endpoints. Keep
+		// the number of lookups bounded: Position intentionally scans its prefix.
+		offsets := []int{0, len(source) / 2, len(source)}
+		diagnostics := result.Diagnostics()
+		if len(diagnostics) != 0 {
+			first, last := diagnostics[0], diagnostics[len(diagnostics)-1]
+			offsets = append(offsets, first.Span.Start, first.Span.End, last.Span.Start, last.Span.End)
+		}
+		for _, offset := range offsets {
+			// A byte-by-byte oracle is independent of the prefix-count/search
+			// implementation and also works on malformed encodings.
+			want := syntax.Position{Offset: offset, Line: 1, Column: 1}
+			for _, byteValue := range source[:offset] {
+				if byteValue == '\n' {
+					want.Line++
+					want.Column = 1
+				} else {
+					want.Column++
+				}
+			}
+			if got := result.Position(offset); got != want || again.Position(offset) != want {
+				t.Fatalf("Position(%d) = %+v, want %+v on both independent parses", offset, got, want)
+			}
 		}
 	})
 }

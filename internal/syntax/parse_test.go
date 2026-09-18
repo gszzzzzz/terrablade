@@ -318,6 +318,9 @@ func checkResult(t *testing.T, result syntax.Result, source string) []treeEntry 
 	}
 	previous := 0
 	for _, diagnostic := range diagnostics {
+		if message := diagnostic.Kind.Message(); message == "" || message == "Unknown diagnostic." {
+			t.Fatalf("diagnostic %s has no message", diagnostic.Kind)
+		}
 		span := diagnostic.Span
 		if span.Start < previous || span.End < span.Start || span.End > len(source) {
 			t.Fatalf("invalid diagnostic span or order: %+v", diagnostic)
