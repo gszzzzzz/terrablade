@@ -2,9 +2,10 @@ package syntax
 
 import "sort"
 
-// Limits are implementation details. Both recursion and constructed tree height
-// are bounded: iterative left-associative operators can also make deep trees.
-const maxExpressionDepth = 256
+// The parser bounds its own recursive descent, not the height of the resulting
+// CST. Iterative productions may legitimately build deep trees without growing
+// the parser call stack; downstream consumers must traverse those iteratively.
+const maxRecursiveExpressionDepth = 1024
 
 type expressionContext uint8
 
@@ -97,18 +98,16 @@ func (p *parser) current() token {
 type nodeBuilder struct {
 	start    int
 	children []SyntaxElement
-	height   int
 }
 
 func (p *parser) begin() nodeBuilder {
 	// Empty error nodes stay at the real cursor, not the virtual EOF after a halt,
 	// so they cannot create a gap between consumed and still-unparsed source.
-	return nodeBuilder{start: p.tokens[p.pos].Span.Start, height: 1}
+	return nodeBuilder{start: p.tokens[p.pos].Span.Start}
 }
 
 func (b *nodeBuilder) node(node SyntaxNode) {
 	b.children = append(b.children, node)
-	b.height = max(b.height, node.height+1)
 }
 
 // consumeUntil appends raw tokens before index, leaving index unconsumed.
@@ -159,30 +158,7 @@ func (p *parser) finish(kind NodeKind, b nodeBuilder) SyntaxNode {
 	if len(b.children) > 0 {
 		span.End = b.children[len(b.children)-1].Span().End
 	}
-	if b.height > maxExpressionDepth {
-		p.haltAtLimit(span)
-		// Flatten only the overflowing structure into a lossless Error node.
-		// This also bounds the tree seen by future recursive consumers.
-		var leaves []SyntaxElement
-		// The LIFO walk visits rightmost leaves first. Reversing once afterward
-		// restores source order without recursion through the overflowing tree.
-		stack := append([]SyntaxElement(nil), b.children...)
-		for len(stack) > 0 {
-			element := stack[len(stack)-1]
-			stack = stack[:len(stack)-1]
-			switch element := element.(type) {
-			case SyntaxToken:
-				leaves = append(leaves, element)
-			case SyntaxNode:
-				stack = append(stack, element.children...)
-			}
-		}
-		for i, j := 0, len(leaves)-1; i < j; i, j = i+1, j-1 {
-			leaves[i], leaves[j] = leaves[j], leaves[i]
-		}
-		b.children, b.height, kind = leaves, 1, Error
-	}
-	return SyntaxNode{kind: kind, span: span, children: b.children, height: b.height}
+	return SyntaxNode{kind: kind, span: span, children: b.children}
 }
 
 func (p *parser) file(root nodeBuilder) syntaxFile {
@@ -202,7 +178,6 @@ func (p *parser) file(root nodeBuilder) syntaxFile {
 			kind:     File,
 			span:     Span{Start: 0, End: len(p.source)},
 			children: root.children,
-			height:   root.height,
 		},
 		diagnostics: p.diagnostics,
 	}

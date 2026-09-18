@@ -273,7 +273,7 @@ func FuzzExpression(f *testing.F) {
 		"(a /* x */ + # y\n b)",
 		`f("${a}", [for a in b : a])`,
 		"a + /*\xff",
-		strings.Repeat("!", maxExpressionDepth+1) + "a",
+		strings.Repeat("!", maxRecursiveExpressionDepth+1) + "a",
 	} {
 		f.Add([]byte(source))
 	}
@@ -296,21 +296,19 @@ func assertExpressionPartition(t *testing.T, source []byte, file syntaxFile) {
 	t.Helper()
 	assertFilePartition(t, source, file)
 	var tokens []token
-	var visit func(SyntaxElement, int)
-	visit = func(element SyntaxElement, depth int) {
+	stack := []SyntaxElement{file.root}
+	for len(stack) > 0 {
+		element := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
 		switch element := element.(type) {
 		case SyntaxNode:
-			if depth > maxExpressionDepth+1 {
-				t.Fatal("tree exceeds its depth bound")
-			}
-			for i := range element.ChildCount() {
-				visit(element.Child(i), depth+1)
+			for i := element.ChildCount() - 1; i >= 0; i-- {
+				stack = append(stack, element.Child(i))
 			}
 		case SyntaxToken:
 			tokens = append(tokens, token{Kind: element.Kind(), Span: element.Span()})
 		}
 	}
-	visit(file.root, 1)
 	if want := lex(source).Tokens; !reflect.DeepEqual(tokens, want) {
 		t.Fatalf("tree leaves differ from lexer tokens:\n%+v\nwant:\n%+v", tokens, want)
 	}
@@ -419,10 +417,6 @@ func TestExpressionDepthBoundaries(t *testing.T) {
 			func(count int) string { return strings.Repeat("(", count) + "a" + strings.Repeat(")", count) },
 		},
 		{
-			"iteratively built binary tree",
-			func(count int) string { return strings.Repeat("a + ", count) + "a" },
-		},
-		{
 			"conditional recursion",
 			func(count int) string { return strings.Repeat("a ? b : ", count) + "c" },
 		},
@@ -432,13 +426,13 @@ func TestExpressionDepthBoundaries(t *testing.T) {
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			accepted := []byte(test.make(maxExpressionDepth - 1))
+			accepted := []byte(test.make(maxRecursiveExpressionDepth - 1))
 			file := parseExpressionSource(accepted)
 			assertExpressionPartition(t, accepted, file)
 			if len(file.diagnostics) != 0 {
 				t.Fatalf("boundary input rejected: %+v", file.diagnostics)
 			}
-			for _, count := range []int{maxExpressionDepth, maxExpressionDepth * 8} {
+			for _, count := range []int{maxRecursiveExpressionDepth, maxRecursiveExpressionDepth * 8} {
 				source := []byte(test.make(count))
 				file = parseExpressionSource(source)
 				assertExpressionPartition(t, source, file)
@@ -450,5 +444,14 @@ func TestExpressionDepthBoundaries(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestFlatBinaryChainDoesNotHitRecursionLimit(t *testing.T) {
+	source := []byte(strings.Repeat("a + ", 299) + "a")
+	file := parseExpressionSource(source)
+	assertExpressionPartition(t, source, file)
+	if len(file.diagnostics) != 0 {
+		t.Fatalf("flat binary chain rejected: %+v", file.diagnostics)
 	}
 }

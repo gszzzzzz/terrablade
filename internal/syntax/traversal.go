@@ -17,7 +17,7 @@ func (p *parser) steps(parent *nodeBuilder, context expressionContext, mode trav
 	if kind := p.peek(context); kind != Dot && (kind != OpenBracket || mode == attributeTraversalSteps) {
 		return
 	}
-	if p.depth == maxExpressionDepth {
+	if p.depth == maxRecursiveExpressionDepth {
 		p.haltAtLimit(p.tokens[p.look(context)].Span)
 		return
 	}

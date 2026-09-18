@@ -396,7 +396,7 @@ func TestLegacyIndexCompatibility(t *testing.T) {
 }
 
 func TestFlatTraversalDoesNotUseRecursionPerStep(t *testing.T) {
-	source := []byte("foo" + strings.Repeat(".bar", maxExpressionDepth*8))
+	source := []byte("foo" + strings.Repeat(".bar", maxRecursiveExpressionDepth*8))
 	file := parseExpressionSource(source)
 	assertExpressionPartition(t, source, file)
 	if len(file.diagnostics) != 0 {

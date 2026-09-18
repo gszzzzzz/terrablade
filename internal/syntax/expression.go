@@ -35,7 +35,7 @@ func (p *parser) operand(b *nodeBuilder, minimum int, context expressionContext)
 // expression uses Pratt binding powers: conditional 0 (right associative),
 // binary 1..6 (left associative), unary 7, then postfix traversal.
 func (p *parser) expression(minimum int, context expressionContext) SyntaxNode {
-	if p.depth == maxExpressionDepth {
+	if p.depth == maxRecursiveExpressionDepth {
 		span := p.current().Span
 		b := p.begin()
 		// Retain the offending token in a non-empty Error before freezing the
@@ -52,7 +52,7 @@ func (p *parser) expression(minimum int, context expressionContext) SyntaxNode {
 		// Only the weakest binding level may consume '?'. Parsing both arms at
 		// zero lets the false arm absorb another conditional, associating right.
 		if kind == Question && minimum == 0 {
-			b := nodeBuilder{start: left.span.Start, height: 1}
+			b := nodeBuilder{start: left.span.Start}
 			b.node(left)
 			p.consumeLookahead(&b, context)
 			p.operand(&b, 0, context)
@@ -68,7 +68,7 @@ func (p *parser) expression(minimum int, context expressionContext) SyntaxNode {
 		if power == 0 || power < minimum {
 			break
 		}
-		b := nodeBuilder{start: left.span.Start, height: 1}
+		b := nodeBuilder{start: left.span.Start}
 		b.node(left)
 		p.consumeLookahead(&b, context)
 		// A same-precedence operator cannot enter the RHS. This loop consumes it
@@ -138,7 +138,7 @@ func (p *parser) prefix(context expressionContext) SyntaxNode {
 	}
 	left := p.finish(kind, b)
 	if p.peek(context) == Dot || p.peek(context) == OpenBracket {
-		b = nodeBuilder{start: left.span.Start, height: 1}
+		b = nodeBuilder{start: left.span.Start}
 		b.node(left)
 		p.steps(&b, context, allTraversalSteps)
 		left = p.finish(TraversalExpression, b)

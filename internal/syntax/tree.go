@@ -39,8 +39,6 @@ type SyntaxNode struct {
 	kind     NodeKind
 	span     Span
 	children []SyntaxElement
-	// height is private parser bookkeeping, not a source or semantic property.
-	height int
 }
 
 func (n SyntaxNode) syntaxElement() {}
