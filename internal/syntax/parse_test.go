@@ -314,7 +314,7 @@ func checkResult(t *testing.T, result syntax.Result, source string) []treeEntry 
 	}
 	diagnostics := result.Diagnostics()
 	if errors > 0 && len(diagnostics) == 0 {
-		t.Fatal("ErrorNode nodes must be accompanied by diagnostics")
+		t.Fatal("error nodes must be accompanied by diagnostics")
 	}
 	previous := 0
 	for _, diagnostic := range diagnostics {

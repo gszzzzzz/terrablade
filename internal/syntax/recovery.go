@@ -1,6 +1,6 @@
 package syntax
 
-// recoverUntil retains malformed material in one ErrorNode node until a boundary
+// recoverUntil retains malformed material in one ErrorNode until a boundary
 // chosen by its caller. Leading trivia stays on the parent; trailing trivia is
 // left uncommitted for the next production. If already at a boundary, even the
 // leading trivia must stay untouched, especially at EOF or a template closer.

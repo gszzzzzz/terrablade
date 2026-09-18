@@ -17,7 +17,7 @@ func parseExpressionSource(source []byte) Result {
 }
 
 // operand commits only trivia that precedes an actual expression. A missing
-// operand gets an empty ErrorNode node at the cursor; no synthetic token is emitted
+// operand gets an empty ErrorNode at the cursor; no synthetic token is emitted
 // and trailing trivia remains available to the enclosing structure.
 func (p *parser) operand(b *nodeBuilder, minimum int, context expressionContext) {
 	i := p.look(context)

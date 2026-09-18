@@ -10,7 +10,7 @@ var diagnosticMessages = [diagnosticKindCount]string{
 	NewlineInQuotedTemplate:      "A quoted template cannot contain a literal newline; use a heredoc instead.",
 	UnterminatedHeredoc:          "Unterminated heredoc; expected a closing marker on its own line.",
 	ExpectedExpression:           "Expected an expression.",
-	UnexpectedToken:              "Unexpected token.",
+	UnexpectedToken:              "Unexpected token; expected a valid continuation or the end of the current construct.",
 	ExpectedClosingParen:         "Expected ')'.",
 	ExpectedClosingBracket:       "Expected ']'.",
 	ExpectedConditionalColon:     "Expected ':' between the true and false expressions of a conditional.",
@@ -43,7 +43,7 @@ var diagnosticMessages = [diagnosticKindCount]string{
 	ExpectedBodyItemSeparator:    "Expected a newline after the attribute or block.",
 	ExpectedBlockOpeningBrace:    "Expected '{' to start the block body.",
 	ExpectedLiteralBlockLabel:    "Block labels must be literal strings without interpolation or directives.",
-	ExpectedSingleLineAttribute:  "A single-line block may contain only one attribute.",
+	ExpectedSingleLineAttribute:  "Expected '=' after the attribute name in a single-line block; nested blocks require a multiline body.",
 	ExpectedSingleLineBlockEnd:   "Expected '}' on the same line after the block's attribute.",
 	DuplicateAttribute:           "An attribute with this name is already defined in the same body.",
 }

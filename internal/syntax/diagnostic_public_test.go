@@ -54,7 +54,8 @@ func TestDiagnosticMessagesFromParse(t *testing.T) {
 		{"a=1 b=2", syntax.ExpectedBodyItemSeparator, "Expected a newline after the attribute or block."},
 		{"b label", syntax.ExpectedBlockOpeningBrace, "Expected '{' to start the block body."},
 		{`b "${x}" {}`, syntax.ExpectedLiteralBlockLabel, "Block labels must be literal strings without interpolation or directives."},
-		{"b { c {} }", syntax.ExpectedSingleLineAttribute, "A single-line block may contain only one attribute."},
+		{"b { c {} }", syntax.ExpectedSingleLineAttribute, "Expected '=' after the attribute name in a single-line block; nested blocks require a multiline body."},
+		{"b { a }", syntax.ExpectedSingleLineAttribute, "Expected '=' after the attribute name in a single-line block; nested blocks require a multiline body."},
 		{"b { a=1\n}", syntax.ExpectedSingleLineBlockEnd, "Expected '}' on the same line after the block's attribute."},
 		{"a=1\na=2\n", syntax.DuplicateAttribute, "An attribute with this name is already defined in the same body."},
 	} {
@@ -74,6 +75,15 @@ func TestDiagnosticMessagesFromParse(t *testing.T) {
 	// A decimal-point restriction is narrower than an integer-only restriction.
 	if got := syntax.Parse([]byte("a=x.1e-1")).Diagnostics(); len(got) != 0 {
 		t.Fatalf("a fractional exponent in a legacy dot index must remain valid: %+v", got)
+	}
+}
+
+func TestUnexpectedTokenMessage(t *testing.T) {
+	// This category covers both a retained parse tail and the template parser's
+	// lexer-invariant defense, not one particular expected token or delimiter.
+	const want = "Unexpected token; expected a valid continuation or the end of the current construct."
+	if got := syntax.UnexpectedToken.Message(); got != want {
+		t.Fatalf("UnexpectedToken.Message() = %q, want %q", got, want)
 	}
 }
 

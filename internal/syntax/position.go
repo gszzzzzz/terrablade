@@ -31,8 +31,8 @@ type Position struct {
 // rune. Thus columns never decrease as offsets advance within a line. EOF after
 // a final LF is at column one of the next line.
 //
-// Position allocates no memory and scans the source prefix through offset.
-// Its cost is O(offset); this lookup strategy is an implementation detail.
+// Position allocates no memory. Each call takes O(offset) time; the lookup
+// strategy is an implementation detail.
 func (r Result) Position(offset int) Position {
 	// Slicing validates both bounds, including negative offsets, like Text.
 	prefix := r.source[:offset]

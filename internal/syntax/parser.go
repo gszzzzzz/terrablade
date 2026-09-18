@@ -208,7 +208,7 @@ func (p *parser) file(root nodeBuilder) Result {
 
 // retainRemainder is deliberately outside the grammar cursor. It must see the
 // original tail even when productions see EOF after a limit. Outer trivia stays
-// at File level, and unparsed non-trivia remains a flat, bounded ErrorNode node.
+// at File level, and unparsed non-trivia remains a flat, bounded ErrorNode.
 func (p *parser) retainRemainder(root *nodeBuilder) {
 	p.retainUntil(root, p.lookFrom(p.pos, delimitedExpression))
 	if p.tokens[p.pos].kind != EOF {

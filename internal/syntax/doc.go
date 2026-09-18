@@ -11,8 +11,8 @@
 // A zero Result represents no parse: its root is InvalidNode, its source is
 // empty, and its diagnostics are nil. Parse(nil) instead returns an empty File
 // containing an empty Body and EOF. Malformed input still produces a File and
-// diagnostics, with incomplete or ErrorNode nodes retaining the original bytes.
-// All diagnostics are errors; a result with diagnostics must not be formatted.
+// diagnostics, with incomplete nodes or ErrorNode subtrees retaining the original
+// bytes. All diagnostics are errors; a result with diagnostics must not be formatted.
 // Diagnostics are ordered by byte offset, with lexical errors first at equal
 // offsets. The tree and diagnostic order are deterministic for identical input.
 //

@@ -62,5 +62,5 @@ func (r Result) Text(span Span) string { return r.source[span.Start:span.End] }
 // Diagnostics are ordered by Span.Start. At equal offsets, lexical errors come
 // before parser errors and each phase retains its reporting order. Parsing the
 // same bytes produces the same tree and diagnostic order. Spans may overlap or
-// be empty, and missing syntax may have diagnostics without an ErrorNode node.
+// be empty, and missing syntax may have diagnostics without an ErrorNode.
 func (r Result) Diagnostics() []Diagnostic { return slices.Clone(r.diagnostics) }
