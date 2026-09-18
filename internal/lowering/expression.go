@@ -21,9 +21,10 @@ func Expression(result syntax.Result, node syntax.SyntaxNode) (document.Doc, err
 		return document.Doc{}, errors.New("lowering: expected an expression node")
 	}
 	type frame struct {
-		node syntax.SyntaxNode
-		next int
-		safe bool // The surrounding grammar permits expression newlines.
+		node       syntax.SyntaxNode
+		next       int
+		safe       bool // The surrounding grammar permits expression newlines.
+		inSequence bool // Templates flatten source-only object layout choices.
 	}
 	stack := []frame{{node: node}}
 	docs := make(map[syntax.SyntaxNode]layout)
@@ -33,23 +34,24 @@ func Expression(result syntax.Result, node syntax.SyntaxNode) (document.Doc, err
 			element := current.node.Child(current.next)
 			current.next++
 			if child, ok := element.Node(); ok {
-				safe := current.safe
+				safe, inSequence := current.safe, current.inSequence
 				switch current.node.Kind() {
 				case syntax.ObjectItem:
 					safe = false // Object keys and values are newline-sensitive.
+				case syntax.TemplateInterpolation, syntax.TemplateDirective:
+					safe, inSequence = true, true
 				case syntax.ParenthesizedExpression, syntax.FunctionCallExpression,
 					syntax.TupleExpression, syntax.IndexAccess, syntax.ForExpression,
-					syntax.TemplateInterpolation, syntax.TemplateDirective,
 					syntax.BinaryExpression, syntax.ConditionalExpression, syntax.TraversalExpression:
 					// Operations enclose themselves when their caller is not safe;
 					// their descendants can share that pair of parentheses.
 					safe = true
 				}
-				stack = append(stack, frame{node: child, safe: safe})
+				stack = append(stack, frame{node: child, safe: safe, inSequence: inSequence})
 			}
 			continue
 		}
-		doc, err := lowerNode(result, current.node, current.safe, docs)
+		doc, err := lowerNode(result, current.node, current.safe, current.inSequence, docs)
 		if err != nil {
 			return document.Doc{}, err
 		}
@@ -95,7 +97,7 @@ type layout struct {
 	endsHeredoc                   bool
 }
 
-func lowerNode(result syntax.Result, node syntax.SyntaxNode, safe bool, docs map[syntax.SyntaxNode]layout) (layout, error) {
+func lowerNode(result syntax.Result, node syntax.SyntaxNode, safe, inSequence bool, docs map[syntax.SyntaxNode]layout) (layout, error) {
 	switch node.Kind() {
 	case syntax.TemplateExpression, syntax.TemplateIf, syntax.TemplateFor:
 		return templateParts(result, node, docs), nil
@@ -143,7 +145,7 @@ func lowerNode(result syntax.Result, node syntax.SyntaxNode, safe bool, docs map
 	case syntax.TupleExpression:
 		lowered.doc = delimited(result, pieces, 0, true, soft)
 	case syntax.ObjectExpression:
-		lowered.doc = object(result, pieces)
+		lowered.doc = object(result, pieces, inSequence)
 	case syntax.ObjectItem:
 		pieces[1].doc = document.Text("=")
 		lowered.doc = spacedSequence(result, pieces)
@@ -279,6 +281,9 @@ func delimited(result syntax.Result, pieces []piece, open int, preserveBlank boo
 	style.requiredLine = len(content) > 0 && content[len(content)-1].child.endsHeredoc
 	if len(content) == 0 {
 		style.empty, style.beforeComment, style.afterComment = tight, soft, soft
+		if edge == hard {
+			style.empty, style.beforeComment, style.afterComment = hard, hard, hard
+		}
 	}
 	gap, end := commentGap(result, close.before, style)
 	parts = append(parts, gap)

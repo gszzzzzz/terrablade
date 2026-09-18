@@ -22,6 +22,9 @@
 //     values remain newline-sensitive, even inside an otherwise safe context.
 //     An entry ending in a heredoc omits its comma: the marker's mandatory
 //     newline separates entries, and a comma on the next line is invalid HCL.
+//     A source newline after the opening brace preserves vertical layout,
+//     including empty objects, except inside a template sequence. Tuples and
+//     for expressions do not use this source-layout rule.
 //   - For expressions: flat clauses use spaces. Broken layouts put the header,
 //     projection, and optional if clause on separate indented lines. Object
 //     projection arrows may start a further-indented continuation line. Grouping
@@ -30,9 +33,9 @@
 //     line structure and never wrap for width. Interpolation and directive
 //     contents flatten in safe expression context, including source newlines
 //     and nested groups, even beyond print width. Only mandatory comment and
-//     heredoc lines remain. Boundaries use ${expr}, ${~expr~}, %{if condition},
-//     and %{~if condition~}. No whitespace is synthesized outside sequence
-//     boundaries into literal text.
+//     heredoc lines remain; this takes precedence over source-vertical objects.
+//     Boundaries use ${expr}, ${~expr~}, %{if condition}, and %{~if condition~}.
+//     No whitespace is synthesized outside sequence boundaries into literal text.
 //   - Heredocs: opener, marker, literal indentation, and closing-marker spelling
 //     are preserved. Literal lines bypass automatic indentation. The marker's
 //     terminating LF belongs to the enclosing gap or body; lowering enforces

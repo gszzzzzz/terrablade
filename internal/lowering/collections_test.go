@@ -9,6 +9,14 @@ func TestObjectLayouts(t *testing.T) {
 		want         string
 	}{
 		{"empty", "{}", 1, "{}"},
+		{"source vertical empty", "{\n\n}", 80, "{\n}"},
+		{"source vertical empty comment", "{\n/*empty*/}", 80, "{\n  /*empty*/\n}"},
+		{"source vertical single entry", "{\nfoo=1}", 80, "{\n  foo = 1,\n}"},
+		{"source vertical CRLF", "{\r\nfoo=1,bar=2\r\n}", 80, "{\n  foo = 1,\n  bar = 2,\n}"},
+		{"source vertical blank lines", "{\n\nfoo=1\n\n\nbar=2}", 80, "{\n  foo = 1,\n\n  bar = 2,\n}"},
+		{"source vertical comments", "{\n# first\nfoo=1 # trailing\n}", 80, "{\n  # first\n  foo = 1, # trailing\n}"},
+		{"source vertical after opening comment", "{/*first*/\nfoo=1}", 80, "{\n  /*first*/\n  foo = 1,\n}"},
+		{"tuple newline still flattens", "[\n1,2\n]", 80, "[1, 2]"},
 		{"flat", "{foo:1,bar=2,}", 80, "{ foo = 1, bar = 2 }"},
 		{"newline separators", "{foo=1\nbar=2}", 80, "{ foo = 1, bar = 2 }"},
 		{"broken", "{foo=1,bar=2}", 14, "{\n  foo = 1,\n  bar = 2,\n}"},
@@ -43,6 +51,7 @@ func TestForLayouts(t *testing.T) {
 	}{
 		{"tuple flat", "[for x in xs:x.id]", 80, "[for x in xs : x.id]"},
 		{"object flat", "{for k,v in xs:k=>v... if v}", 80, "{ for k, v in xs : k => v... if v }"},
+		{"object for opening newline reflows", "{\nfor k,v in xs:k=>v... if v\n}", 80, "{ for k, v in xs : k => v... if v }"},
 		{"tuple broken", "[for value in values : value.id if value.enabled]", 30, "[\n  for value in values :\n  value.id\n  if value.enabled\n]"},
 		{"object broken", "{for k,v in values:k=>v... if v.enabled}", 28, "{\n  for k, v in values :\n  k => v...\n  if v.enabled\n}"},
 		{"contextual bindings", "[for in in if:if if in]", 80, "[for in in if : if if in]"},

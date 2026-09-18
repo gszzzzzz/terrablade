@@ -14,6 +14,7 @@ const (
 	space
 	soft
 	line
+	hard
 )
 
 func (s spacing) doc() document.Doc {
@@ -24,6 +25,8 @@ func (s spacing) doc() document.Doc {
 		return document.SoftLine()
 	case line:
 		return document.Line()
+	case hard:
+		return document.HardLine()
 	default:
 		return document.Doc{}
 	}

@@ -5,7 +5,18 @@ import (
 	"terrablade/internal/syntax"
 )
 
-func object(result syntax.Result, pieces []piece) document.Doc {
+func object(result syntax.Result, pieces []piece, inSequence bool) document.Doc {
+	edge := line
+	if !inSequence {
+		// Source-only vertical layout is subordinate to template flattening.
+		// Comment and heredoc hard lines remain mandatory in either context.
+		for _, token := range pieces[1].before {
+			if token.Kind() == syntax.Newline {
+				edge = hard
+				break
+			}
+		}
+	}
 	// Object newlines can replace commas in source. Materialize those separators
 	// before sharing the list layout, leaving entry trivia in its original gap.
 	withCommas := make([]piece, 0, len(pieces)*2)
@@ -15,7 +26,7 @@ func object(result syntax.Result, pieces []piece) document.Doc {
 		}
 		withCommas = append(withCommas, part)
 	}
-	return delimited(result, withCommas, 0, true, line)
+	return delimited(result, withCommas, 0, true, edge)
 }
 
 func spacedSequence(result syntax.Result, pieces []piece) document.Doc {

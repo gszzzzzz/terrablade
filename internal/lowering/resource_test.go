@@ -32,6 +32,8 @@ func FuzzExpression(f *testing.F) {
 		"<<-E\n  ${a+b}\nE\n", "f(<<E\nx\nE\n,1)", "\"${<<E\nx\nE\n}\"",
 		"<<E\nx\r\r\nE\r\r\n",
 		"{x=<<E\nx\nE\ny=2}", "{x=<<E\nx\nE\n}", "{x=<<E\nx\nE\n\n# next\ny=2}",
+		"{\na=1\n}", "{\n}", "[<<E\nx\nE\n,1]", "f(<<E\nx\nE\n,)",
+		"\"${{\na=1\n}}\"", "\"%{if {\na=1\n}}yes%{endif}\"",
 	} {
 		f.Add(source, uint8(20))
 	}
@@ -88,6 +90,8 @@ func TestWideObjectsAndDeepTemplateScopes(t *testing.T) {
 	for _, source := range []string{
 		"{" + strings.Repeat("key=1\n", 10000) + "}",
 		`"` + strings.Repeat("%{if true}", 20000) + "body" + strings.Repeat("%{endif}", 20000) + `"`,
+		// Nested expression containers respect the parser's nesting budget.
+		`"${` + strings.Repeat("{\nkey=", 512) + "0" + strings.Repeat("\n}", 512) + `}"`,
 	} {
 		result, node := parse(t, source)
 		output := render(t, source, 40)
