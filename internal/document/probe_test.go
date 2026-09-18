@@ -25,8 +25,7 @@ func TestProbeBorrowsContinuation(t *testing.T) {
 				ok, scratch = fits(candidate, continuation, lineWidth{}, options, scratch)
 			})
 			// Stack reuse must be independent of the unvisited continuation.
-			// Text-boundary measurement may allocate until its own optimization.
-			if !ok || !slices.Equal(before, continuation) || allocs > 4 {
+			if !ok || !slices.Equal(before, continuation) || allocs != 0 {
 				t.Fatalf("probe changed continuation or did not reuse scratch: fit=%v allocations=%g", ok, allocs)
 			}
 		})

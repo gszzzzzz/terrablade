@@ -108,6 +108,26 @@ func TestGraphemeAcrossGroupEdges(t *testing.T) {
 	}
 }
 
+func TestGraphemeBoundarySegments(t *testing.T) {
+	for _, text := range []string{
+		"🇰🇷🇦🇧🇨x", "👩‍👩‍👧‍👦x", "क्\u200dकx", "\u0600\u0600a b", "e\u0301\u0302x",
+	} {
+		for offset := range text {
+			for width := 1; width <= 12; width++ {
+				layout := func(content document.Doc) document.Doc {
+					return document.Group(document.Concat(content, document.Line(), document.Text("end")))
+				}
+				options := document.Options{PrintWidth: width}
+				whole := layout(document.Text(text))
+				split := layout(document.Concat(document.Text(text[:offset]), document.Text(text[offset:])))
+				if got, want := document.Render(split, options), document.Render(whole, options); got != want {
+					t.Errorf("%q split at %d width %d: %q, want %q", text, offset, width, got, want)
+				}
+			}
+		}
+	}
+}
+
 func TestLiteralLineWithStructuredInterpolation(t *testing.T) {
 	// Literal newlines preserve heredoc-owned leading spaces. A formatted
 	// interpolation can still use the surrounding structural indentation.

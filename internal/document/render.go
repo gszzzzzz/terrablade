@@ -2,6 +2,7 @@ package document
 
 import (
 	"strings"
+	"unicode/utf8"
 
 	"github.com/clipperhouse/displaywidth"
 )
@@ -170,18 +171,48 @@ type lineWidth struct {
 }
 
 func (w *lineWidth) append(text string, tabWidth int) {
-	w.columns -= w.tailWidth
-	text = w.tail + text
+	if text == "" {
+		return
+	}
+	// Adjacent ASCII code points always break here (Text cannot contain CR/LF).
+	// This is the common path for tokens, spaces, and punctuation: no copying.
+	if w.tail != "" && !(w.tail[len(w.tail)-1] < utf8.RuneSelf && text[0] < utf8.RuneSelf) {
+		tailBytes := len(w.tail)
+		boundary := w.tail
+		prefix := (displaywidth.Options{}).StringGraphemes(text)
+		for prefix.Next() {
+			boundary += prefix.Value()
+			joined := (displaywidth.Options{}).StringGraphemes(boundary)
+			joined.Next()
+			cluster := joined.Value()
+			if len(cluster) < len(boundary) {
+				// Only the cluster crossing the node boundary needs joining.
+				// Resume at its end in the original text, even when RI pairing
+				// moves that end into a cluster from the independent iterator.
+				w.columns -= w.tailWidth
+				w.accept(cluster, joined.Width(), tabWidth)
+				text = text[len(cluster)-tailBytes:]
+				break
+			}
+			if len(boundary)-tailBytes == len(text) {
+				w.columns -= w.tailWidth
+				w.accept(cluster, joined.Width(), tabWidth)
+				return
+			}
+		}
+	}
 	graphemes := (displaywidth.Options{}).StringGraphemes(text)
 	for graphemes.Next() {
-		cluster := graphemes.Value()
-		width := graphemes.Width()
-		if cluster == "\t" {
-			width = tabWidth - w.columns%tabWidth
-		}
-		w.columns = addWidth(w.columns, width)
-		w.tail, w.tailWidth = cluster, width
+		w.accept(graphemes.Value(), graphemes.Width(), tabWidth)
 	}
+}
+
+func (w *lineWidth) accept(cluster string, width, tabWidth int) {
+	if cluster == "\t" {
+		width = tabWidth - w.columns%tabWidth
+	}
+	w.columns = addWidth(w.columns, width)
+	w.tail, w.tailWidth = cluster, width
 }
 
 func addWidth(left, right int) int {
