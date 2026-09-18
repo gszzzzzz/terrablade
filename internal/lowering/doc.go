@@ -11,7 +11,19 @@
 //     after an expanded call argument; flat layouts omit source trailing commas.
 //     Empty delimiters stay compact unless comments require a line break.
 //   - Parentheses: explicit parentheses do not introduce width-triggered breaks;
-//     their contents may still break.
+//     their contents may still break. Binary, conditional, and traversal groups
+//     share their break layout with explicit parentheses. Where the grammar
+//     forbids expression newlines, broken operations add synthetic parentheses.
+//   - Operators: binary operators and conditional question marks and colons have
+//     surrounding spaces and start continuation lines. A same-precedence binary
+//     chain shares a group; different precedence and conditional arms can fit
+//     independently. Operand order and precedence remain unchanged.
+//   - Traversals: attributes, ordinary and legacy indices, and attribute/full
+//     splats retain their syntax and projection structure. Steps can break
+//     before their dot or opening bracket. Numeric tokens retain a separating
+//     space before a following dot so lexical boundaries cannot merge. Index
+//     expressions can break inside brackets. Calls and following traversal
+//     steps make independent fit decisions within a broken expression.
 //   - Blank lines: broken tuple entry gaps preserve at most one source blank
 //     line. Calls collapse blank lines.
 //   - Comments: source order is preserved, inline comments stay inline, and
@@ -27,7 +39,8 @@
 // Construction takes linear time and storage in the expression's tree size;
 // rendering follows document's own resource contract. No final newline is added.
 //
-// This initial implementation supports literals, variable references, unary
-// expressions, explicit parentheses, calls, and tuples. Other expression forms
-// return an error until their lowering policies are implemented.
+// This implementation supports literals, variable references, unary/binary and
+// conditional expressions, explicit parentheses, calls, tuples, and traversals.
+// Object, for, and template expressions return an error until their lowering
+// policies are implemented.
 package lowering

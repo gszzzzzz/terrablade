@@ -107,7 +107,7 @@ func TestExpressionRejectsInvalidInput(t *testing.T) {
 }
 
 func TestUnsupportedExpressionIsNotPartiallyFormatted(t *testing.T) {
-	for _, source := range []string{"a+b", "a?b:c", "f(a.x)", "[{}]", "[for x in xs:x]", `"literal"`} {
+	for _, source := range []string{"[{}]", "[for x in xs:x]", `"literal"`} {
 		result, node := parse(t, source)
 		doc, err := lowering.Expression(result, node)
 		if err == nil || document.Render(doc, document.Options{}) != "" {
