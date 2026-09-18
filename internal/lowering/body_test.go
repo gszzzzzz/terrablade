@@ -28,10 +28,13 @@ func TestFileLayouts(t *testing.T) {
 		{"block boundaries", "a=1\nb {}\nc=2\nd {}\ne {}", "a = 1\n\nb {}\n\nc = 2\n\nd {}\n\ne {}\n"},
 		{"nested block boundaries", "outer {\n a=1\n inner { x=2 }\n b=3\n}", "outer {\n  a = 1\n\n  inner {\n    x = 2\n  }\n\n  b = 3\n}\n"},
 		{"labels", `resource aws_instance "web\u0020server" {}`, "resource \"aws_instance\" \"web\\u0020server\" {}\n"},
-		{"header comments", `block /*type*/ bare /*label*/ "quoted" /*brace*/ {}`, "block \"bare\" \"quoted\" /*brace*/ {}\n"},
+		{"header comments", `block /*type*/ bare /*label*/ "quoted" /*brace*/ {}`, "block \"bare\" \"quoted\" /*type*/ /*label*/ /*brace*/ {}\n"},
 		{"unlabeled header comment", `block /*type*/ {}`, "block /*type*/ {}\n"},
-		{"multiline label trivia removed", "block /*type\n end*/ \"a\" {}", "block \"a\" {}\n"},
+		{"multiline label trivia relocated", "block /*type\n end*/ \"a\" {}", "block \"a\" /*type\n end*/ {}\n"},
 		{"multiline brace trivia retained", "block \"a\" /*brace\n end*/ {}", "block \"a\" /*brace\n end*/ {}\n"},
+		{"repeated header comments", `block /*same*/ first /*same*/ second /*same*/ {}`, "block \"first\" \"second\" /*same*/ /*same*/ /*same*/ {}\n"},
+		{"header and surrounding comments", "# lead\nblock /*first*/ bare /*second\nline*/ \"quoted\" /*brace*/ { # open\n # body\n} // end\n", "# lead\nblock \"bare\" \"quoted\" /*first*/ /*second\nline*/ /*brace*/ { # open\n  # body\n} // end\n"},
+		{"nested header comments", "outer {\n inner /*type*/ bare /*label*/ { a=1 }\n}", "outer {\n  inner \"bare\" /*type*/ /*label*/ {\n    a = 1\n  }\n}\n"},
 		{"attribute comments", "a /*key*/=/*value*/ 1 /*tail*/ # end\n", "a /*key*/ = /*value*/ 1 /*tail*/ # end\n"},
 		{"leading and trailing comments", "\n\n# lead\na=1\n# end\n\n", "# lead\na = 1\n# end\n"},
 		{"only comments", "\n# one\n\n\n# two\n\n", "# one\n\n# two\n"},
@@ -73,6 +76,24 @@ func TestFileRejectsInvalidInput(t *testing.T) {
 		doc, err := lowering.File(result)
 		if err == nil || document.Render(doc, document.Options{}) != "" {
 			t.Fatalf("expected error and empty document, got %v", err)
+		}
+	}
+}
+
+func TestFileRejectsLineCommentsInsideBlockHeader(t *testing.T) {
+	// An ordinary newline ends the header, including one following a line
+	// comment. File must not move comments to repair already-invalid syntax.
+	for _, source := range []string{
+		"block # type\n label {}", "block label // label\n {}",
+		"block /*first*/ label # last\n {}",
+	} {
+		result := syntax.Parse([]byte(source))
+		if len(result.Diagnostics()) == 0 {
+			t.Fatalf("expected invalid block header: %q", source)
+		}
+		doc, err := lowering.File(result)
+		if err == nil || document.Render(doc, document.Options{}) != "" {
+			t.Fatalf("expected error and empty document for %q, got %v", source, err)
 		}
 	}
 }
@@ -136,6 +157,10 @@ func TestBodyOpenTofuCompatibility(t *testing.T) {
 		"\ufeffa=1\nlong=2\n",
 		`block /*type*/ bare /*between*/ "quoted" /*brace*/ {}`,
 		`block /*type*/ {}`,
+		"block /*type\n end*/ \"a\" {}",
+		`block /*same*/ first /*same*/ second /*same*/ {}`,
+		"# lead\nblock /*first*/ bare /*second\nline*/ \"quoted\" /*brace*/ { # open\n # body\n} // end\n",
+		"outer {\n inner /*type*/ bare /*label*/ { a=1 }\n}",
 		"a=1\n/*first*/ /*second*/ # third\n\nb=2",
 		"value={\na=1 # first\nlonger=222 # second\n}\n",
 		"a=1\nvalue={ a=1, longer=2 }\nz=3",
@@ -183,7 +208,8 @@ func renderFile(t testing.TB, source string, width int) string {
 
 func assertFileContent(t testing.TB, before, after string) {
 	t.Helper()
-	content := func(source string) []string {
+	type fileContent struct{ syntax, comments []string }
+	content := func(source string) fileContent {
 		result := syntax.Parse([]byte(source))
 		if diagnostics := result.Diagnostics(); len(diagnostics) != 0 {
 			t.Fatalf("invalid output %q: %+v", source, diagnostics)
@@ -204,25 +230,32 @@ func assertFileContent(t testing.TB, before, after string) {
 					continue
 				}
 				parts = append(parts, "node:"+node.Kind().String())
-				lastLabelEnd := -1
-				if node.Kind() == syntax.Block {
-					for i := range node.ChildCount() {
-						if child, ok := node.Child(i).Node(); ok && child.Kind() == syntax.BlockLabel {
-							lastLabelEnd = child.Span().End
-						}
-					}
-				}
 				for i := node.ChildCount() - 1; i >= 0; i-- {
-					if token, ok := node.Child(i).Token(); ok && token.Span().Start < lastLabelEnd && (token.Kind() == syntax.LineComment || token.Kind() == syntax.BlockComment) {
-						continue
-					}
 					stack = append(stack, node.Child(i))
 				}
 			} else if token, ok := current.Token(); ok && token.Kind() != syntax.Newline && token.Kind() != syntax.Whitespace && token.Kind() != syntax.BOM {
+				if token.Kind() == syntax.LineComment || token.Kind() == syntax.BlockComment {
+					continue
+				}
 				parts = append(parts, strings.ReplaceAll(result.Text(token.Span()), "\r\n", "\n"))
 			}
 		}
-		return parts
+		// Header comments can cross labels, but no comment may disappear,
+		// duplicate, or move past another comment anywhere in the whole file.
+		var comments []string
+		stack = append(stack, result.Root().Element())
+		for len(stack) > 0 {
+			current := stack[len(stack)-1]
+			stack = stack[:len(stack)-1]
+			if node, ok := current.Node(); ok {
+				for i := node.ChildCount() - 1; i >= 0; i-- {
+					stack = append(stack, node.Child(i))
+				}
+			} else if token, ok := current.Token(); ok && (token.Kind() == syntax.LineComment || token.Kind() == syntax.BlockComment) {
+				comments = append(comments, strings.ReplaceAll(result.Text(token.Span()), "\r\n", "\n"))
+			}
+		}
+		return fileContent{syntax: parts, comments: comments}
 	}
 	if left, right := content(before), content(after); !reflect.DeepEqual(left, right) {
 		t.Fatalf("syntax or comment content changed:\n%q\n=>\n%q", left, right)

@@ -108,9 +108,10 @@ func block(result syntax.Result, node syntax.SyntaxNode, docs map[syntax.SyntaxN
 				contents = docs[child]
 				break
 			}
-			// Upstream rebuilds the label list: trivia before labels is removed,
-			// while trivia between the final label and opening brace survives.
+			// Upstream drops comments before labels when rebuilding the header.
+			// Carry them past all labels to the brace's stable trivia position.
 			header = append(header, piece{doc: docs[child].doc})
+			continue
 		} else if token, ok := element.Token(); ok {
 			if bodyTrivia(token.Kind()) {
 				trivia = append(trivia, token)

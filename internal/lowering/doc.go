@@ -8,8 +8,8 @@
 //     one LF; empty bodies do not. A leading BOM is omitted from canonical output.
 //   - Blocks: empty blocks use {}; every nonempty block uses an indented body
 //     and a closing brace on its own line. Bare labels become quoted labels;
-//     already quoted labels retain their spelling. Like upstream label rebuilding,
-//     comments before labels are removed; comments before the brace are retained.
+//     already quoted labels retain their spelling. Header comments move in source
+//     order immediately before the opening brace, where upstream preserves them.
 //   - Item boundaries: consecutive attributes preserve at most one source blank
 //     line, which also separates assignment and trailing-comment columns. Boundaries
 //     involving a block have exactly one blank line. Independent comment runs
