@@ -21,6 +21,7 @@ const (
 	LegacyIndexAccess
 	AttributeSplat
 	FullSplat
+	TupleExpression
 	nodeKindCount
 )
 

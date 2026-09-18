@@ -97,6 +97,7 @@ const (
 	UnsupportedExpression
 	NestingLimitExceeded
 	InvalidNumber
+	ExpectedTupleSeparator
 	diagnosticKindCount
 )
 

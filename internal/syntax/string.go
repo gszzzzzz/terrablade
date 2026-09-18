@@ -69,6 +69,7 @@ var nodeKindNames = [nodeKindCount]string{
 	LegacyIndexAccess:       "LegacyIndexAccess",
 	AttributeSplat:          "AttributeSplat",
 	FullSplat:               "FullSplat",
+	TupleExpression:         "TupleExpression",
 }
 
 var diagnosticKindNames = [diagnosticKindCount]string{
@@ -94,6 +95,7 @@ var diagnosticKindNames = [diagnosticKindCount]string{
 	UnsupportedExpression:        "UnsupportedExpression",
 	NestingLimitExceeded:         "NestingLimitExceeded",
 	InvalidNumber:                "InvalidNumber",
+	ExpectedTupleSeparator:       "ExpectedTupleSeparator",
 }
 
 // String returns the source-facing name used in diagnostics and debug output.

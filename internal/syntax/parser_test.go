@@ -189,7 +189,7 @@ func TestLimitStopsGrammarAndRetainsUnparsedTokens(t *testing.T) {
 	p.call(&root, lineExpression)
 	p.steps(&root, lineExpression, allTraversalSteps)
 	p.recoverArgument(&root)
-	p.unsupported(&root)
+	p.skipConstruct(&root)
 	if p.pos != position {
 		t.Fatal("grammar consumed tokens after shutdown")
 	}

@@ -129,9 +129,17 @@ func (p *parser) prefix(context expressionContext) SyntaxNode {
 		// Unary operands include postfix traversal but exclude every binary level.
 		p.operand(&b, 7, context)
 		kind = UnaryExpression
-	case OpenBracket, OpenBrace, QuoteOpen, HeredocOpen:
+	case OpenBracket:
+		if p.collectionFor() {
+			p.report(UnsupportedExpression, token.span)
+			p.skipConstruct(&b)
+		} else {
+			p.tuple(&b)
+			kind = TupleExpression
+		}
+	case OpenBrace, QuoteOpen, HeredocOpen:
 		p.report(UnsupportedExpression, token.span)
-		p.unsupported(&b)
+		p.skipConstruct(&b)
 	default:
 		p.report(ExpectedExpression, token.span)
 		p.consumeLookahead(&b, context)
@@ -235,9 +243,10 @@ func (p *parser) recoverArgument(parent *nodeBuilder) {
 	}
 }
 
-// unsupported consumes one balanced unsupported construct without recursion.
-// Nested template/interpolation delimiters remain visible in the lexical stream.
-func (p *parser) unsupported(b *nodeBuilder) {
+// skipConstruct retains one balanced construct as raw tokens without recursion,
+// for deferred grammar and error recovery. Nested template/interpolation
+// delimiters remain visible in the lexical stream.
+func (p *parser) skipConstruct(b *nodeBuilder) {
 	if p.halted {
 		return
 	}
