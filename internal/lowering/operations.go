@@ -63,7 +63,7 @@ func numberContinuesAcrossDot(next string) bool {
 	return next != "" && next[0] >= '0' && next[0] <= '9'
 }
 
-func index(result syntax.Result, node syntax.SyntaxNode, pieces []piece) document.Doc {
+func index(result syntax.Result, node *expressionView, pieces []piece) document.Doc {
 	inner, close := pieces[1], pieces[2]
 	atomic := false
 	for i := range node.ChildCount() {

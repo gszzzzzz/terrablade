@@ -34,6 +34,11 @@ func FuzzExpression(f *testing.F) {
 		"{x=<<E\nx\nE\ny=2}", "{x=<<E\nx\nE\n}", "{x=<<E\nx\nE\n\n# next\ny=2}",
 		"{\na=1\n}", "{\n}", "[<<E\nx\nE\n,1]", "f(<<E\nx\nE\n,)",
 		"\"${{\na=1\n}}\"", "\"%{if {\na=1\n}}yes%{endif}\"",
+		`"${a}"`, `"${"${a}"}"`, `"${~a~}"`, `-"${a+b}"`, `a-"${b-c}"`,
+		`{"${a}"="${b}"}`, `"${a[*].b}"[0]`, `"${a.*.b}".c`, `["${for}"]`,
+		`"${/*a*/"${/*b*/x/*c*/}"/*d*/}"`, `foo[*].0.bar`, `foo.*.0[0].1`,
+		"\"${# lead\na # tail\n}\"", "\"${foo # c\n.bar}\"", "\"${! # c\na}\"",
+		"\"${<<E\nx\nE\n[0]}\"", "foo[0]./*c*/1", "f(foo.// c\n1)",
 	} {
 		f.Add(source, uint8(20))
 	}
@@ -127,33 +132,68 @@ func BenchmarkOperationChains(b *testing.B) {
 	}
 }
 
-// Commas, trivia, and parentheses may be canonicalized; all other token spelling
-// and the expression tree shape must survive. Ignoring parentheses in the shape
-// still detects a precedence change, because the operator tree would differ.
+// Compare the canonical token/operation shape without invoking the normalizer.
+// Pure quoted wrappers and ordinary legacy indices have equivalent spellings;
+// all comments, literal bytes, operator nesting, and splat projection nodes must
+// survive. Traversal containers are transparent because unwrapping may join two.
 func expressionTokens(result syntax.Result, node syntax.SyntaxNode) []string {
 	var tokens []string
 	type entry struct {
-		element         syntax.SyntaxElement
-		objectSeparator bool
+		element             syntax.SyntaxElement
+		objectSeparator     bool
+		wrapper             bool
+		legacyIndex         bool
+		attributeProjection bool
+		suffix              string
 	}
 	stack := []entry{{element: node.Element()}}
 	for len(stack) != 0 {
 		current := stack[len(stack)-1]
 		element := current.element
 		stack = stack[:len(stack)-1]
+		if current.suffix != "" {
+			tokens = append(tokens, current.suffix)
+			continue
+		}
 		if node, ok := element.Node(); ok {
-			if node.Kind() != syntax.ParenthesizedExpression {
+			wrapper := current.wrapper
+			if node.Kind() == syntax.TemplateExpression && node.ChildCount() == 3 {
+				open, _ := node.Child(0).Token()
+				middle, _ := node.Child(1).Node()
+				wrapper = open.Kind() == syntax.QuoteOpen && middle.Kind() == syntax.TemplateInterpolation
+			}
+			legacy := node.Kind() == syntax.LegacyIndexAccess && !current.attributeProjection
+			if legacy {
+				tokens = append(tokens, "node:IndexAccess", "[")
+				stack = append(stack, entry{suffix: "]"})
+			} else if !wrapper && node.Kind() != syntax.ParenthesizedExpression && node.Kind() != syntax.TraversalExpression {
 				tokens = append(tokens, "node:"+node.Kind().String())
 			}
 			for i := node.ChildCount() - 1; i >= 0; i-- {
 				if token, ok := node.Child(i).Token(); ok && node.Kind() == syntax.ParenthesizedExpression && (token.Kind() == syntax.OpenParen || token.Kind() == syntax.CloseParen) {
 					continue
 				}
-				stack = append(stack, entry{element: node.Child(i), objectSeparator: node.Kind() == syntax.ObjectItem})
+				child, _ := node.Child(i).Node()
+				stack = append(stack, entry{
+					element: node.Child(i), objectSeparator: node.Kind() == syntax.ObjectItem,
+					wrapper:     wrapper && (child.Kind() == syntax.TemplateInterpolation || child.Kind() == syntax.InvalidNode),
+					legacyIndex: legacy, attributeProjection: node.Kind() == syntax.AttributeSplat,
+				})
 			}
 			continue
 		}
 		token, _ := element.Token()
+		if current.wrapper && (token.Kind() == syntax.QuoteOpen || token.Kind() == syntax.QuoteClose || token.Kind() == syntax.InterpolationOpen || token.Kind() == syntax.TemplateSequenceEnd || token.Kind() == syntax.StripMarker) {
+			continue
+		}
+		if current.legacyIndex {
+			if token.Kind() == syntax.Dot {
+				continue
+			}
+			if token.Kind() == syntax.Number {
+				tokens = append(tokens, "node:LiteralExpression")
+			}
+		}
 		switch token.Kind() {
 		case syntax.Whitespace, syntax.Newline, syntax.Comma:
 			continue

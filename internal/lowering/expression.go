@@ -12,6 +12,9 @@ import (
 // from this same Result, just as with Result.Text. Any diagnostics anywhere in
 // result, a zero/non-expression node, or an unsupported expression form returns
 // an error and an empty Doc. It never formats a recovered partial expression.
+// Quoted interpolation-only wrappers and legacy numeric indices are normalized
+// without changing result. Indices inside attribute splats retain their syntax
+// because bracket indexing would change the projection's scope.
 // Layout width and indentation are selected later by document.Render.
 func Expression(result syntax.Result, node syntax.SyntaxNode) (document.Doc, error) {
 	if len(result.Diagnostics()) != 0 {
@@ -26,15 +29,16 @@ func Expression(result syntax.Result, node syntax.SyntaxNode) (document.Doc, err
 
 // File validates the whole result once, then lowers each attribute expression
 // through this same path without repeatedly copying the diagnostics slice.
-func lowerExpression(result syntax.Result, node syntax.SyntaxNode) (layout, error) {
+func lowerExpression(result syntax.Result, source syntax.SyntaxNode) (layout, error) {
+	node := normalizeExpression(result, source)
 	type frame struct {
-		node       syntax.SyntaxNode
+		node       *expressionView
 		next       int
 		safe       bool // The surrounding grammar permits expression newlines.
 		inSequence bool // Templates flatten source-only object layout choices.
 	}
 	stack := []frame{{node: node}}
-	docs := make(map[syntax.SyntaxNode]layout)
+	docs := make(map[*expressionView]layout)
 	for len(stack) != 0 {
 		current := &stack[len(stack)-1]
 		if current.next < current.node.ChildCount() {
@@ -105,7 +109,7 @@ type layout struct {
 	startsBrace, endsBrace        bool
 }
 
-func lowerNode(result syntax.Result, node syntax.SyntaxNode, safe, inSequence bool, docs map[syntax.SyntaxNode]layout) (layout, error) {
+func lowerNode(result syntax.Result, node *expressionView, safe, inSequence bool, docs map[*expressionView]layout) (layout, error) {
 	switch node.Kind() {
 	case syntax.TemplateExpression, syntax.TemplateIf, syntax.TemplateFor:
 		return templateParts(result, node, docs), nil
@@ -129,10 +133,10 @@ func lowerNode(result syntax.Result, node syntax.SyntaxNode, safe, inSequence bo
 		if token, ok := element.Token(); ok {
 			switch token.Kind() {
 			case syntax.Whitespace, syntax.Newline, syntax.LineComment, syntax.BlockComment:
-				trivia = append(trivia, token)
+				trivia = append(trivia, token.source)
 				continue
 			}
-			pieces = append(pieces, piece{doc: document.Text(result.Text(token.Span())), token: true, kind: token.Kind(), before: trivia})
+			pieces = append(pieces, piece{doc: document.Text(token.spelling(result)), token: true, kind: token.Kind(), before: trivia})
 		} else {
 			child, _ := element.Node()
 			pieces = append(pieces, piece{doc: docs[child].doc, child: docs[child], before: trivia})
@@ -182,7 +186,8 @@ func lowerNode(result syntax.Result, node syntax.SyntaxNode, safe, inSequence bo
 		lowered.operation = true
 	case syntax.AttributeAccess, syntax.LegacyIndexAccess:
 		lowered.doc = sequence(result, pieces)
-		lowered.fusesNumber = numberContinuesAcrossDot(result.Text(node.Child(node.ChildCount() - 1).Span()))
+		name, _ := node.Child(node.ChildCount() - 1).Token()
+		lowered.fusesNumber = numberContinuesAcrossDot(name.spelling(result))
 		for _, token := range pieces[1].before {
 			if token.Kind() == syntax.LineComment || token.Kind() == syntax.BlockComment {
 				// A retained comment between dot and name already stops scanning.

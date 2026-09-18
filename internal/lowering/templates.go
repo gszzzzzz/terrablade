@@ -9,13 +9,13 @@ import (
 
 // Quoted templates, heredocs, and directive bodies share this literal/sequence
 // composition. No synthesized whitespace escapes a sequence into literal text.
-func templateParts(result syntax.Result, node syntax.SyntaxNode, docs map[syntax.SyntaxNode]layout) layout {
+func templateParts(result syntax.Result, node *expressionView, docs map[*expressionView]layout) layout {
 	parts := make([]document.Doc, 0, node.ChildCount())
 	heredoc := false
 	for i := 0; i < node.ChildCount(); i++ {
 		child := node.Child(i)
 		if token, ok := child.Token(); ok {
-			text := result.Text(token.Span())
+			text := token.spelling(result)
 			parts = append(parts, literal(text))
 			if token.Kind() == syntax.HeredocOpen {
 				heredoc = true
