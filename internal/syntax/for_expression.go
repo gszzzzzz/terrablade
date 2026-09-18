@@ -66,8 +66,3 @@ func (p *parser) forIntroduction(b *nodeBuilder) bool {
 	p.operand(b, 0, delimitedExpression)
 	return true
 }
-
-func (p *parser) keyword(word string, context expressionContext) bool {
-	token := p.tokens[p.look(context)]
-	return token.kind == Identifier && p.source[token.span.Start:token.span.End] == word
-}

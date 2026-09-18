@@ -40,6 +40,9 @@ func (p *parser) templateExpression(b *nodeBuilder) {
 			}
 			p.consumeUntil(body, next)
 		default:
+			// The lexer normally emits only the cases above in a template body.
+			// Diagnose unexpected tokens as a lexer/parser invariant defense, and
+			// still consume one so a broken assumption cannot prevent progress.
 			p.report(UnexpectedToken, p.current().span)
 			part := p.begin()
 			p.consumeUntil(&part, p.pos+1)

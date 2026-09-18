@@ -342,6 +342,10 @@ func FuzzExpression(f *testing.F) {
 	for _, source := range []string{
 		"",
 		"f(1 2, 3)",
+		"f(1 g(2,3),4)",
+		`"${f(a}"`,
+		"f(1 <<END\n${g(2,3)}\n%{if ok}x%{endif}\nEND\n,4)",
+		"f(1 \"${<<END\nx,y\nEND\n}\",4)",
 		"a ? b : c ? d : e",
 		"!-a.b[0] + 2",
 		"provider::aws::f(a, xs...)",

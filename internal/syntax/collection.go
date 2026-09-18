@@ -4,9 +4,7 @@ package syntax
 // Even object constructors ignore newlines for this one decision. Parentheses
 // disambiguate a first element/key named for from a for-expression.
 func (p *parser) collectionFor() bool {
-	i := p.lookFrom(p.pos+1, delimitedExpression)
-	token := p.tokens[i]
-	return token.kind == Identifier && p.source[token.span.Start:token.span.End] == "for"
+	return p.keywordAt("for", p.lookFrom(p.pos+1, delimitedExpression))
 }
 
 func (p *parser) tuple(b *nodeBuilder) {

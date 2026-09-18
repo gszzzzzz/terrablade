@@ -6,6 +6,11 @@
 // Nodes and tokens are read-only values; trivia is an ordered token element,
 // never metadata attached to a neighboring node.
 //
+// An ObjectItem's first expression child is its key. A bare name such as foo in
+// {foo = 1} keeps its VariableExpression node but denotes the literal key "foo";
+// semantic consumers must interpret it through ObjectItem context. Parenthesized
+// keys retain their parentheses and represent computed key expressions.
+//
 // Lexing and expression parsing are private implementation details. The private
 // expression parser validates native expressions, not configuration bodies.
 // A public Parse entry point and its Result will come with body parsing.

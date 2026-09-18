@@ -91,6 +91,17 @@ func (p *parser) peek(context expressionContext) TokenKind {
 	return p.tokens[p.look(context)].kind
 }
 
+func (p *parser) keyword(word string, context expressionContext) bool {
+	return p.keywordAt(word, p.look(context))
+}
+
+// A chosen token index lets collection lookahead test after its opener without
+// consuming it. All keyword checks share the same Identifier/text comparison.
+func (p *parser) keywordAt(word string, index int) bool {
+	token := p.tokens[index]
+	return token.kind == Identifier && p.source[token.span.Start:token.span.End] == word
+}
+
 func (p *parser) current() SyntaxToken {
 	if p.halted {
 		return p.tokens[len(p.tokens)-1]
