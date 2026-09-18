@@ -28,6 +28,10 @@ func FuzzExpression(f *testing.F) {
 		"f(foo[0].first_attribute[*].second_attribute)",
 		"{a:1,b=2}", "{a=1\n\nb=2}", "{alpha + beta=1}", "[{key=alpha+beta}]",
 		"[for x in xs:x.id if x.enabled]", "{for k,v in xs:k=>v... if v}", "[for in in if:if if in]",
+		`"hello ${ a+b } end"`, `"%{~if a~}x%{endif}"`, `"%{for k,v in xs}${v}%{endfor}"`,
+		"<<-E\n  ${a+b}\nE\n", "f(<<E\nx\nE\n,1)", "\"${<<E\nx\nE\n}\"",
+		"<<E\nx\r\r\nE\r\r\n",
+		"{x=<<E\nx\nE\ny=2}", "{x=<<E\nx\nE\n}", "{x=<<E\nx\nE\n\n# next\ny=2}",
 	} {
 		f.Add(source, uint8(20))
 	}
@@ -42,7 +46,7 @@ func FuzzExpression(f *testing.F) {
 		node := firstExpression(result)
 		doc, err := lowering.Expression(result, node)
 		if err != nil {
-			t.Skip() // This increment deliberately rejects unsupported forms.
+			t.Fatal(err)
 		}
 		options := document.Options{PrintWidth: int(width) + 1}
 		output := document.Render(doc, options)
@@ -76,6 +80,23 @@ func TestDeepOperationChains(t *testing.T) {
 		}
 		if again := render(t, output, 30); again != output {
 			t.Fatal("deep operation is not idempotent")
+		}
+	}
+}
+
+func TestWideObjectsAndDeepTemplateScopes(t *testing.T) {
+	for _, source := range []string{
+		"{" + strings.Repeat("key=1\n", 10000) + "}",
+		`"` + strings.Repeat("%{if true}", 20000) + "body" + strings.Repeat("%{endif}", 20000) + `"`,
+	} {
+		result, node := parse(t, source)
+		output := render(t, source, 40)
+		reparsed, next := parse(t, output)
+		if !reflect.DeepEqual(expressionTokens(result, node), expressionTokens(reparsed, next)) {
+			t.Fatal("large expression changed syntax or literal content")
+		}
+		if again := render(t, output, 40); again != output {
+			t.Fatal("large expression is not idempotent")
 		}
 	}
 }
