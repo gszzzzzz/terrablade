@@ -41,9 +41,17 @@
 // Text follows Go's byte-slicing rules and panics for invalid spans; spans carry
 // no source identity, so callers must select the intended Result. Result.Source
 // returns the complete owned text. Kind String methods supply symbolic names for
-// debugging rather than user-facing diagnostic prose; numeric kinds are not a
-// storage format.
+// debugging; numeric kinds are not a storage format.
 // Contextual keywords retain their lexical Identifier kind in the tree.
+//
+// DiagnosticKind.Message supplies standalone English error messages. Their
+// wording may change; match the kind rather than its prose. Result.Position
+// converts a source byte offset, including EOF, to a one-based line and byte
+// column. Only LF advances the line, including in CRLF. Every other byte counts
+// toward the column, including tabs, BOM, and malformed UTF-8; offsets inside
+// UTF-8 sequences are allowed. A zero Result maps offset zero to line 1, column 1.
+// Position panics for offsets outside the source. Filenames, excerpts, display
+// widths, and diagnostic rendering belong to callers.
 //
 // Lexing, grammar recovery, source ownership, and tree storage are private
 // implementation details behind Parse. Parsing bounds recursive expression

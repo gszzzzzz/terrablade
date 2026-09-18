@@ -148,8 +148,8 @@ func (k NodeKind) String() string {
 	return "NodeKind(" + strconv.FormatUint(uint64(k), 10) + ")"
 }
 
-// String returns the stable symbolic name of a diagnostic category. User-facing
-// diagnostic messages remain separate because they need source context and prose.
+// String returns the stable symbolic name of a diagnostic category. Use Message
+// for user-facing prose; unknown kinds use the form DiagnosticKind(n).
 func (k DiagnosticKind) String() string {
 	if k < diagnosticKindCount && diagnosticKindNames[k] != "" {
 		return diagnosticKindNames[k]

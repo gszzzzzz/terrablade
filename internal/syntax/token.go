@@ -71,8 +71,9 @@ type Span struct {
 	End   int
 }
 
-// DiagnosticKind identifies a lexical or syntax error without coupling parsing
-// to presentation. Its numeric value is not a stable storage format.
+// DiagnosticKind identifies a lexical or syntax error. Message provides English
+// prose and String its stable symbolic name. Its numeric value is not a stable
+// storage format.
 type DiagnosticKind uint8
 
 const (
@@ -127,6 +128,7 @@ const (
 // Diagnostic points to the source responsible for a lexical or syntax error.
 // An error does not require an Invalid token: an unterminated comment, for
 // example, retains its BlockComment kind so its source remains recognizable.
+// Use Kind.Message for prose and Result.Position to locate either span endpoint.
 type Diagnostic struct {
 	Kind DiagnosticKind
 	Span Span
