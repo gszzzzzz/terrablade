@@ -13,18 +13,14 @@ func syntheticParentheses(body document.Doc) document.Doc {
 	))
 }
 
-// Operators start continuation lines. Every same-precedence binary on the left
-// shares this group via its ungrouped body, avoiding a staircase or rescanning
-// a growing chain. Different precedence and conditional arms group independently.
-func operationSequence(result syntax.Result, pieces []piece) document.Doc {
+// Operators start continuation lines. A binary chain's left spine shares one
+// continuation indent instead of increasing indentation at each operator.
+func operationContinuation(result syntax.Result, pieces []piece) document.Doc {
 	parts := make([]document.Doc, 0, len(pieces)*3)
-	for i, part := range pieces {
-		style := gapStyle{beforeComment: space, afterComment: space}
-		if i > 0 {
-			style.empty = space
-			if part.kind != syntax.Invalid {
-				style.empty, style.afterComment = line, line
-			}
+	for _, part := range pieces {
+		style := gapStyle{empty: space, beforeComment: space, afterComment: space}
+		if part.token {
+			style.empty, style.afterComment = line, line
 		}
 		gap, end := commentGap(result, part.before, style)
 		parts = append(parts, gap, end, part.doc)
@@ -35,17 +31,42 @@ func operationSequence(result syntax.Result, pieces []piece) document.Doc {
 func traversalSequence(result syntax.Result, pieces []piece, endsNumber bool) document.Doc {
 	parts := make([]document.Doc, 0, len(pieces)*3)
 	for _, part := range pieces {
-		separator := soft
-		if endsNumber && part.child.startsDot {
-			// A numeric token followed by a dot can become another number token:
-			// foo.0 .0 must not collapse into the invalid candidate foo.0.0.
-			separator = line
+		separator := tight
+		if part.child.startsDot {
+			separator = soft
+			if endsNumber && part.child.fusesNumber {
+				separator = line
+			}
 		}
-		gap, end := commentGap(result, part.before, gapStyle{empty: separator, beforeComment: space, afterComment: separator})
+		afterComment := tight
+		if part.child.startsDot {
+			// A retained comment already separates the previous numeric token.
+			afterComment = soft
+		}
+		gap, end := commentGap(result, part.before, gapStyle{empty: separator, beforeComment: space, afterComment: afterComment})
 		parts = append(parts, gap, end, part.doc)
 		endsNumber = part.child.endsNumber
 	}
 	return document.Concat(parts...)
+}
+
+// syntax's number scanner crosses a dot only if it later consumes a digit or
+// a complete exponent prefix. Ordinary names and splats cannot extend a number;
+// legacy numeric indices and names beginning e/E[+-]?[0-9] can. Test the prefix,
+// not the entire name: e2suffix would still swallow e2 into the numeric token.
+// A minus can occur in an attribute name (e-2). A plus is a separate operator
+// token in the CST: .e + 2 supplies only "e" here and needs no boundary space.
+func numberContinuesAcrossDot(next string) bool {
+	if next == "" {
+		return false
+	}
+	if next[0] == 'e' || next[0] == 'E' {
+		next = next[1:]
+		if next != "" && (next[0] == '+' || next[0] == '-') {
+			next = next[1:]
+		}
+	}
+	return next != "" && next[0] >= '0' && next[0] <= '9'
 }
 
 func index(result syntax.Result, pieces []piece) document.Doc {

@@ -73,19 +73,22 @@ func expressionKind(kind syntax.NodeKind) bool {
 // separator policy is local to the parent; children expose only their layout.
 type piece struct {
 	doc    document.Doc
+	token  bool
 	kind   syntax.TokenKind
 	before []syntax.SyntaxToken
 	child  layout
 }
 
-// body omits the operation's outer group. A parent can share that group for a
-// same-precedence chain or explicit parentheses without inspecting document IR.
+// Operations keep their head and continuation separate. Safe contexts indent
+// the continuation once; parentheses indent the whole ungrouped body instead.
+// Same-precedence chains concatenate continuations without rescanning a prefix.
 type layout struct {
-	doc, body  document.Doc
-	operation  bool
-	power      int
-	endsNumber bool
-	startsDot  bool
+	doc, body, head, continuation document.Doc
+	operation                     bool
+	power                         int
+	endsNumber                    bool
+	startsDot                     bool
+	fusesNumber                   bool
 }
 
 func lowerNode(result syntax.Result, node syntax.SyntaxNode, safe bool, docs map[syntax.SyntaxNode]layout) (layout, error) {
@@ -109,7 +112,7 @@ func lowerNode(result syntax.Result, node syntax.SyntaxNode, safe bool, docs map
 				trivia = append(trivia, token)
 				continue
 			}
-			pieces = append(pieces, piece{doc: document.Text(result.Text(token.Span())), kind: token.Kind(), before: trivia})
+			pieces = append(pieces, piece{doc: document.Text(result.Text(token.Span())), token: true, kind: token.Kind(), before: trivia})
 		} else {
 			child, _ := element.Node()
 			pieces = append(pieces, piece{doc: docs[child].doc, child: docs[child], before: trivia})
@@ -117,7 +120,10 @@ func lowerNode(result syntax.Result, node syntax.SyntaxNode, safe bool, docs map
 		trivia = nil
 	}
 	last := pieces[len(pieces)-1]
-	lowered := layout{endsNumber: last.kind == syntax.Number || last.child.endsNumber, startsDot: pieces[0].kind == syntax.Dot}
+	lowered := layout{
+		endsNumber: last.token && last.kind == syntax.Number || !last.token && last.child.endsNumber,
+		startsDot:  pieces[0].token && pieces[0].kind == syntax.Dot,
+	}
 	switch node.Kind() {
 	case syntax.LiteralExpression, syntax.VariableExpression, syntax.UnaryExpression:
 		lowered.doc = sequence(result, pieces)
@@ -127,19 +133,30 @@ func lowerNode(result syntax.Result, node syntax.SyntaxNode, safe bool, docs map
 		lowered.doc = delimited(result, pieces, 0, true)
 	case syntax.BinaryExpression:
 		lowered.power = binaryPower(pieces[1].kind)
+		lowered.head = pieces[0].doc
+		lowered.continuation = operationContinuation(result, pieces[1:])
 		if pieces[0].child.power == lowered.power {
-			pieces[0].doc = pieces[0].child.body
+			lowered.head = pieces[0].child.head
+			lowered.continuation = document.Concat(pieces[0].child.continuation, lowered.continuation)
 		}
-		lowered.body = operationSequence(result, pieces)
 		lowered.operation = true
 	case syntax.ConditionalExpression:
-		lowered.body = operationSequence(result, pieces)
+		lowered.head = pieces[0].doc
+		lowered.continuation = operationContinuation(result, pieces[1:])
 		lowered.operation = true
 	case syntax.TraversalExpression:
-		lowered.body = document.Concat(pieces[0].doc, document.Group(traversalSequence(result, pieces[1:], pieces[0].child.endsNumber)))
+		lowered.head = pieces[0].doc
+		lowered.continuation = document.Group(traversalSequence(result, pieces[1:], pieces[0].child.endsNumber))
 		lowered.operation = true
 	case syntax.AttributeAccess, syntax.LegacyIndexAccess:
 		lowered.doc = sequence(result, pieces)
+		lowered.fusesNumber = numberContinuesAcrossDot(result.Text(node.Child(node.ChildCount() - 1).Span()))
+		for _, token := range pieces[1].before {
+			if token.Kind() == syntax.LineComment || token.Kind() == syntax.BlockComment {
+				// A retained comment between dot and name already stops scanning.
+				lowered.fusesNumber = false
+			}
+		}
 	case syntax.IndexAccess:
 		lowered.doc = index(result, pieces)
 	case syntax.AttributeSplat, syntax.FullSplat:
@@ -158,7 +175,8 @@ func lowerNode(result syntax.Result, node syntax.SyntaxNode, safe bool, docs map
 		panic("lowering: valid call has no opening parenthesis")
 	}
 	if lowered.operation {
-		lowered.doc = document.Group(lowered.body)
+		lowered.body = document.Concat(lowered.head, lowered.continuation)
+		lowered.doc = document.Group(document.Concat(lowered.head, document.Indent(lowered.continuation)))
 		if !safe {
 			lowered.doc = syntheticParentheses(lowered.body)
 		}

@@ -4,6 +4,9 @@
 //
 // Expression applies these formatting policies:
 //
+//   - Expression context: the top-level Expression entry starts where the grammar
+//     forbids unparenthesized expression newlines. Internal template interpolation
+//     and directive lowering must use the safe=true path, as calls and indices do.
 //   - Spelling: names, numeric spellings, explicit parentheses, and comment
 //     spelling are preserved. Whitespace between tokens is canonicalized.
 //   - Calls and tuples: entries flatten when they fit and otherwise occupy
@@ -17,11 +20,15 @@
 //   - Operators: binary operators and conditional question marks and colons have
 //     surrounding spaces and start continuation lines. A same-precedence binary
 //     chain shares a group; different precedence and conditional arms can fit
-//     independently. Operand order and precedence remain unchanged.
+//     independently. In safe contexts, continuation lines indent one extra level
+//     after the first operand; parentheses supply that indentation themselves.
+//     Operand order and precedence remain unchanged.
 //   - Traversals: attributes, ordinary and legacy indices, and attribute/full
 //     splats retain their syntax and projection structure. Steps can break
-//     before their dot or opening bracket. Numeric tokens retain a separating
-//     space before a following dot so lexical boundaries cannot merge. Index
+//     before a dot; bracket steps stay attached to the previous step. Safe
+//     contexts indent traversal continuation lines one extra level after the base.
+//     Numeric tokens retain a separating space only when the following dot step
+//     could continue the numeric token, as with .0 or .e2 but not .id. Index
 //     expressions can break inside brackets. Calls and following traversal
 //     steps make independent fit decisions within a broken expression.
 //   - Blank lines: broken tuple entry gaps preserve at most one source blank

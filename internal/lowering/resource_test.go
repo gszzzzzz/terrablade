@@ -22,6 +22,10 @@ func FuzzExpression(f *testing.F) {
 		"foo.0 .0", "1 .e2", "f(x,y).first_attribute.second_attribute",
 		"foo.*.bar[0].baz", "foo[*][*].bar", "foo[alpha + beta]",
 		"(/*lead*/alpha+beta/*tail*/)", "foo.*.0 .0", "foo[* /*c*/].bar",
+		"foo.0 .e-2suffix", "foo.0 .E2", "foo.0 .e+2", "foo.0 .e-",
+		"aws_instance.foo.0.id", "foo.1e1.id", "foo.0 .e٢",
+		"foo.0/*c*/.e2", "foo.0./*c*/e2", "foo.0./*c*/1",
+		"f(foo[0].first_attribute[*].second_attribute)",
 	} {
 		f.Add(source, uint8(20))
 	}
@@ -59,6 +63,8 @@ func TestDeepOperationChains(t *testing.T) {
 	for _, source := range []string{
 		strings.Repeat("a + ", count) + "a",
 		"root" + strings.Repeat(".attribute", count),
+		"f(" + strings.Repeat("a + ", count) + "a)",
+		"f(root" + strings.Repeat(".attribute[0]", count) + ")",
 	} {
 		result, node := parse(t, source)
 		output := render(t, source, 30)
