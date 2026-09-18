@@ -18,8 +18,8 @@ func TestFileLayouts(t *testing.T) {
 	for _, test := range []struct{ name, source, want string }{
 		{"empty", "", ""},
 		{"outer whitespace", " \n\t\r\n", ""},
-		{"BOM only", "\ufeff\n\n", "\ufeff"},
-		{"BOM and attribute", "\ufeffa=1", "\ufeffa = 1\n"},
+		{"BOM only", "\ufeff\n\n", ""},
+		{"BOM and attribute", "\ufeffa=1", "a = 1\n"},
 		{"final newline", "a=1", "a = 1\n"},
 		{"outer padding", "\n\na=1\n\n\n", "a = 1\n"},
 		{"attribute gap collapses", "a=1\n\n\nb=2\n", "a = 1\nb = 2\n"},
@@ -28,11 +28,17 @@ func TestFileLayouts(t *testing.T) {
 		{"block boundaries", "a=1\nb {}\nc=2\nd {}\ne {}", "a = 1\n\nb {}\n\nc = 2\n\nd {}\n\ne {}\n"},
 		{"nested block boundaries", "outer {\n a=1\n inner { x=2 }\n b=3\n}", "outer {\n  a = 1\n\n  inner {\n    x = 2\n  }\n\n  b = 3\n}\n"},
 		{"labels", `resource aws_instance "web\u0020server" {}`, "resource \"aws_instance\" \"web\\u0020server\" {}\n"},
-		{"header comments", `block /*type*/ bare /*label*/ "quoted" /*brace*/ {}`, "block /*type*/ \"bare\" /*label*/ \"quoted\" /*brace*/ {}\n"},
+		{"header comments", `block /*type*/ bare /*label*/ "quoted" /*brace*/ {}`, "block \"bare\" \"quoted\" /*brace*/ {}\n"},
+		{"unlabeled header comment", `block /*type*/ {}`, "block /*type*/ {}\n"},
+		{"multiline label trivia removed", "block /*type\n end*/ \"a\" {}", "block \"a\" {}\n"},
+		{"multiline brace trivia retained", "block \"a\" /*brace\n end*/ {}", "block \"a\" /*brace\n end*/ {}\n"},
 		{"attribute comments", "a /*key*/=/*value*/ 1 /*tail*/ # end\n", "a /*key*/ = /*value*/ 1 /*tail*/ # end\n"},
 		{"leading and trailing comments", "\n\n# lead\na=1\n# end\n\n", "# lead\na = 1\n# end\n"},
 		{"only comments", "\n# one\n\n\n# two\n\n", "# one\n\n# two\n"},
 		{"comment sections", "a=1\n\n\n# section\n\n\nb=2\n", "a = 1\n\n# section\n\nb = 2\n"},
+		{"same-line comment run section", "a=1\n/*first*/ /*second*/ # third\n\n\nb=2", "a = 1\n/*first*/ /*second*/ # third\n\nb = 2\n"},
+		{"same-line block comments section", "a=1\n/*first*/ /*second*/\n\n\nb=2", "a = 1\n/*first*/ /*second*/\n\nb = 2\n"},
+		{"comment prefix is not independent", "a=1\n\n/*prefix*/ b=2", "a            = 1\n/*prefix*/ b = 2\n"},
 		{"inline comment does not preserve empty line", "a=1 # tail\n\n\nb=2", "a = 1 # tail\nb = 2\n"},
 		{"comment before block", "a=1\n# block\nb {}", "a = 1\n\n# block\nb {}\n"},
 		{"comment after block", "a {}\n# next\nb=1", "a {}\n\n# next\nb = 1\n"},
@@ -123,6 +129,10 @@ func TestBodyOpenTofuCompatibility(t *testing.T) {
 		"b { # open\n a=1 # value\n}\n",
 		"b {\n a=<<-E\n  x\n  E\n}\n",
 		"b { /*body*/ }\n",
+		"\ufeffa=1\nlong=2\n",
+		`block /*type*/ bare /*between*/ "quoted" /*brace*/ {}`,
+		`block /*type*/ {}`,
+		"a=1\n/*first*/ /*second*/ # third\n\nb=2",
 	} {
 		for _, width := range []int{16, 80} {
 			output := renderFile(t, source, width)
@@ -177,10 +187,21 @@ func assertFileContent(t testing.TB, before, after string) {
 					continue
 				}
 				parts = append(parts, "node:"+node.Kind().String())
+				lastLabelEnd := -1
+				if node.Kind() == syntax.Block {
+					for i := range node.ChildCount() {
+						if child, ok := node.Child(i).Node(); ok && child.Kind() == syntax.BlockLabel {
+							lastLabelEnd = child.Span().End
+						}
+					}
+				}
 				for i := node.ChildCount() - 1; i >= 0; i-- {
+					if token, ok := node.Child(i).Token(); ok && token.Span().Start < lastLabelEnd && (token.Kind() == syntax.LineComment || token.Kind() == syntax.BlockComment) {
+						continue
+					}
 					stack = append(stack, node.Child(i))
 				}
-			} else if token, ok := current.Token(); ok && token.Kind() != syntax.Newline && token.Kind() != syntax.Whitespace {
+			} else if token, ok := current.Token(); ok && token.Kind() != syntax.Newline && token.Kind() != syntax.Whitespace && token.Kind() != syntax.BOM {
 				parts = append(parts, strings.ReplaceAll(result.Text(token.Span()), "\r\n", "\n"))
 			}
 		}

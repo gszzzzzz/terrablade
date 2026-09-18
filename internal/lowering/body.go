@@ -41,8 +41,6 @@ func File(result syntax.Result) (document.Doc, error) {
 				element := current.node.Child(i)
 				if body, ok := element.Node(); ok {
 					parts = append(parts, docs[body].doc, docs[body].end)
-				} else if token, ok := element.Token(); ok && token.Kind() == syntax.BOM {
-					parts = append(parts, document.Text(result.Text(token.Span())))
 				}
 			}
 			lowered.doc = document.Concat(parts...)
@@ -114,7 +112,9 @@ func block(result syntax.Result, node syntax.SyntaxNode, docs map[syntax.SyntaxN
 				contents = docs[child]
 				break
 			}
-			header = append(header, piece{doc: docs[child].doc, before: trivia})
+			// Upstream rebuilds the label list: trivia before labels is removed,
+			// while trivia between the final label and opening brace survives.
+			header = append(header, piece{doc: docs[child].doc})
 		} else if token, ok := element.Token(); ok {
 			if bodyTrivia(token.Kind()) {
 				trivia = append(trivia, token)
@@ -165,7 +165,13 @@ func bodyGap(result syntax.Result, trivia []syntax.SyntaxToken, previous, next s
 	haveContent := previous != syntax.InvalidNode
 	haveComment, standalone, lineComment := false, false, false
 	blockBoundary := previous != syntax.InvalidNode && next != syntax.InvalidNode && (previous == syntax.Block || next == syntax.Block)
-	for _, token := range trivia {
+	lastNewline := -1
+	for i, token := range trivia {
+		if token.Kind() == syntax.Newline {
+			lastNewline = i
+		}
+	}
+	for i, token := range trivia {
 		if token.Kind() == syntax.Newline {
 			newlines++
 			continue
@@ -173,11 +179,14 @@ func bodyGap(result syntax.Result, trivia []syntax.SyntaxToken, previous, next s
 		if token.Kind() != syntax.LineComment && token.Kind() != syntax.BlockComment {
 			continue
 		}
-		isStandalone := newlines > 0 || !haveContent && !nested
+		// A run can contain several block comments on the same line. They
+		// share their section status, but a prefix sharing the next item's
+		// line is not an independent comment section.
+		isStandalone := (newlines > 0 || !haveContent && !nested || standalone) && (next == syntax.InvalidNode || i < lastNewline)
 		separator := document.Text(" ")
 		if newlines > 0 || lineComment {
 			separator = document.HardLine()
-			if haveContent && (newlines >= 2 && (isStandalone || standalone) || blockBoundary && isStandalone) {
+			if haveContent && (newlines >= 2 && (isStandalone || standalone) || blockBoundary) {
 				separator = document.Concat(separator, document.HardLine())
 				blockBoundary = false
 			}

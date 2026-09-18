@@ -5,10 +5,11 @@
 // File applies these body formatting policies:
 //
 //   - File boundaries: outer blank padding is removed. Nonempty bodies end in
-//     one LF; empty bodies do not. A leading BOM is preserved independently.
+//     one LF; empty bodies do not. A leading BOM is omitted from canonical output.
 //   - Blocks: empty blocks use {}; every nonempty block uses an indented body
 //     and a closing brace on its own line. Bare labels become quoted labels;
-//     already quoted labels retain their spelling. Header comments are retained.
+//     already quoted labels retain their spelling. Like upstream label rebuilding,
+//     comments before labels are removed; comments before the brace are retained.
 //   - Item boundaries: consecutive attributes have no blank line. Boundaries
 //     involving a block have exactly one blank line. Independent comment runs
 //     retain source blank separation, capped at one line. Inline comments remain
