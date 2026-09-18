@@ -141,15 +141,6 @@ func TestExpressionTriviaPlacement(t *testing.T) {
 						}
 					}
 				}
-				if node.Kind() != File {
-					for _, token := range lex([]byte(file.source[node.span.Start:node.span.End])).Tokens {
-						if token.Span().Start == 0 || token.Span().End == node.span.End-node.span.Start {
-							if isTrivia(token.Kind()) {
-								t.Fatalf("node %v absorbed outer trivia", node.Kind())
-							}
-						}
-					}
-				}
 			}
 			visit(file.root)
 			if !reflect.DeepEqual(containers, test.containers) {

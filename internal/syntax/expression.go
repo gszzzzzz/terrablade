@@ -238,21 +238,30 @@ func (p *parser) recoverArgument(parent *nodeBuilder) {
 // unsupported consumes one balanced unsupported construct without recursion.
 // Nested template/interpolation delimiters remain visible in the lexical stream.
 func (p *parser) unsupported(b *nodeBuilder) {
+	if p.halted {
+		return
+	}
 	// Raw tokens preserve template whitespace and delimiters in the Error subtree;
 	// expression lookahead would interpret trivia in the wrong sub-language.
+	// An unterminated construct still ends at its last non-trivia token, so the
+	// trailing trivia of the file stays with the parent like any other node.
 	var ends []TokenKind
-	for p.current().kind != EOF {
-		kind := p.current().kind
+	end := p.pos
+	for i := p.pos; p.tokens[i].kind != EOF; i++ {
+		kind := p.tokens[i].kind
 		if close := closing(kind); close != Invalid {
 			ends = append(ends, close)
 		} else if len(ends) > 0 && ends[len(ends)-1] == kind {
 			ends = ends[:len(ends)-1]
 		}
-		p.consumeUntil(b, p.pos+1)
+		if !isTrivia(kind) {
+			end = i + 1
+		}
 		if len(ends) == 0 {
-			return
+			break
 		}
 	}
+	p.consumeUntil(b, end)
 }
 
 func closing(kind TokenKind) TokenKind {

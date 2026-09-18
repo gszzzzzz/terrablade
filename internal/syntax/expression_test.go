@@ -238,6 +238,27 @@ func TestExpressionDiagnostics(t *testing.T) {
 	}
 }
 
+func TestUnterminatedUnsupportedLeavesTrailingTrivia(t *testing.T) {
+	// Quoted and heredoc bodies absorb whitespace into TemplateText, so only
+	// bracketed constructs can be followed by config-level trivia at EOF.
+	for _, source := range []string{"{ ", "[ # c\n", "{a = [1,\n\n", "[\"x\" /* c */\n"} {
+		t.Run(source, func(t *testing.T) {
+			file := parseExpressionSource([]byte(source))
+			assertExpressionPartition(t, []byte(source), file)
+			if !slices.ContainsFunc(file.diagnostics, func(d Diagnostic) bool { return d.Kind == UnsupportedExpression }) {
+				t.Fatalf("diagnostics = %+v, want UnsupportedExpression", file.diagnostics)
+			}
+			// The Error node is the first child; trivia after its last real token
+			// must follow it at File level, exactly as after a parenthesized error.
+			node := file.root.Child(0).(SyntaxNode)
+			last := node.Child(node.ChildCount() - 1).(SyntaxToken)
+			if isTrivia(last.Kind()) || file.root.ChildCount() < 3 {
+				t.Fatalf("trailing trivia absorbed: %v ends with %v, file has %d children", node.Kind(), last.Kind(), file.root.ChildCount())
+			}
+		})
+	}
+}
+
 func TestExpressionRecoveryPreservesFollowingArgument(t *testing.T) {
 	file := parseExpressionSource([]byte("f(1 2, 3)"))
 	want := `File(Call("f", "(", Literal("1"), Error("2"), ",", Literal("3"), ")"))`
@@ -292,17 +313,35 @@ func FuzzExpression(f *testing.F) {
 	})
 }
 
+// assertExpressionPartition checks the invariants every expression tree must
+// satisfy beyond byte-level losslessness: leaves are exactly the lexer's tokens,
+// only File may begin or end with trivia, and every Error node is explained by
+// at least one diagnostic. Diagnostics without Error nodes remain legitimate,
+// for example a missing closer or an unrepresentable number literal.
 func assertExpressionPartition(t *testing.T, source []byte, file syntaxFile) {
 	t.Helper()
 	assertFilePartition(t, source, file)
 	var tokens []SyntaxToken
+	errors := 0
 	stack := []SyntaxElement{file.root}
 	for len(stack) > 0 {
 		element := stack[len(stack)-1]
 		stack = stack[:len(stack)-1]
 		switch element := element.(type) {
 		case SyntaxNode:
-			for i := element.ChildCount() - 1; i >= 0; i-- {
+			if element.Kind() == Error {
+				errors++
+			}
+			count := element.ChildCount()
+			if element.Kind() != File && count > 0 {
+				if token, ok := element.Child(0).(SyntaxToken); ok && isTrivia(token.Kind()) {
+					t.Fatalf("%v begins with %v trivia: %s", element.Kind(), token.Kind(), expressionShape(file, element))
+				}
+				if token, ok := element.Child(count - 1).(SyntaxToken); ok && isTrivia(token.Kind()) {
+					t.Fatalf("%v ends with %v trivia: %s", element.Kind(), token.Kind(), expressionShape(file, element))
+				}
+			}
+			for i := count - 1; i >= 0; i-- {
 				stack = append(stack, element.Child(i))
 			}
 		case SyntaxToken:
@@ -311,6 +350,9 @@ func assertExpressionPartition(t *testing.T, source []byte, file syntaxFile) {
 	}
 	if want := lex(source).Tokens; !reflect.DeepEqual(tokens, want) {
 		t.Fatalf("tree leaves differ from lexer tokens:\n%+v\nwant:\n%+v", tokens, want)
+	}
+	if errors > 0 && len(file.diagnostics) == 0 {
+		t.Fatalf("%d Error nodes without any diagnostic: %s", errors, expressionShape(file, file.root))
 	}
 }
 
