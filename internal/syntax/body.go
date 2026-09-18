@@ -170,6 +170,14 @@ func (p *parser) quotedBlockLabel(label *nodeBuilder) {
 			return
 		case TemplateText:
 			p.consumeUntil(label, p.pos+1)
+		case Whitespace, Newline, LineComment, BlockComment:
+			// Recovery from an unterminated sequence can leave expression trivia
+			// at EOF. Keep that tail with Body, as for unfinished expressions.
+			next := p.look(delimitedExpression)
+			if p.tokens[next].kind == EOF {
+				return
+			}
+			p.consumeUntil(label, next)
 		default:
 			p.report(ExpectedLiteralBlockLabel, p.current().span)
 			bad := p.begin()
