@@ -149,8 +149,8 @@ func (t SyntaxToken) Kind() TokenKind { return t.kind }
 // Span identifies the original source bytes. Only EOF has an empty span.
 func (t SyntaxToken) Span() Span { return t.span }
 
-// syntaxFile owns a source snapshot and its lossless tree. It stays private
-// until configuration-body parsing can validate a complete native HCL file.
+// syntaxFile owns a source snapshot and its lossless tree. Grammar entry points
+// keep it private until the public source and diagnostic contracts are settled.
 type syntaxFile struct {
 	source      string
 	root        SyntaxNode

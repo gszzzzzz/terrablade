@@ -392,7 +392,7 @@ func FuzzExpression(f *testing.F) {
 
 // assertExpressionPartition checks the invariants every expression tree must
 // satisfy beyond byte-level losslessness: leaves are exactly the lexer's tokens,
-// only File may begin or end with trivia, and a tree containing Error nodes has
+// only File and Body may begin or end with trivia, and Error nodes imply
 // at least one diagnostic. Diagnostics without Error nodes remain legitimate,
 // for example a missing closer or an unrepresentable number literal. Exact
 // Error-to-diagnostic relationships belong to focused recovery tests.
