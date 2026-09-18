@@ -27,6 +27,7 @@ func FuzzExpression(f *testing.F) {
 		"foo.0/*c*/.e2", "foo.0./*c*/e2", "foo.0./*c*/1",
 		"f(foo[0].first_attribute[*].second_attribute)",
 		"{a:1,b=2}", "{a=1\n\nb=2}", "{alpha + beta=1}", "[{key=alpha+beta}]",
+		"[for x in xs:x.id if x.enabled]", "{for k,v in xs:k=>v... if v}", "[for in in if:if if in]",
 	} {
 		f.Add(source, uint8(20))
 	}

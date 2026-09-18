@@ -18,6 +18,10 @@
 //     per entry and a trailing comma. Bare identifier keys retain their spelling
 //     and key context, and computed keys retain explicit parentheses. Keys and
 //     values remain newline-sensitive, even inside an otherwise safe context.
+//   - For expressions: flat clauses use spaces. Broken layouts put the header,
+//     projection, and optional if clause on separate indented lines. Object
+//     projection arrows may start a further-indented continuation line. Grouping
+//     ellipses stay attached to their values; no trailing comma is introduced.
 //   - Parentheses: explicit parentheses do not introduce width-triggered breaks;
 //     their contents may still break. Binary, conditional, and traversal groups
 //     share their break layout with explicit parentheses. Where the grammar
@@ -52,7 +56,7 @@
 // rendering follows document's own resource contract. No final newline is added.
 //
 // This implementation supports literals, variable references, unary/binary and
-// conditional expressions, explicit parentheses, calls, tuples, objects, and traversals.
-// For and template expressions return an error until their lowering
-// policies are implemented.
+// conditional expressions, explicit parentheses, calls, tuples, objects, for
+// expressions, and traversals. Template expressions return an error until their
+// lowering policies are implemented.
 package lowering

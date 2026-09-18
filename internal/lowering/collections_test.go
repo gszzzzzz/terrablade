@@ -34,3 +34,33 @@ func TestObjectLayouts(t *testing.T) {
 		})
 	}
 }
+
+func TestForLayouts(t *testing.T) {
+	for _, test := range []struct {
+		name, source string
+		width        int
+		want         string
+	}{
+		{"tuple flat", "[for x in xs:x.id]", 80, "[for x in xs : x.id]"},
+		{"object flat", "{for k,v in xs:k=>v... if v}", 80, "{ for k, v in xs : k => v... if v }"},
+		{"tuple broken", "[for value in values : value.id if value.enabled]", 30, "[\n  for value in values :\n  value.id\n  if value.enabled\n]"},
+		{"object broken", "{for k,v in values:k=>v... if v.enabled}", 28, "{\n  for k, v in values :\n  k => v...\n  if v.enabled\n}"},
+		{"contextual bindings", "[for in in if:if if in]", 80, "[for in in if : if if in]"},
+		{"source lines reflow", "[\nfor x\nin xs\n:\nx\nif x\n]", 80, "[for x in xs : x if x]"},
+		{"conditional collection", "[for x in ready ? first : second : x]", 24, "[\n  for x in ready\n    ? first\n    : second :\n  x\n]"},
+		{"projection operator", "[for x in xs:alpha + beta]", 18, "[\n  for x in xs :\n  alpha + beta\n]"},
+		{"projection arrow breaks", "{for x in xs:long_key=>long_value}", 18, "{\n  for x in xs :\n  long_key\n    => long_value\n}"},
+		{"projection line comment", "[for x in xs: # projection\nx]", 80, "[\n  for x in xs : # projection\n  x\n]"},
+		{"header comments", "[for /*binding*/ x in /*collection*/ xs:x]", 80, "[for /*binding*/ x in /*collection*/ xs : x]"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			got := render(t, test.source, test.width)
+			if got != test.want {
+				t.Fatalf("rendered %q, want %q", got, test.want)
+			}
+			if again := render(t, got, test.width); again != got {
+				t.Fatalf("not idempotent: %q => %q", got, again)
+			}
+		})
+	}
+}

@@ -38,7 +38,7 @@ func Expression(result syntax.Result, node syntax.SyntaxNode) (document.Doc, err
 				case syntax.ObjectItem:
 					safe = false // Object keys and values are newline-sensitive.
 				case syntax.ParenthesizedExpression, syntax.FunctionCallExpression,
-					syntax.TupleExpression, syntax.IndexAccess,
+					syntax.TupleExpression, syntax.IndexAccess, syntax.ForExpression,
 					syntax.BinaryExpression, syntax.ConditionalExpression, syntax.TraversalExpression:
 					// Operations enclose themselves when their caller is not safe;
 					// their descendants can share that pair of parentheses.
@@ -101,7 +101,7 @@ func lowerNode(result syntax.Result, node syntax.SyntaxNode, safe bool, docs map
 		syntax.BinaryExpression, syntax.ConditionalExpression,
 		syntax.TraversalExpression, syntax.AttributeAccess, syntax.IndexAccess,
 		syntax.LegacyIndexAccess, syntax.AttributeSplat, syntax.FullSplat:
-	case syntax.ObjectExpression, syntax.ObjectItem:
+	case syntax.ObjectExpression, syntax.ObjectItem, syntax.ForExpression:
 	default:
 		return layout{}, fmt.Errorf("lowering: unsupported expression form %s", node.Kind())
 	}
@@ -139,6 +139,8 @@ func lowerNode(result syntax.Result, node syntax.SyntaxNode, safe bool, docs map
 	case syntax.ObjectItem:
 		pieces[1].doc = document.Text("=")
 		lowered.doc = spacedSequence(result, pieces)
+	case syntax.ForExpression:
+		lowered.doc = forExpression(result, pieces)
 	case syntax.BinaryExpression:
 		lowered.power = binaryPower(pieces[1].kind)
 		lowered.head = pieces[0].doc
