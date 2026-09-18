@@ -44,9 +44,18 @@ func templateSequence(result syntax.Result, pieces []piece) document.Doc {
 	}
 	opener := sequence(result, pieces[:start])
 	content := append([]piece(nil), pieces[start:end]...)
-	leading, first := commentGap(result, content[0].before, gapStyle{empty: soft, beforeComment: soft, afterComment: space})
+	leadingEdge, trailingEdge := tight, tight
+	// A brace adjacent to a sequence boundary gets a visible separator, also
+	// with strip markers. Comments supply their own token boundary instead.
+	if content[0].child.startsBrace {
+		leadingEdge = space
+	}
+	if content[len(content)-1].child.endsBrace {
+		trailingEdge = space
+	}
+	leading, first := commentGap(result, content[0].before, gapStyle{empty: leadingEdge, beforeComment: soft, afterComment: space})
 	content[0].before = nil
-	trailing, last := commentGap(result, pieces[end].before, gapStyle{empty: soft, beforeComment: space, afterComment: soft, requiredLine: content[len(content)-1].child.endsHeredoc})
+	trailing, last := commentGap(result, pieces[end].before, gapStyle{empty: trailingEdge, beforeComment: space, afterComment: soft, requiredLine: content[len(content)-1].child.endsHeredoc})
 	closer := append([]piece(nil), pieces[end:]...)
 	closer[0].before = nil
 	// Width-driven newlines in sequences can change template indentation

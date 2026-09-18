@@ -102,6 +102,7 @@ type layout struct {
 	startsDot                     bool
 	fusesNumber                   bool
 	endsHeredoc                   bool
+	startsBrace, endsBrace        bool
 }
 
 func lowerNode(result syntax.Result, node syntax.SyntaxNode, safe, inSequence bool, docs map[syntax.SyntaxNode]layout) (layout, error) {
@@ -143,6 +144,8 @@ func lowerNode(result syntax.Result, node syntax.SyntaxNode, safe, inSequence bo
 		endsNumber:  last.token && last.kind == syntax.Number || !last.token && last.child.endsNumber,
 		startsDot:   pieces[0].token && pieces[0].kind == syntax.Dot,
 		endsHeredoc: !last.token && last.child.endsHeredoc,
+		startsBrace: pieces[0].token && pieces[0].kind == syntax.OpenBrace || !pieces[0].token && pieces[0].child.startsBrace,
+		endsBrace:   last.token && last.kind == syntax.CloseBrace || !last.token && last.child.endsBrace,
 	}
 	switch node.Kind() {
 	case syntax.LiteralExpression, syntax.VariableExpression, syntax.UnaryExpression:

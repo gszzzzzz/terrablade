@@ -56,6 +56,7 @@
 //     and nested groups, even beyond print width. Only mandatory comment and
 //     heredoc lines remain; this takes precedence over source-vertical objects.
 //     Boundaries use ${expr}, ${~expr~}, %{if condition}, and %{~if condition~}.
+//     Adjacent object braces add boundary spaces, as in ${ { key = value } }.
 //     No whitespace is synthesized outside sequence boundaries into literal text.
 //   - Heredocs: opener, marker, literal indentation, and closing-marker spelling
 //     are preserved. Literal lines bypass automatic indentation. The marker's
