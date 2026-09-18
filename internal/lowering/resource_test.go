@@ -134,8 +134,10 @@ func BenchmarkOperationChains(b *testing.B) {
 
 // Compare the canonical token/operation shape without invoking the normalizer.
 // Pure quoted wrappers and ordinary legacy indices have equivalent spellings;
-// all comments, literal bytes, operator nesting, and splat projection nodes must
-// survive. Traversal containers are transparent because unwrapping may join two.
+// all comments, literal bytes, operator nesting, and splat projection scopes must
+// survive. Every significant node has an end marker so a suffix cannot silently
+// move inside an operation or splat. Only parentheses and traversal containers
+// are transparent: their canonical children fully describe the expression.
 func expressionTokens(result syntax.Result, node syntax.SyntaxNode) []string {
 	var tokens []string
 	type entry struct {
@@ -165,9 +167,10 @@ func expressionTokens(result syntax.Result, node syntax.SyntaxNode) []string {
 			legacy := node.Kind() == syntax.LegacyIndexAccess && !current.attributeProjection
 			if legacy {
 				tokens = append(tokens, "node:IndexAccess", "[")
-				stack = append(stack, entry{suffix: "]"})
+				stack = append(stack, entry{suffix: "end:IndexAccess"}, entry{suffix: "]"})
 			} else if !wrapper && node.Kind() != syntax.ParenthesizedExpression && node.Kind() != syntax.TraversalExpression {
 				tokens = append(tokens, "node:"+node.Kind().String())
+				stack = append(stack, entry{suffix: "end:" + node.Kind().String()})
 			}
 			for i := node.ChildCount() - 1; i >= 0; i-- {
 				if token, ok := node.Child(i).Token(); ok && node.Kind() == syntax.ParenthesizedExpression && (token.Kind() == syntax.OpenParen || token.Kind() == syntax.CloseParen) {
@@ -203,8 +206,39 @@ func expressionTokens(result syntax.Result, node syntax.SyntaxNode) []string {
 			continue
 		}
 		tokens = append(tokens, strings.ReplaceAll(result.Text(token.Span()), "\r\n", "\n"))
+		if current.legacyIndex && token.Kind() == syntax.Number {
+			tokens = append(tokens, "end:LiteralExpression")
+		}
 	}
 	return tokens
+}
+
+func TestExpressionContentOraclePreservesScopes(t *testing.T) {
+	for _, pair := range [][2]string{
+		{`(a[*].b)[0]`, `a[*].b[0]`},
+		{`(a.*.b).c`, `a.*.b.c`},
+		{`(a[*][*].b)[0]`, `a[*][*].b[0]`},
+		{`(a + b).c`, `a + b.c`},
+		{`(-a).b`, `-a.b`},
+	} {
+		left, leftNode := parse(t, pair[0])
+		right, rightNode := parse(t, pair[1])
+		if reflect.DeepEqual(expressionTokens(left, leftNode), expressionTokens(right, rightNode)) {
+			t.Errorf("oracle lost scope: %q and %q", pair[0], pair[1])
+		}
+	}
+	for _, pair := range [][2]string{
+		{`"${a[*].b}".0`, `(a[*].b)[0]`},
+		{`"${a.*.b}".c`, `(a.*.b).c`},
+		{`a[*].0.b`, `a[*][0].b`},
+		{`"${a + b}".c`, `(a + b).c`},
+	} {
+		left, leftNode := parse(t, pair[0])
+		right, rightNode := parse(t, pair[1])
+		if !reflect.DeepEqual(expressionTokens(left, leftNode), expressionTokens(right, rightNode)) {
+			t.Errorf("oracle rejected canonical equivalence: %q and %q", pair[0], pair[1])
+		}
+	}
 }
 
 func BenchmarkExpression(b *testing.B) {
