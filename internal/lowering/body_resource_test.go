@@ -33,6 +33,10 @@ func FuzzFile(f *testing.F) {
 		`a="prefix ${~{x=1}~}"`, `a="prefix %{if {x=1}}yes%{endif}"`,
 		"a=[for x in xs:x.id if x.enabled]", "a={for x in xs:long_key=>long_value}",
 		"이름=1\né=2\nx=3", "b {\n /* first\r\n  second */\n a=1\n}",
+		`a="${foo.0.bar}"`, `a={"${a}"="${b}"}`, `a="${"${x}"}"`,
+		"b {\n a=\"${foo # c\n.bar}\"\n b=\"${# c\nx # d\n}\"\n}\n",
+		`a="${x[*].a}".0`, `a=foo.*.0`, `a=foo[*].0`,
+		"a=\"${<<E\nx\nE\n}\" # tail\n", "b {\n a=\"${<<E\nx\nE\n}\" /*tail*/\n}\n",
 	} {
 		f.Add(source, uint8(20))
 	}
