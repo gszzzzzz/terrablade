@@ -42,9 +42,8 @@ func templateParts(result syntax.Result, node *expressionView, layouts map[*expr
 // markers belong to the opener and closer so their spelling is preserved. The
 // contents are forced flat, keeping only mandatory comment and heredoc lines
 // (doc.go: Templates). An object brace adjacent to a boundary gets a space,
-// as in ${ { key = value } } (doc.go: Templates;
-// TestTemplateReferenceBoundaryCompatibility checks the reference formatter
-// accepts it); a comment at the boundary already separates the tokens.
+// as in ${ { key = value } }; a comment at the boundary already separates the
+// tokens.
 func templateSequence(result syntax.Result, pieces []piece) document.Doc {
 	start, end := 1, len(pieces)-1
 	if pieces[start].token && pieces[start].kind == syntax.StripMarker {

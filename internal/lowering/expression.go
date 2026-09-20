@@ -125,20 +125,11 @@ type piece struct {
 	child layout
 }
 
-// pieceList names the children the grammar fixes by position, so a layout
-// helper says which child it reads instead of repeating an index. Because
-// []piece is unnamed, an ordinary piece slice converts to a pieceList on
-// assignment and a pieceList passes to any []piece parameter, so only the
-// helpers that use these accessors name the type.
+// pieceList names children selected by their grammatical position.
 type pieceList []piece
 
-// opener is the delimiter a form starts with: a parenthesis, bracket, or
-// brace. A call's name precedes its parenthesis, so a call names its opening
-// parenthesis by index instead.
 func (pieces pieceList) opener() piece { return pieces[0] }
 
-// closer is the delimiter a form ends with. Every delimited form has one,
-// because a parse that lost it would have reported a diagnostic.
 func (pieces pieceList) closer() piece { return pieces[len(pieces)-1] }
 
 // inner is the piece directly after the opening delimiter: the sole content
@@ -151,8 +142,6 @@ func (pieces pieceList) inner() piece { return pieces[1] }
 // if any, decides whether the closer's gap owes a newline.
 func (pieces pieceList) beforeCloser() piece { return pieces[len(pieces)-2] }
 
-// contents are the pieces between the opening delimiter at open and the
-// closer: a list's values together with their commas and ellipses.
 func (pieces pieceList) contents(open int) pieceList { return pieces[open+1 : len(pieces)-1] }
 
 // detachLeading copies pieces and clears the first copy's leading trivia,

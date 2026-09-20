@@ -1,11 +1,5 @@
 package syntax
 
-// Tests for tree.go: the arena that stores nodes, tokens, and child edges, and
-// the read-only handles published over it. result_test.go asserts the same
-// ownership and allocation properties through the exported API; that
-// duplication is deliberate, because the internal and public views can drift.
-// Within this file each property is asserted exactly once.
-
 import (
 	"bytes"
 	"strconv"
@@ -13,9 +7,6 @@ import (
 	"testing"
 )
 
-// TestFileOwnsSource covers source ownership only. Zero values, copied-handle
-// independence, and allocation-free traversal each have their own test below,
-// so this one no longer repeats them.
 func TestFileOwnsSource(t *testing.T) {
 	source := []byte("x + 1\n")
 	original := bytes.Clone(source)

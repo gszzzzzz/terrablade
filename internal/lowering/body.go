@@ -11,12 +11,9 @@ import (
 // newline. A zero Result or any parse diagnostic returns an error and an empty
 // Doc. Layout width and indentation are selected later by document.Render.
 //
-// Bodies nest arbitrarily deep (TestDeepAndWideBodies lowers 20000 nested
-// blocks), so the traversal is an explicit post-order stack rather than
-// recursion. lowerExpression and normalizeExpression share this shape: each
-// frame remembers the next child to visit, a node is lowered only after all
-// of its children, and the results are keyed by node so a parent can collect
-// them without revisiting the subtree.
+// The traversal is iterative so deeply nested bodies do not grow the Go call
+// stack. A node is lowered after its children, whose results are kept for the
+// parent.
 func File(result syntax.Result) (document.Doc, error) {
 	if len(result.Diagnostics()) != 0 {
 		return document.Doc{}, errors.New("lowering: cannot format a result with diagnostics")

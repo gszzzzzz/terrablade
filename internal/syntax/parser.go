@@ -120,7 +120,6 @@ func (p *parser) lookFrom(index int, context newlineContext) int {
 	return i
 }
 
-// peek returns the kind of the token that look selects.
 func (p *parser) peek(context newlineContext) TokenKind {
 	return p.tokens[p.look(context)].kind
 }
@@ -179,12 +178,10 @@ func (p *parser) beginAt(start int) nodeBuilder {
 	return nodeBuilder{parser: p, start: start, mark: len(p.pending)}
 }
 
-// node appends a finished node as the builder's next child.
 func (b *nodeBuilder) node(node SyntaxNode) {
 	b.parser.pending = append(b.parser.pending, elementRef(node.index+1))
 }
 
-// consumeUntil appends raw tokens before index, leaving index unconsumed.
 func (p *parser) consumeUntil(b *nodeBuilder, index int) {
 	if p.halted {
 		return

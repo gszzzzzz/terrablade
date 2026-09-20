@@ -239,7 +239,7 @@ func pathLabel(path string) string {
 // writeText writes text to writer, reporting only whether it succeeded.
 // io.Copy rather than io.WriteString: Copy turns a short write that reports no
 // error into io.ErrShortWrite, so a truncated stdout still fails the command
-// instead of silently dropping output (TestRunStreamFailures covers this).
+// instead of silently dropping output.
 func writeText(writer io.Writer, text string) error {
 	_, err := io.Copy(writer, strings.NewReader(text))
 	return err

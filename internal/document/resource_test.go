@@ -1,8 +1,3 @@
-// "Resource" here means the properties that bound a render rather than its
-// layout: limits and scaling (deep and shared documents), input ownership and
-// concurrent rendering, and the benchmarks. Layout behaviour lives in
-// render_test.go and alignment_test.go.
-
 package document_test
 
 import (
