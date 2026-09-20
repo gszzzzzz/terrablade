@@ -4,8 +4,9 @@
 //
 // File applies these body formatting policies:
 //
-//   - File boundaries: outer blank padding is removed. Nonempty bodies end in
-//     one LF; empty bodies do not. A leading BOM is omitted from canonical output.
+//   - File boundaries: outer blank padding is removed and every file ends in
+//     one LF, including an empty body. A leading BOM is omitted from canonical
+//     output.
 //   - Blocks: empty blocks use {}; every nonempty block uses an indented body
 //     and a closing brace on its own line. Bare labels become quoted labels;
 //     already quoted labels retain their spelling. Header comments move in source

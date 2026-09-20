@@ -10,8 +10,8 @@ import (
 )
 
 // Acceptance follows the upstream native parser, including its EOF and BOM
-// extensions and its stricter single-line block rules. The optional OpenTofu
-// check below exercises the same corpus without adding a library dependency.
+// extensions and its stricter single-line block rules. The optional reference
+// CLI check below exercises the same corpus without adding a library dependency.
 var bodyCompatibilityCases = []struct {
 	name   string
 	source string
@@ -109,19 +109,21 @@ func TestBodyCompatibility(t *testing.T) {
 	}
 }
 
-func TestBodyOpenTofuCompatibility(t *testing.T) {
-	if os.Getenv("TERRABLADE_COMPARE_TOFU") != "1" {
-		t.Skip("set TERRABLADE_COMPARE_TOFU=1 to compare with an installed OpenTofu")
+func TestBodyReferenceCompatibility(t *testing.T) {
+	const environment = "TERRABLADE_REFERENCE_CLI"
+	name := os.Getenv(environment)
+	if name == "" {
+		t.Skip("set " + environment + " to terraform or tofu to run compatibility tests")
 	}
-	tofu, err := exec.LookPath("tofu")
+	reference, err := exec.LookPath(name)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("find reference CLI %q: %v", name, err)
 	}
 	for _, test := range bodyCompatibilityCases {
 		t.Run(test.name, func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
-			command := exec.CommandContext(ctx, tofu, "fmt", "-no-color", "-")
+			command := exec.CommandContext(ctx, reference, "fmt", "-no-color", "-")
 			command.Stdin = strings.NewReader(test.source)
 			output, err := command.CombinedOutput()
 			if ctx.Err() != nil {
@@ -129,12 +131,12 @@ func TestBodyOpenTofuCompatibility(t *testing.T) {
 			}
 			if err != nil {
 				if exit, ok := err.(*exec.ExitError); !ok || exit.ExitCode() != 2 {
-					t.Fatalf("unexpected OpenTofu failure: %v\n%s", err, output)
+					t.Fatalf("unexpected reference CLI failure: %v\n%s", err, output)
 				}
 			}
 			accepted := len(Parse([]byte(test.source)).diagnostics) == 0
 			if (err == nil) != test.valid || (err == nil) != accepted {
-				t.Fatalf("OpenTofu accepted=%v, parser accepted=%v, want=%v\n%s", err == nil, accepted, test.valid, output)
+				t.Fatalf("reference CLI accepted=%v, parser accepted=%v, want=%v\n%s", err == nil, accepted, test.valid, output)
 			}
 		})
 	}

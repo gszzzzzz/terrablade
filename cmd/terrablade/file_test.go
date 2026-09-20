@@ -31,7 +31,10 @@ func TestRunWrite(t *testing.T) {
 
 func TestWritePreservesInodeAndMode(t *testing.T) {
 	for _, test := range []struct{ source, want string }{
-		{"a=1", "a = 1\n"}, {"a    =   1   \n\n\n", "a = 1\n"}, {" \n\t", ""},
+		{"a=1", "a = 1\n"},
+		{"a    =   1   \n\n\n", "a = 1\n"},
+		{" \n\t", "\n"},
+		{"", "\n"},
 	} {
 		dir := t.TempDir()
 		path := putFile(t, dir, "main.tf", test.source)
@@ -50,7 +53,7 @@ func TestWritePreservesInodeAndMode(t *testing.T) {
 
 func TestWriteUnchangedIsNoOp(t *testing.T) {
 	dir := t.TempDir()
-	for _, source := range []string{"a = 1\n", ""} {
+	for _, source := range []string{"a = 1\n", "\n"} {
 		path := putFile(t, dir, "fixed.tf", source)
 		old := time.Unix(1_600_000_000, 0)
 		if err := os.Chtimes(path, old, old); err != nil {

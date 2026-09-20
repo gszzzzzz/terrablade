@@ -22,9 +22,9 @@ func TestFormat(t *testing.T) {
 	for _, test := range []struct {
 		name, source, want string
 	}{
-		{"empty", "", ""},
-		{"whitespace", " \t\r\n\n", ""},
-		{"BOM only", "\ufeff \n", ""},
+		{"empty", "", "\n"},
+		{"whitespace", " \t\r\n\n", "\n"},
+		{"BOM only", "\ufeff \n", "\n"},
 		{"BOM and CRLF", "\ufeffa=1\r\nlong=2\r\n", "a    = 1\nlong = 2\n"},
 		{"blank groups", "\na=1\nlong=2\n\n\nx=3\n\n", "a    = 1\nlong = 2\n\nx = 3\n"},
 		{"blocks", "resource aws_instance web {ami=\"x\"}\nz=1", "resource \"aws_instance\" \"web\" {\n  ami = \"x\"\n}\n\nz = 1\n"},
@@ -51,7 +51,7 @@ func TestFormat(t *testing.T) {
 			}
 		})
 	}
-	if got := format(t, nil, terrablade.Options{}); len(got) != 0 {
+	if got := format(t, nil, terrablade.Options{}); string(got) != "\n" {
 		t.Fatalf("Format(nil) = %q", got)
 	}
 }

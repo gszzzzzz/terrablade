@@ -2,7 +2,6 @@ package lowering_test
 
 import (
 	"context"
-	"os"
 	"os/exec"
 	"reflect"
 	"strings"
@@ -127,8 +126,8 @@ func TestNormalizationHeredocTrailingComments(t *testing.T) {
 		if next := renderFile(t, output, 80); next != output {
 			t.Fatalf("not idempotent: %q => %q", output, next)
 		}
-		if os.Getenv("TERRABLADE_COMPARE_TOFU") == "1" {
-			assertOpenTofu(t, output)
+		if referenceCLIEnabled() {
+			assertReferenceFormat(t, output)
 		}
 	}
 }
@@ -136,10 +135,8 @@ func TestNormalizationHeredocTrailingComments(t *testing.T) {
 // The upstream evaluator independently checks values and types. Strict equality
 // catches object-key reinterpretation, reassociation, and shifted splat scope;
 // reparsing alone would accept all three classes of semantic mistake.
-func TestNormalizationOpenTofuSemantics(t *testing.T) {
-	if os.Getenv("TERRABLADE_COMPARE_TOFU") != "1" {
-		t.Skip("set TERRABLADE_COMPARE_TOFU=1 to evaluate with an installed OpenTofu")
-	}
+func TestNormalizationReferenceSemantics(t *testing.T) {
+	reference := referenceCLI(t)
 	var comparisons []string
 	for _, source := range []string{
 		`"${1}"`, `"${true}"`, `"${null}"`, `"${[1, 2]}"`, `"${{a=1}}"`,
@@ -166,19 +163,17 @@ func TestNormalizationOpenTofuSemantics(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	command := exec.CommandContext(ctx, "tofu", "console", "-no-color")
+	command := exec.CommandContext(ctx, reference, "console", "-no-color")
 	command.Dir = t.TempDir()
 	command.Stdin = strings.NewReader("alltrue([" + strings.Join(comparisons, ",") + "])\n")
 	output, err := command.CombinedOutput()
 	if err != nil || strings.TrimSpace(string(output)) != "true" {
-		t.Fatalf("OpenTofu semantic comparison failed: %v\n%s", err, output)
+		t.Fatalf("reference CLI semantic comparison failed: %v\n%s", err, output)
 	}
 }
 
-func TestNormalizationOpenTofuFormatting(t *testing.T) {
-	if os.Getenv("TERRABLADE_COMPARE_TOFU") != "1" {
-		t.Skip("set TERRABLADE_COMPARE_TOFU=1 to compare with an installed OpenTofu")
-	}
+func TestNormalizationReferenceFormatting(t *testing.T) {
+	referenceCLI(t)
 	for _, source := range []string{
 		`"${foo.0.bar}"`, `"${"${a}"}"`, `a - "${b - c}"`, `-"${a+b}"`,
 		`{"${a}"="${b}"}`, `"${x[*].a}".0`, `foo.*.0`, `foo[*].0`,
@@ -189,7 +184,7 @@ func TestNormalizationOpenTofuFormatting(t *testing.T) {
 	} {
 		for _, width := range []int{16, 80} {
 			output := renderFile(t, "value = "+source+"\n", width)
-			assertOpenTofu(t, output)
+			assertReferenceFormat(t, output)
 		}
 	}
 }

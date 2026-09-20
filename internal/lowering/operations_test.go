@@ -1,9 +1,6 @@
 package lowering_test
 
-import (
-	"os"
-	"testing"
-)
+import "testing"
 
 func TestOperationLayouts(t *testing.T) {
 	for _, test := range []struct {
@@ -93,10 +90,8 @@ func TestOperationLayouts(t *testing.T) {
 	}
 }
 
-func TestOperationOpenTofuCompatibility(t *testing.T) {
-	if os.Getenv("TERRABLADE_COMPARE_TOFU") != "1" {
-		t.Skip("set TERRABLADE_COMPARE_TOFU=1 to compare with an installed OpenTofu")
-	}
+func TestOperationReferenceCompatibility(t *testing.T) {
+	referenceCLI(t)
 	for _, source := range []string{
 		"foo.first_attribute.second_attribute", "f(x,y).first_attribute.second_attribute",
 		"-foo.first_attribute.second_attribute", "foo[index_value].attribute_name",
@@ -113,7 +108,7 @@ func TestOperationOpenTofuCompatibility(t *testing.T) {
 	} {
 		for _, width := range []int{1, 16, 80} {
 			output := renderFile(t, "value = "+source+"\n", width)
-			assertOpenTofu(t, output)
+			assertReferenceFormat(t, output)
 			if again := renderFile(t, output, width); again != output {
 				t.Fatalf("not idempotent: %q => %q", output, again)
 			}

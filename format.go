@@ -49,10 +49,10 @@ func (e *OptionsError) Error() string {
 // validating application-specific schemas. HCL JSON is not supported.
 //
 // Format neither modifies source nor retains it after returning. The caller may
-// reuse source after the call; returned nonempty bytes have independent storage.
+// reuse source after the call; returned bytes have independent storage.
 // Concurrent calls are safe when their input buffers are not being modified.
 // Formatting identical input with identical options is deterministic and
-// idempotent. A successful empty result has length zero; its nilness is unspecified.
+// idempotent. Every successful result ends in LF, including an empty input file.
 //
 // Invalid options return an *OptionsError. Lexical, syntax, and parser nesting
 // limit errors return a *ParseError with original-source diagnostics. Every error

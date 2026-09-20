@@ -2,7 +2,6 @@ package lowering_test
 
 import (
 	"context"
-	"os"
 	"os/exec"
 	"strings"
 	"testing"
@@ -88,10 +87,8 @@ func TestTemplateLayouts(t *testing.T) {
 	}
 }
 
-func TestTemplateOpenTofuBoundaryCompatibility(t *testing.T) {
-	if os.Getenv("TERRABLADE_COMPARE_TOFU") != "1" {
-		t.Skip("set TERRABLADE_COMPARE_TOFU=1 to compare with an installed OpenTofu")
-	}
+func TestTemplateReferenceBoundaryCompatibility(t *testing.T) {
+	reference := referenceCLI(t)
 	for _, source := range []string{
 		`"hello ${ a+b } end"`, `"before ${~ a + b ~} after"`,
 		`"%{ if a }yes%{ else }no%{ endif }"`,
@@ -107,15 +104,15 @@ func TestTemplateOpenTofuBoundaryCompatibility(t *testing.T) {
 	} {
 		output := "value = " + render(t, source, 1) + "\n"
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		command := exec.CommandContext(ctx, "tofu", "fmt", "-no-color", "-")
+		command := exec.CommandContext(ctx, reference, "fmt", "-no-color", "-")
 		command.Stdin = strings.NewReader(output)
 		formatted, err := command.CombinedOutput()
 		cancel()
 		if err != nil {
-			t.Fatalf("OpenTofu failed: %v\n%s", err, formatted)
+			t.Fatalf("reference CLI failed: %v\n%s", err, formatted)
 		}
 		if string(formatted) != output {
-			t.Fatalf("OpenTofu changed boundary spacing:\n%q\n=>\n%q", output, formatted)
+			t.Fatalf("reference CLI changed boundary spacing:\n%q\n=>\n%q", output, formatted)
 		}
 	}
 }

@@ -11,10 +11,8 @@ import (
 	"github.com/gszzzzzz/terrablade"
 )
 
-func TestOpenTofuFixedPoints(t *testing.T) {
-	if os.Getenv("TERRABLADE_COMPARE_TOFU") != "1" {
-		t.Skip("set TERRABLADE_COMPARE_TOFU=1 to compare with an installed OpenTofu")
-	}
+func TestReferenceFixedPoints(t *testing.T) {
+	reference := referenceCLI(t)
 	// These fixtures use upstream's indentation convention. Custom indentation
 	// and the narrow exceptions documented in doc.go are not upstream fixed points.
 	for _, source := range []string{
@@ -31,16 +29,30 @@ func TestOpenTofuFixedPoints(t *testing.T) {
 		for _, width := range []int{16, 80} {
 			output := format(t, []byte(source), terrablade.Options{PrintWidth: width})
 			ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
-			command := exec.CommandContext(ctx, "tofu", "fmt", "-no-color", "-")
+			command := exec.CommandContext(ctx, reference, "fmt", "-no-color", "-")
 			command.Stdin = bytes.NewReader(output)
 			formatted, err := command.CombinedOutput()
 			cancel()
 			if err != nil {
-				t.Fatalf("OpenTofu rejected %q: %v\n%s", output, err, formatted)
+				t.Fatalf("reference CLI rejected %q: %v\n%s", output, err, formatted)
 			}
 			if !bytes.Equal(formatted, output) {
-				t.Errorf("OpenTofu changed canonical output: %q => %q", output, formatted)
+				t.Errorf("reference CLI changed canonical output: %q => %q", output, formatted)
 			}
 		}
 	}
+}
+
+func referenceCLI(t testing.TB) string {
+	t.Helper()
+	const environment = "TERRABLADE_REFERENCE_CLI"
+	name := os.Getenv(environment)
+	if name == "" {
+		t.Skip("set " + environment + " to terraform or tofu to run compatibility tests")
+	}
+	path, err := exec.LookPath(name)
+	if err != nil {
+		t.Fatalf("find reference CLI %q: %v", name, err)
+	}
+	return path
 }

@@ -2,7 +2,6 @@ package lowering_test
 
 import (
 	"context"
-	"os"
 	"os/exec"
 	"reflect"
 	"strings"
@@ -16,9 +15,9 @@ import (
 
 func TestFileLayouts(t *testing.T) {
 	for _, test := range []struct{ name, source, want string }{
-		{"empty", "", ""},
-		{"outer whitespace", " \n\t\r\n", ""},
-		{"BOM only", "\ufeff\n\n", ""},
+		{"empty", "", "\n"},
+		{"outer whitespace", " \n\t\r\n", "\n"},
+		{"BOM only", "\ufeff\n\n", "\n"},
 		{"BOM and attribute", "\ufeffa=1", "a = 1\n"},
 		{"final newline", "a=1", "a = 1\n"},
 		{"outer padding", "\n\na=1\n\n\n", "a = 1\n"},
@@ -140,10 +139,8 @@ func TestBodyAlignment(t *testing.T) {
 	}
 }
 
-func TestBodyOpenTofuCompatibility(t *testing.T) {
-	if os.Getenv("TERRABLADE_COMPARE_TOFU") != "1" {
-		t.Skip("set TERRABLADE_COMPARE_TOFU=1 to compare with an installed OpenTofu")
-	}
+func TestBodyReferenceCompatibility(t *testing.T) {
+	referenceCLI(t)
 	for _, source := range []string{
 		"a=1\nlong=2\nz=3",
 		"a=1 # first\nlong=222 # second\nz=3",
@@ -184,23 +181,23 @@ func TestBodyOpenTofuCompatibility(t *testing.T) {
 	} {
 		for _, width := range []int{16, 80} {
 			output := renderFile(t, source, width)
-			assertOpenTofu(t, output)
+			assertReferenceFormat(t, output)
 		}
 	}
 }
 
-func assertOpenTofu(t *testing.T, output string) {
+func assertReferenceFormat(t *testing.T, output string) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	command := exec.CommandContext(ctx, "tofu", "fmt", "-no-color", "-")
+	command := exec.CommandContext(ctx, referenceCLI(t), "fmt", "-no-color", "-")
 	command.Stdin = strings.NewReader(output)
 	formatted, err := command.CombinedOutput()
 	if err != nil {
-		t.Fatalf("OpenTofu failed: %v\n%s", err, formatted)
+		t.Fatalf("reference CLI failed: %v\n%s", err, formatted)
 	}
 	if string(formatted) != output {
-		t.Errorf("OpenTofu changed canonical formatting:\n%q\n=>\n%q", output, formatted)
+		t.Errorf("reference CLI changed canonical formatting:\n%q\n=>\n%q", output, formatted)
 	}
 }
 

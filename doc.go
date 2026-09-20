@@ -3,8 +3,8 @@
 // not manage syntax trees or rendering state. No Terraform/OpenTofu executable,
 // expression evaluation, or application schema is needed. HCL JSON is excluded.
 //
-// Formatting removes outer blank padding and a leading BOM, emits a final LF
-// for nonempty files, and leaves empty or whitespace-only files empty. Attribute
+// Formatting removes outer blank padding and a leading BOM, and emits a final LF
+// for every file, including empty or whitespace-only files. Attribute
 // groups retain at most one source blank line; block boundaries have one blank
 // line. Assignments and trailing comments align within consecutive groups.
 // Comments and literal template content are preserved, including lone CR bytes.
@@ -20,11 +20,12 @@
 //
 // Default indentation follows Terraform/OpenTofu conventions, while width-driven
 // wrapping and canonical blank-line policies are Terrablade's own. Representative
-// default-indent output is tested as an OpenTofu formatting fixed point. Known
-// exceptions include protective spaces between retained legacy numeric steps
-// (OpenTofu 1.12.6 can remove them and reject its own output) and indentation of
-// mandatory comment lines in general quoted templates. Attribute-splat legacy
-// indices are intentionally retained, not modernized across their scope.
+// default-indent output is tested as a formatting fixed point for both tools.
+// Known exceptions include protective spaces between retained legacy numeric
+// steps (OpenTofu 1.12.6 can remove them and reject its own output) and
+// indentation of mandatory comment lines in general quoted templates.
+// Attribute-splat legacy indices are intentionally retained, not modernized
+// across their scope.
 //
 // Diagnostics describe the original bytes, not normalized output. Line and
 // grapheme columns are one-based; byte offsets are zero-based. CRLF is one cluster

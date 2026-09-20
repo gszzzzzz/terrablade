@@ -152,7 +152,11 @@ func body(result syntax.Result, node syntax.SyntaxNode, nested bool, docs map[sy
 	}
 	parts = append(parts, bodyGap(result, trivia, previous, syntax.InvalidNode, nested, endsHeredoc))
 	var end document.Doc
-	if nonempty {
+	// A complete file always owns a final LF, including an empty file. Besides
+	// being a stable textual-file convention, this is the common fixed point of
+	// Terraform and OpenTofu: Terraform turns empty bytes into one LF, while both
+	// tools preserve that LF. Empty nested bodies still render inline as {}.
+	if nonempty || !nested {
 		end = document.HardLine()
 	}
 	return bodyLayout{doc: document.Concat(parts...), end: end}
