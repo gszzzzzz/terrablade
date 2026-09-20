@@ -3,8 +3,8 @@ package lowering
 import (
 	"strings"
 
-	"terrablade/internal/document"
-	"terrablade/internal/syntax"
+	"github.com/gszzzzzz/terrablade/internal/document"
+	"github.com/gszzzzzz/terrablade/internal/syntax"
 )
 
 // Quoted templates, heredocs, and directive bodies share this literal/sequence

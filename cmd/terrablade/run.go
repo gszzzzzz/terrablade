@@ -13,7 +13,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"terrablade"
+	"github.com/gszzzzzz/terrablade"
 )
 
 const (

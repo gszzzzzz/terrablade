@@ -3,7 +3,7 @@ package document_test
 import (
 	"testing"
 
-	"terrablade/internal/document"
+	"github.com/gszzzzzz/terrablade/internal/document"
 )
 
 func TestAlignedCells(t *testing.T) {

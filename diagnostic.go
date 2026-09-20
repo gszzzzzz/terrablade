@@ -8,7 +8,7 @@ import (
 
 	"github.com/clipperhouse/uax29/v2/graphemes"
 
-	"terrablade/internal/syntax"
+	"github.com/gszzzzzz/terrablade/internal/syntax"
 )
 
 // DiagnosticKind is a stable, symbolic error category. Match these values

@@ -4,8 +4,8 @@ import (
 	"errors"
 	"fmt"
 
-	"terrablade/internal/document"
-	"terrablade/internal/syntax"
+	"github.com/gszzzzzz/terrablade/internal/document"
+	"github.com/gszzzzzz/terrablade/internal/syntax"
 )
 
 // Expression lowers node from result to a layout. The caller must supply a node

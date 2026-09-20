@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"terrablade"
+	"github.com/gszzzzzz/terrablade"
 )
 
 func TestRunStdin(t *testing.T) {

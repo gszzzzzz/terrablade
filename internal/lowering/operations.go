@@ -1,8 +1,8 @@
 package lowering
 
 import (
-	"terrablade/internal/document"
-	"terrablade/internal/syntax"
+	"github.com/gszzzzzz/terrablade/internal/document"
+	"github.com/gszzzzzz/terrablade/internal/syntax"
 )
 
 func syntheticParentheses(body document.Doc) document.Doc {

@@ -1,4 +1,4 @@
-module terrablade
+module github.com/gszzzzzz/terrablade
 
 go 1.26.6
 

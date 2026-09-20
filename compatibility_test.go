@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"terrablade"
+	"github.com/gszzzzzz/terrablade"
 )
 
 func TestOpenTofuFixedPoints(t *testing.T) {

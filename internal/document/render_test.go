@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"testing"
 
-	"terrablade/internal/document"
+	"github.com/gszzzzzz/terrablade/internal/document"
 )
 
 func TestRenderLayouts(t *testing.T) {

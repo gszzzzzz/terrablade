@@ -6,7 +6,7 @@ import (
 	"sync"
 	"testing"
 
-	"terrablade/internal/syntax"
+	"github.com/gszzzzzz/terrablade/internal/syntax"
 )
 
 func TestResultPosition(t *testing.T) {

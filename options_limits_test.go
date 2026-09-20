@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"terrablade"
+	"github.com/gszzzzzz/terrablade"
 )
 
 func TestIndentWidthLimits(t *testing.T) {

@@ -4,7 +4,7 @@ import (
 	"errors"
 	"fmt"
 
-	"terrablade"
+	"github.com/gszzzzzz/terrablade"
 )
 
 func ExampleFormat() {

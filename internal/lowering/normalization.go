@@ -1,6 +1,6 @@
 package lowering
 
-import "terrablade/internal/syntax"
+import "github.com/gszzzzzz/terrablade/internal/syntax"
 
 // expressionView is a private, immutable syntax overlay. Original tokens keep
 // their source spans; only canonical delimiters are synthesized. The lossless

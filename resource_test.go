@@ -10,7 +10,7 @@ import (
 	"testing"
 	"unicode/utf8"
 
-	"terrablade"
+	"github.com/gszzzzzz/terrablade"
 )
 
 func FuzzFormat(f *testing.F) {

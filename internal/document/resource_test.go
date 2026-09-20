@@ -8,7 +8,7 @@ import (
 
 	"github.com/clipperhouse/displaywidth"
 
-	"terrablade/internal/document"
+	"github.com/gszzzzzz/terrablade/internal/document"
 )
 
 func TestCompositionOwnershipAndConcurrentRendering(t *testing.T) {

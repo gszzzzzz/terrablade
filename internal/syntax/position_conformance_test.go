@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"terrablade/internal/syntax"
+	"github.com/gszzzzzz/terrablade/internal/syntax"
 )
 
 func TestPositionUnicode17Conformance(t *testing.T) {

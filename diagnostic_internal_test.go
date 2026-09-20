@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"terrablade/internal/syntax"
+	"github.com/gszzzzzz/terrablade/internal/syntax"
 )
 
 func TestDiagnosticMappingExhaustive(t *testing.T) {

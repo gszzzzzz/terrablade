@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"terrablade/internal/document"
-	"terrablade/internal/lowering"
+	"github.com/gszzzzzz/terrablade/internal/document"
+	"github.com/gszzzzzz/terrablade/internal/lowering"
 )
 
 func TestDeepAndWideNormalization(t *testing.T) {

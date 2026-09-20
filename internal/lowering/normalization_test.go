@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"terrablade/internal/document"
-	"terrablade/internal/lowering"
-	"terrablade/internal/syntax"
+	"github.com/gszzzzzz/terrablade/internal/document"
+	"github.com/gszzzzzz/terrablade/internal/lowering"
+	"github.com/gszzzzzz/terrablade/internal/syntax"
 )
 
 func TestExpressionNormalization(t *testing.T) {

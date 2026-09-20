@@ -9,7 +9,7 @@ import (
 
 	"github.com/clipperhouse/uax29/v2/graphemes"
 
-	"terrablade/internal/syntax"
+	"github.com/gszzzzzz/terrablade/internal/syntax"
 )
 
 func TestParseResourceRecovery(t *testing.T) {

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"terrablade"
+	"github.com/gszzzzzz/terrablade"
 )
 
 func TestDiagnosticKinds(t *testing.T) {

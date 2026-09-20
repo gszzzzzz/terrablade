@@ -3,9 +3,9 @@ package terrablade
 import (
 	"fmt"
 
-	"terrablade/internal/document"
-	"terrablade/internal/lowering"
-	"terrablade/internal/syntax"
+	"github.com/gszzzzzz/terrablade/internal/document"
+	"github.com/gszzzzzz/terrablade/internal/lowering"
+	"github.com/gszzzzzz/terrablade/internal/syntax"
 )
 
 // Options controls formatting. Each zero field selects its default.

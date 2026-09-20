@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"terrablade"
+	"github.com/gszzzzzz/terrablade"
 )
 
 func TestRunWrite(t *testing.T) {

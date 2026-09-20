@@ -3,7 +3,7 @@ package syntax_test
 import (
 	"fmt"
 
-	"terrablade/internal/syntax"
+	"github.com/gszzzzzz/terrablade/internal/syntax"
 )
 
 func ExampleParse() {

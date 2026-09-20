@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"terrablade"
+	"github.com/gszzzzzz/terrablade"
 )
 
 // Keep callers on the supported interface: all tests in this package import

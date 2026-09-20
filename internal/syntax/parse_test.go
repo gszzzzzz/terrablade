@@ -7,7 +7,7 @@ import (
 	"sync"
 	"testing"
 
-	"terrablade/internal/syntax"
+	"github.com/gszzzzzz/terrablade/internal/syntax"
 )
 
 func TestParse(t *testing.T) {

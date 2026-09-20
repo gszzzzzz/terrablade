@@ -3,8 +3,8 @@ package lowering
 import (
 	"errors"
 
-	"terrablade/internal/document"
-	"terrablade/internal/syntax"
+	"github.com/gszzzzzz/terrablade/internal/document"
+	"github.com/gszzzzzz/terrablade/internal/syntax"
 )
 
 // File lowers a complete native HCL file, including body comments and its final

@@ -3,7 +3,7 @@ package syntax_test
 import (
 	"testing"
 
-	"terrablade/internal/syntax"
+	"github.com/gszzzzzz/terrablade/internal/syntax"
 )
 
 func TestDiagnosticMessagesFromParse(t *testing.T) {
