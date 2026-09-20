@@ -1,7 +1,10 @@
 package syntax
 
-// forExpression preserves the concrete tuple/object form instead of evaluating
-// its projection. Bindings and contextual keywords remain Identifier tokens.
+// forExpression parses a tuple or object for expression whose opener is at the
+// cursor. It preserves the concrete tuple/object form instead of evaluating its
+// projection. Bindings and contextual keywords remain Identifier tokens. The
+// key/value arrow and the grouping ellipsis are parsed in both forms and
+// diagnosed in the tuple form, so the tree keeps their bytes either way.
 func (p *parser) forExpression(b *nodeBuilder) {
 	open := p.current().kind
 	close, missingClose := CloseBracket, ExpectedClosingBracket
@@ -16,13 +19,13 @@ func (p *parser) forExpression(b *nodeBuilder) {
 		return
 	}
 
-	p.operand(b, 0, delimitedExpression)
+	p.operand(b, lowestPower, delimitedExpression)
 	if p.peek(delimitedExpression) == Arrow {
 		if open == OpenBracket {
 			p.report(UnexpectedForKey, p.tokens[p.look(delimitedExpression)].span)
 		}
 		p.consumeLookahead(b, delimitedExpression)
-		p.operand(b, 0, delimitedExpression)
+		p.operand(b, lowestPower, delimitedExpression)
 	} else if open == OpenBrace {
 		p.report(ExpectedForArrow, p.tokens[p.look(delimitedExpression)].span)
 	}
@@ -34,8 +37,9 @@ func (p *parser) forExpression(b *nodeBuilder) {
 	}
 	if p.keyword("if", delimitedExpression) {
 		p.consumeLookahead(b, delimitedExpression)
-		p.operand(b, 0, delimitedExpression)
+		p.operand(b, lowestPower, delimitedExpression)
 	}
+
 	if !p.expect(b, close, missingClose, delimitedExpression) {
 		// A for-expression has no item separators. Recover its remaining tail as
 		// one region rather than interpreting a stray comma as a new projection.
@@ -46,8 +50,9 @@ func (p *parser) forExpression(b *nodeBuilder) {
 	}
 }
 
-// The same bindings/in/collection grammar introduces template for directives.
-// Callers consume `for` and supply their own following ':' or template closer.
+// forIntroduction parses the bindings, "in", and collection that follow a for
+// keyword. The same grammar introduces template for directives. Callers consume
+// `for` and supply their own following ':' or template closer.
 func (p *parser) forIntroduction(b *nodeBuilder) bool {
 	if !p.expect(b, Identifier, ExpectedForVariable, delimitedExpression) {
 		return false
@@ -58,11 +63,12 @@ func (p *parser) forIntroduction(b *nodeBuilder) bool {
 			return false
 		}
 	}
+
 	if !p.keyword("in", delimitedExpression) {
 		p.report(ExpectedForIn, p.tokens[p.look(delimitedExpression)].span)
 		return false
 	}
 	p.consumeLookahead(b, delimitedExpression)
-	p.operand(b, 0, delimitedExpression)
+	p.operand(b, lowestPower, delimitedExpression)
 	return true
 }

@@ -8,6 +8,7 @@ func (p *parser) recoverUntil(parent *nodeBuilder, context expressionContext, st
 	if stops.has(p.peek(context)) {
 		return
 	}
+
 	p.consumeUntil(parent, p.look(context))
 	b := p.begin()
 	for !stops.has(p.peek(context)) {
@@ -29,6 +30,7 @@ func (p *parser) skipConstruct(b *nodeBuilder) {
 	if p.halted {
 		return
 	}
+
 	// Raw tokens preserve template whitespace and delimiters in the ErrorNode subtree;
 	// expression lookahead would interpret trivia in the wrong sub-language.
 	// An unterminated construct still ends at its last non-trivia token, so the
@@ -56,6 +58,9 @@ func (p *parser) skipConstruct(b *nodeBuilder) {
 	p.consumeUntil(b, end)
 }
 
+// closing returns the token kind that balances an opener, or Invalid for any
+// other kind. Template openers close with TemplateSequenceEnd, so recovery can
+// skip a whole interpolation or directive as one construct.
 func closing(kind TokenKind) TokenKind {
 	switch kind {
 	case OpenParen:

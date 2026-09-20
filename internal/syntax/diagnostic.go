@@ -1,5 +1,10 @@
 package syntax
 
+import (
+	"cmp"
+	"slices"
+)
+
 var diagnosticMessages = [diagnosticKindCount]string{
 	InvalidUTF8:                  "Invalid UTF-8 encoding.",
 	InvalidCharacter:             "Invalid character.",
@@ -59,4 +64,14 @@ func (k DiagnosticKind) Message() string {
 		return diagnosticMessages[k]
 	}
 	return "Unknown diagnostic."
+}
+
+// sortDiagnostics orders diagnostics by starting offset. The sort is stable
+// so that, at equal offsets, each phase keeps its own reporting order and the
+// lexical diagnostics stay ahead of the parser diagnostics appended after
+// them, which is the order Result.Diagnostics promises.
+func sortDiagnostics(diagnostics []Diagnostic) {
+	slices.SortStableFunc(diagnostics, func(a, b Diagnostic) int {
+		return cmp.Compare(a.Span.Start, b.Span.Start)
+	})
 }

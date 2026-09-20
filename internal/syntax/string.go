@@ -2,6 +2,10 @@ package syntax
 
 import "strconv"
 
+// The name tables are indexed by kind and sized by each enumeration's count,
+// so an index past the count fails to compile. A kind left out of a table gets
+// an empty name, which the enum-name tests catch; the String methods treat it
+// like an unknown value and fall back to a numeric form.
 var tokenKindNames = [tokenKindCount]string{
 	Invalid:             "Invalid",
 	EOF:                 "EOF",

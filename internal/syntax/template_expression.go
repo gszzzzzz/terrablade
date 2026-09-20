@@ -1,14 +1,17 @@
 package syntax
 
-// templateExpression keeps literal spelling, escapes, strip markers, and
-// heredoc indentation untouched. Only interpolation contents enter the ordinary
+// templateExpression parses a quoted template or heredoc whose opener is at
+// the cursor. It keeps literal spelling, escapes, strip markers, and heredoc
+// indentation untouched. Only interpolation contents enter the ordinary
 // expression grammar; literal template bytes are never expression trivia.
+// Directive scopes are tracked by templateNesting rather than by recursion.
 func (p *parser) templateExpression(b *nodeBuilder) {
 	close := QuoteClose
 	if p.current().kind == HeredocOpen {
 		close = HeredocEndMarker
 	}
 	p.consumeUntil(b, p.pos+1)
+
 	// Builders are cursor snapshots. Copying the root avoids making every
 	// caller's expression builder escape to the heap through the scope stack.
 	nesting := templateNesting{root: *b, lastIf: -1, lastFor: -1}
@@ -51,17 +54,19 @@ func (p *parser) templateExpression(b *nodeBuilder) {
 	}
 }
 
+// interpolation parses one ${...} sequence whose opener is at the cursor.
 func (p *parser) interpolation(parent *nodeBuilder) {
 	b := p.begin()
 	p.templateSequenceOpen(&b)
 	// Interpolations permit newlines even inside a quoted, single-line template.
-	p.operand(&b, 0, delimitedExpression)
+	p.operand(&b, lowestPower, delimitedExpression)
 	p.templateSequenceEnd(&b)
 	parent.node(b.finish(TemplateInterpolation))
 }
 
-// Only a strip marker immediately after the opener belongs to its opening edge.
-// Any later marker is before the closing brace, even across expression trivia.
+// templateSequenceOpen consumes the opener and an opening strip marker. Only a
+// strip marker immediately after the opener belongs to its opening edge. Any
+// later marker is before the closing brace, even across expression trivia.
 func (p *parser) templateSequenceOpen(b *nodeBuilder) {
 	p.consumeUntil(b, p.pos+1)
 	if p.current().kind == StripMarker {
@@ -69,12 +74,17 @@ func (p *parser) templateSequenceOpen(b *nodeBuilder) {
 	}
 }
 
+// templateSequenceEnd consumes a closing strip marker and the closing brace of
+// an interpolation or directive header. Material the expression left before
+// the closer becomes one ErrorNode bounded by the template's own closers, so a
+// broken sequence cannot swallow the template's closing quote or marker.
 func (p *parser) templateSequenceEnd(b *nodeBuilder) {
 	kind := p.peek(delimitedExpression)
 	if kind != TemplateSequenceEnd && kind != StripMarker && kind != EOF {
 		p.report(ExpectedTemplateSequenceEnd, p.tokens[p.look(delimitedExpression)].span)
 		p.recoverUntil(b, delimitedExpression, templateBoundaries)
 	}
+
 	if p.peek(delimitedExpression) == StripMarker {
 		p.consumeLookahead(b, delimitedExpression)
 	}

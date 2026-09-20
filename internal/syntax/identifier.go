@@ -16,15 +16,21 @@ import "sort"
 
 type runeRange struct{ lo, hi rune }
 
+// inRanges reports whether r falls in one of the sorted, non-overlapping
+// ranges, by binary search on the range ends.
 func inRanges(r rune, ranges []runeRange) bool {
 	i := sort.Search(len(ranges), func(i int) bool { return ranges[i].hi >= r })
 	return i < len(ranges) && ranges[i].lo <= r
 }
 
+// identifierStart reports whether r may begin an identifier: ID_Start or the
+// HCL addition '_'.
 func identifierStart(r rune) bool {
 	return r == '_' || inRanges(r, idStart[:])
 }
 
+// identifierContinue reports whether r may continue an identifier: ID_Continue
+// or the HCL addition '-'.
 func identifierContinue(r rune) bool {
 	return r == '-' || inRanges(r, idContinue[:])
 }

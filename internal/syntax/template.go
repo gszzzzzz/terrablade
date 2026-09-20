@@ -2,30 +2,59 @@ package syntax
 
 import "unicode/utf8"
 
+// Template sequence openers. Both are two bytes long, which templateExpression
+// relies on to find a strip marker directly after the opener without knowing
+// which one started the frame.
+const (
+	interpolationOpener = "${"
+	directiveOpener     = "%{"
+)
+
+// mode identifies the sub-language the lexer is scanning. Configuration mode
+// has no frame; each template construct pushes a frame until its closer.
 type mode uint8
 
 const (
+	// modeQuoted is inside "...": literal text until the closing quote.
 	modeQuoted mode = iota
+	// modeExpression is inside ${...} or %{...}: configuration tokens until
+	// the brace that balances the opener.
 	modeExpression
+	// modeHeredoc is inside a heredoc: literal text until the marker line.
 	modeHeredoc
 )
 
-// Each nested expression owns its brace depth. A slice, rather than recursive
-// scanning, keeps deeply nested templates from exhausting the Go call stack.
+// modeFrame records one open template construct. Each nested expression owns
+// its brace depth. A slice, rather than recursive scanning, keeps deeply nested
+// templates from exhausting the Go call stack.
 type modeFrame struct {
-	mode   mode
-	start  int
+	mode mode
+	// start is the offset of the opener, where an unterminated construct is
+	// diagnosed once the source ends.
+	start int
+	// braces counts unclosed '{' inside a modeExpression frame so that an
+	// object constructor's brace does not end the sequence. Other modes leave
+	// it zero.
 	braces int
+	// marker is the heredoc delimiter's span. heredoc compares the cursor with
+	// it to tell which header token is due. Other modes leave it empty.
 	marker Span
 }
 
 func (l *lexer) popMode() { l.modes = l.modes[:len(l.modes)-1] }
 
+// templateExpression scans one token inside ${...} or %{...}. Only the strip
+// marker and the brace that closes the sequence differ from configuration
+// mode; everything else is delegated to config so the parser sees the
+// ordinary expression grammar.
 func (l *lexer) templateExpression() TokenKind {
 	frame := &l.modes[len(l.modes)-1]
 	switch l.source[l.offset] {
 	case '~':
-		if l.offset == frame.start+2 || (frame.braces == 0 && l.has("~}")) {
+		// A '~' is a strip marker only at the sequence's edges: directly after
+		// the opener, or directly before the closing brace at depth zero. Any
+		// other '~' falls through to config, which reports InvalidCharacter.
+		if l.offset == frame.start+len(interpolationOpener) || (frame.braces == 0 && l.has("~}")) {
 			l.offset++
 			return StripMarker
 		}
@@ -39,11 +68,15 @@ func (l *lexer) templateExpression() TokenKind {
 	case '{':
 		frame.braces++
 	}
+
 	// Newlines inside an interpolation are ordinary Newline tokens. The parser
 	// uses delimitedExpression rules here, just like inside parentheses or brackets.
 	return l.config()
 }
 
+// quoted scans one token inside a quoted template. A literal run stops at the
+// closing quote and at template openers, which the next call handles, so the
+// text between them is one TemplateText token with its escapes left encoded.
 func (l *lexer) quoted() TokenKind {
 	if l.source[l.offset] == '"' {
 		l.offset++
@@ -53,8 +86,9 @@ func (l *lexer) quoted() TokenKind {
 	if kind, ok := l.templateOpen(); ok {
 		return kind
 	}
+
 	for l.offset < len(l.source) {
-		if l.source[l.offset] == '"' || l.has("${") || l.has("%{") {
+		if l.source[l.offset] == '"' || l.has(interpolationOpener) || l.has(directiveOpener) {
 			break
 		}
 		if l.escapedIntroducer() {
@@ -65,6 +99,9 @@ func (l *lexer) quoted() TokenKind {
 			continue
 		}
 		if l.source[l.offset] == '\n' || l.source[l.offset] == '\r' {
+			// A literal newline is an error, but the template still runs on to
+			// its closing quote: ending the run here would leave that quote to
+			// open a new template and the next line to be lexed inside it.
 			start := l.offset
 			if l.has("\r\n") {
 				l.offset++
@@ -78,18 +115,22 @@ func (l *lexer) quoted() TokenKind {
 	return TemplateText
 }
 
+// templateOpen enters expression mode at a "${" or "%{" opener and reports
+// which one it consumed. It is shared by quoted templates and heredocs.
 func (l *lexer) templateOpen() (TokenKind, bool) {
 	kind := InterpolationOpen
-	if l.has("%{") {
+	if l.has(directiveOpener) {
 		kind = DirectiveOpen
-	} else if !l.has("${") {
+	} else if !l.has(interpolationOpener) {
 		return Invalid, false
 	}
 	l.modes = append(l.modes, modeFrame{mode: modeExpression, start: l.offset})
-	l.offset += 2
+	l.offset += len(interpolationOpener)
 	return kind, true
 }
 
+// escapedIntroducer skips "$${" or "%%{", the escaped spellings of the template
+// openers. They remain literal text; decoding them to "${" is a consumer's job.
 func (l *lexer) escapedIntroducer() bool {
 	if l.has("$${") || l.has("%%{") {
 		l.offset += 3
@@ -98,9 +139,11 @@ func (l *lexer) escapedIntroducer() bool {
 	return false
 }
 
-// Escapes remain part of TemplateText. Validation does not decode or normalize
-// source; malformed escape boundaries leave quotes and introducers available
-// to the next scan iteration.
+// quotedEscape validates one backslash escape and leaves it encoded inside the
+// TemplateText token: the tree must reproduce the original spelling, so
+// decoding and normalizing belong to consumers. A malformed escape ends where
+// validation stopped, which leaves a following quote or template opener for
+// the next scan iteration instead of swallowing it into the bad escape.
 func (l *lexer) quotedEscape() {
 	start := l.offset
 	l.offset++
@@ -108,6 +151,7 @@ func (l *lexer) quotedEscape() {
 		l.error(InvalidEscape, start, l.offset)
 		return
 	}
+
 	c := l.source[l.offset]
 	switch c {
 	case 'n', 'r', 't', '"', '\\':
@@ -133,7 +177,9 @@ func (l *lexer) quotedEscape() {
 			value = value*16 + digit
 			l.offset++
 		}
-		if value > utf8.MaxRune || value >= 0xD800 && value <= 0xDFFF {
+		// Surrogate code points and values past the Unicode range have no
+		// UTF-8 encoding, so no consumer could decode them.
+		if value > utf8.MaxRune || (value >= 0xD800 && value <= 0xDFFF) {
 			l.error(InvalidEscape, start, l.offset)
 		}
 	default:

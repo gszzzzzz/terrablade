@@ -116,6 +116,9 @@ var publicDiagnosticKinds = [syntax.DiagnosticKindCount]DiagnosticKind{
 	syntax.DuplicateAttribute:           DuplicateAttribute,
 }
 
+// publicDiagnosticKind translates an internal kind through the explicit map
+// above. An unmapped kind is a programming error: panicking here keeps a new
+// internal kind from leaking into the public vocabulary under its own name.
 func publicDiagnosticKind(kind syntax.DiagnosticKind) DiagnosticKind {
 	if kind >= syntax.DiagnosticKindCount || publicDiagnosticKinds[kind] == "" {
 		panic(fmt.Sprintf("terrablade: internal invariant: unmapped diagnostic kind %s", kind))
@@ -174,6 +177,9 @@ func (e *ParseError) Error() string {
 // at equal offsets. Remaining ties retain their reporting order.
 func (e *ParseError) Diagnostics() []Diagnostic { return slices.Clone(e.diagnostics) }
 
+// newParseError converts internal diagnostics, which carry byte offsets only,
+// into public ones with line and column. The public diagnostics are built
+// first so that locate can fill both ends of every span in place.
 func newParseError(source string, parsed []syntax.Diagnostic) *ParseError {
 	diagnostics := make([]Diagnostic, len(parsed))
 	endpoints := make([]*Position, 0, 2*len(parsed))
@@ -184,14 +190,23 @@ func newParseError(source string, parsed []syntax.Diagnostic) *ParseError {
 		}
 		endpoints = append(endpoints, &diagnostics[i].Span.Start, &diagnostics[i].Span.End)
 	}
+
 	locate(source, endpoints)
 	return &ParseError{diagnostics: diagnostics}
 }
 
-// Resolve every endpoint in one source scan. Repeated single-position lookups
-// would make error reporting quadratic for an input with many diagnostics.
+// locate fills in Line and Column for every endpoint in one scan of source.
+// Repeated single-position lookups would make error reporting quadratic for
+// an input with many diagnostics.
 func locate(source string, endpoints []*Position) {
+	// The scan visits offsets in increasing order, so the endpoints must be
+	// consumed in the same order.
 	slices.SortFunc(endpoints, func(a, b *Position) int { return a.Offset - b.Offset })
+
+	// accept records that the cluster ending at end has been consumed: every
+	// endpoint inside it receives the cluster's starting position, because an
+	// offset within a cluster shares that cluster's column. Then the position
+	// advances past the cluster.
 	line, column, next := 1, 1, 0
 	accept := func(end int, newline bool) {
 		for next < len(endpoints) && endpoints[next].Offset < end {
@@ -204,6 +219,7 @@ func locate(source string, endpoints []*Position) {
 			column++
 		}
 	}
+
 	for start := 0; start < len(source); {
 		// Grapheme iteration assumes valid UTF-8. Invalid bytes each own a
 		// column and separate surrounding clusters, matching parser positions.
@@ -220,12 +236,16 @@ func locate(source string, endpoints []*Position) {
 			start++
 			continue
 		}
+
 		clusters := graphemes.FromString(source[start:end])
 		for clusters.Next() {
 			accept(start+clusters.End(), strings.HasSuffix(clusters.Value(), "\n"))
 		}
 		start = end
 	}
+
+	// Whatever remains lies at EOF, which is a valid position one past the
+	// final cluster.
 	for _, endpoint := range endpoints[next:] {
 		endpoint.Line, endpoint.Column = line, column
 	}

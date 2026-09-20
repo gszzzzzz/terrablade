@@ -5,12 +5,13 @@ import (
 	"os"
 )
 
+// readFile reads a regular file. Anything else is rejected before it is
+// opened: in particular, opening a FIFO would block until a writer appears.
 func readFile(path string) ([]byte, error) {
 	info, err := os.Stat(path)
 	if err != nil {
 		return nil, err
 	}
-	// In particular, reject a FIFO before opening it could block for a writer.
 	if !info.Mode().IsRegular() {
 		return nil, errors.New("input is not a regular file")
 	}
@@ -26,6 +27,9 @@ func writeFile(path string, formatted []byte) error {
 	if err != nil {
 		return err
 	}
+
+	// Close always runs, even after a failed write, and neither failure hides
+	// the other; reportError prints a joined error in full.
 	_, writeErr := file.Write(formatted)
 	closeErr := file.Close()
 	if writeErr != nil && closeErr != nil {

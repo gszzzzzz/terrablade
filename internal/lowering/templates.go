@@ -7,8 +7,10 @@ import (
 	"github.com/gszzzzzz/terrablade/internal/syntax"
 )
 
-// Quoted templates, heredocs, and directive bodies share this literal/sequence
-// composition. No synthesized whitespace escapes a sequence into literal text.
+// templateParts lowers a quoted template, heredoc, or directive body: literal
+// chunks alternate with already-lowered sequences. Quoted templates,
+// heredocs, and directive bodies share this composition, and no synthesized
+// whitespace escapes a sequence into literal text (doc.go: Templates).
 func templateParts(result syntax.Result, node *expressionView, docs map[*expressionView]layout) layout {
 	parts := make([]document.Doc, 0, node.ChildCount())
 	heredoc := false
@@ -21,8 +23,9 @@ func templateParts(result syntax.Result, node *expressionView, docs map[*express
 				heredoc = true
 			}
 			if token.Kind() == syntax.HeredocEndMarker && strings.HasSuffix(text, "\r") && strings.HasPrefix(result.Source()[token.Span().End:], "\r\n") {
-				// As with literal CR runs, retain the line-ending CR when removing
-				// it would fuse the preceding literal CR with the enclosing LF.
+				// As with literal CR runs, retain the line-ending CR when
+				// removing it would fuse the preceding literal CR with the
+				// enclosing LF.
 				parts = append(parts, document.Text("\r"))
 			}
 		} else {
@@ -30,10 +33,18 @@ func templateParts(result syntax.Result, node *expressionView, docs map[*express
 			parts = append(parts, docs[nested].doc)
 		}
 	}
+
 	// The marker's terminating newline belongs to the enclosing gap (or body).
 	return layout{doc: document.Concat(parts...), endsHeredoc: heredoc}
 }
 
+// templateSequence lays out one ${ } interpolation or %{ } directive. Strip
+// markers belong to the opener and closer so their spelling is preserved. The
+// contents are forced flat, keeping only mandatory comment and heredoc lines
+// (doc.go: Templates). An object brace adjacent to a boundary gets a space,
+// as in ${ { key = value } } (doc.go: Templates;
+// TestTemplateReferenceBoundaryCompatibility checks the reference formatter
+// accepts it); a comment at the boundary already separates the tokens.
 func templateSequence(result syntax.Result, pieces []piece) document.Doc {
 	start, end := 1, len(pieces)-1
 	if pieces[start].token && pieces[start].kind == syntax.StripMarker {
@@ -43,7 +54,8 @@ func templateSequence(result syntax.Result, pieces []piece) document.Doc {
 		end--
 	}
 	opener := sequence(result, pieces[:start])
-	content := append([]piece(nil), pieces[start:end]...)
+
+	content, contentTrivia := detachLeading(pieces[start:end])
 	leadingEdge, trailingEdge := tight, tight
 	// A brace adjacent to a sequence boundary gets a visible separator, also
 	// with strip markers. Comments supply their own token boundary instead.
@@ -53,11 +65,12 @@ func templateSequence(result syntax.Result, pieces []piece) document.Doc {
 	if content[len(content)-1].child.endsBrace {
 		trailingEdge = space
 	}
-	leading, first := commentGap(result, content[0].before, gapStyle{empty: leadingEdge, beforeComment: soft, afterComment: space})
-	content[0].before = nil
-	trailing, last := commentGap(result, pieces[end].before, gapStyle{empty: trailingEdge, beforeComment: space, afterComment: soft, requiredLine: content[len(content)-1].child.endsHeredoc})
-	closer := append([]piece(nil), pieces[end:]...)
-	closer[0].before = nil
+	// Both boundary gaps break softly around a comment rather than taking
+	// the brace space, since the comment itself already separates the tokens.
+	leading, first := commentGap(result, contentTrivia, gapStyle{empty: leadingEdge, beforeComment: soft, afterComment: space})
+	closer, closerTrivia := detachLeading(pieces[end:])
+	trailing, last := commentGap(result, closerTrivia, gapStyle{empty: trailingEdge, beforeComment: space, afterComment: soft, requiredLine: content[len(content)-1].child.endsHeredoc})
+
 	// Width-driven newlines in sequences can change template indentation
 	// semantics. Keep all nested groups flat, retaining only mandatory lines.
 	return document.ForceFlat(document.Concat(opener,

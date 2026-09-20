@@ -2,7 +2,6 @@ package syntax
 
 import (
 	"bytes"
-	"sort"
 	"unicode/utf8"
 )
 
@@ -18,33 +17,43 @@ func lex(source []byte) lexResult {
 		kind := l.scan()
 		l.result.Tokens = append(l.result.Tokens, SyntaxToken{kind: kind, span: Span{start, l.offset}})
 	}
+
 	// Diagnose every still-open template frame at its opener, without inventing
 	// closing tokens or discarding the already-tokenized partial contents.
 	for _, frame := range l.modes {
 		kind, width := UnterminatedQuotedTemplate, 1
 		switch frame.mode {
 		case modeExpression:
-			kind, width = UnterminatedTemplateSequence, 2
+			kind, width = UnterminatedTemplateSequence, len(interpolationOpener)
 		case modeHeredoc:
 			kind, width = UnterminatedHeredoc, frame.marker.Start-frame.start
 		}
 		l.error(kind, frame.start, frame.start+width)
 	}
+
 	l.result.Tokens = append(l.result.Tokens, SyntaxToken{kind: EOF, span: Span{len(source), len(source)}})
-	// A whole-comment error may precede an encoding error found inside it.
-	sort.SliceStable(l.result.Diagnostics, func(i, j int) bool {
-		return l.result.Diagnostics[i].Span.Start < l.result.Diagnostics[j].Span.Start
-	})
+	// An unterminated block comment is reported after the encoding errors found
+	// inside it, yet its span starts before theirs, so the order needs fixing.
+	sortDiagnostics(l.result.Diagnostics)
 	return l.result
 }
 
+// lexer scans one source buffer from its start. Each scanning method produces
+// one token and advances offset; lex records the span it covered.
 type lexer struct {
 	source []byte
+	// offset is the next unread byte. Every scan advances it by at least one
+	// byte, which is what guarantees termination on arbitrary input.
 	offset int
+	// result accumulates tokens and diagnostics in the order they are found.
 	result lexResult
-	modes  []modeFrame
+	// modes holds the open template constructs, innermost last. An empty
+	// stack means configuration mode.
+	modes []modeFrame
 }
 
+// scan produces the next token in the innermost open template mode, or in
+// configuration mode when no template construct is open.
 func (l *lexer) scan() TokenKind {
 	if len(l.modes) > 0 {
 		switch l.modes[len(l.modes)-1].mode {
@@ -59,6 +68,15 @@ func (l *lexer) scan() TokenKind {
 	return l.config()
 }
 
+// byteOrderMark is U+FEFF. Only a leading one is meaningful, but the lexer
+// records every occurrence as a BOM token and leaves placement to the parser.
+const byteOrderMark rune = 0xFEFF
+
+// config scans one token of the configuration sub-language, which is also the
+// language inside ${...} and %{...} sequences. It works in two phases: the
+// byte switch handles every construct that begins with a specific ASCII byte,
+// then the remainder decodes one rune, because BOM, identifiers, and invalid
+// characters are defined on code points rather than bytes.
 func (l *lexer) config() TokenKind {
 	c := l.source[l.offset]
 	switch {
@@ -86,7 +104,7 @@ func (l *lexer) config() TokenKind {
 		l.modes = append(l.modes, modeFrame{mode: modeQuoted, start: l.offset})
 		l.offset++
 		return QuoteOpen
-	case l.has("<<"):
+	case l.has(heredocIntroducer):
 		// A complete marker commits template mode; otherwise consume only the
 		// first '<' so the second remains available to the next scan.
 		if marker, ok := l.heredocOpener(); ok {
@@ -102,7 +120,7 @@ func (l *lexer) config() TokenKind {
 	}
 
 	r, width := utf8.DecodeRune(l.source[l.offset:])
-	if r == '\uFEFF' {
+	if r == byteOrderMark {
 		l.offset += width
 		return BOM
 	}
@@ -121,15 +139,19 @@ func (l *lexer) config() TokenKind {
 		l.offset += width
 		return kind
 	}
+
 	start := l.offset
 	l.advanceRune()
 	// advanceRune already reports malformed encoding; do not double-label it.
-	if !(r == utf8.RuneError && width == 1) {
+	if !isEncodingError(r, width) {
 		l.error(InvalidCharacter, start, l.offset)
 	}
 	return Invalid
 }
 
+// blockComment scans from "/*" through "*/". An unterminated comment keeps the
+// BlockComment kind through EOF so its source remains recognizable; the
+// diagnostic then covers the whole comment.
 func (l *lexer) blockComment() TokenKind {
 	start := l.offset
 	l.offset += 2
@@ -179,10 +201,42 @@ func (l *lexer) number() {
 
 func digit(c byte) bool { return c >= '0' && c <= '9' }
 
+// singlePunctuation maps an ASCII byte to its one-byte operator or delimiter.
+// Unlisted bytes map to Invalid.
+var singlePunctuation = [256]TokenKind{
+	'{': OpenBrace,
+	'}': CloseBrace,
+	'[': OpenBracket,
+	']': CloseBracket,
+	'(': OpenParen,
+	')': CloseParen,
+	'+': Plus,
+	'-': Minus,
+	'*': Star,
+	'/': Slash,
+	'%': Percent,
+	'!': Bang,
+	'=': Equal,
+	'<': Less,
+	'>': Greater,
+	':': Colon,
+	'?': Question,
+	'.': Dot,
+	',': Comma,
+}
+
+// punctuation matches the longest operator or delimiter at the cursor without
+// consuming it, so config decides how to record it. A zero width means none.
+// Every punctuation token passes through here, so the two-byte operators are
+// a switch on the byte pair rather than a table scan: the sequential prefix
+// comparisons of a table cost the lexer about ten percent on operator-heavy
+// input. They are tested before the one-byte table so that, for example, "=="
+// cannot lex as two Equal tokens.
 func (l *lexer) punctuation() (TokenKind, int) {
 	if l.has("...") {
 		return Ellipsis, 3
 	}
+
 	if len(l.source)-l.offset >= 2 {
 		switch string(l.source[l.offset : l.offset+2]) {
 		case "&&":
@@ -203,45 +257,9 @@ func (l *lexer) punctuation() (TokenKind, int) {
 			return DoubleColon, 2
 		}
 	}
-	switch l.source[l.offset] {
-	case '{':
-		return OpenBrace, 1
-	case '}':
-		return CloseBrace, 1
-	case '[':
-		return OpenBracket, 1
-	case ']':
-		return CloseBracket, 1
-	case '(':
-		return OpenParen, 1
-	case ')':
-		return CloseParen, 1
-	case '+':
-		return Plus, 1
-	case '-':
-		return Minus, 1
-	case '*':
-		return Star, 1
-	case '/':
-		return Slash, 1
-	case '%':
-		return Percent, 1
-	case '!':
-		return Bang, 1
-	case '=':
-		return Equal, 1
-	case '<':
-		return Less, 1
-	case '>':
-		return Greater, 1
-	case ':':
-		return Colon, 1
-	case '?':
-		return Question, 1
-	case '.':
-		return Dot, 1
-	case ',':
-		return Comma, 1
+
+	if kind := singlePunctuation[l.source[l.offset]]; kind != Invalid {
+		return kind, 1
 	}
 	return Invalid, 0
 }
@@ -254,10 +272,15 @@ func (l *lexer) advanceRune() {
 	start := l.offset
 	r, width := utf8.DecodeRune(l.source[start:])
 	l.offset += width
-	if r == utf8.RuneError && width == 1 {
+	if isEncodingError(r, width) {
 		l.error(InvalidUTF8, start, l.offset)
 	}
 }
+
+// isEncodingError reports whether a utf8 decode result denotes a malformed
+// byte rather than a genuine U+FFFD: the decoders return RuneError with width
+// one only for invalid input, while an encoded U+FFFD has width three.
+func isEncodingError(r rune, width int) bool { return r == utf8.RuneError && width == 1 }
 
 func (l *lexer) error(kind DiagnosticKind, start, end int) {
 	l.result.Diagnostics = append(l.result.Diagnostics, Diagnostic{Kind: kind, Span: Span{start, end}})

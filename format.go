@@ -37,6 +37,8 @@ type OptionsError struct {
 	Value  int
 }
 
+// Error names the limit that was violated: a value above the spacing cap is
+// reported as such, and any other invalid value can only be negative.
 func (e *OptionsError) Error() string {
 	if (e.Option == "IndentWidth" || e.Option == "TabWidth") && e.Value > maxSpacingWidth {
 		return fmt.Sprintf("terrablade: %s must not exceed %d (got %d)", e.Option, maxSpacingWidth, e.Value)
@@ -60,22 +62,15 @@ func (e *OptionsError) Error() string {
 // never formatted. Filenames and diagnostic presentation belong to callers.
 // Format performs no I/O.
 func Format(source []byte, options Options) ([]byte, error) {
-	for _, option := range []struct {
-		name  string
-		value int
-	}{
-		{"PrintWidth", options.PrintWidth},
-		{"IndentWidth", options.IndentWidth},
-		{"TabWidth", options.TabWidth},
-	} {
-		if option.value < 0 || option.name != "PrintWidth" && option.value > maxSpacingWidth {
-			return nil, &OptionsError{Option: option.name, Value: option.value}
-		}
+	if err := options.validate(); err != nil {
+		return nil, err
 	}
+
 	result := syntax.Parse(source)
 	if diagnostics := result.Diagnostics(); len(diagnostics) != 0 {
 		return nil, newParseError(result.Source(), diagnostics)
 	}
+
 	doc, err := lowering.File(result)
 	if err != nil {
 		// Lowering supports every diagnostic-free native-HCL parse. Failure
@@ -85,4 +80,24 @@ func Format(source []byte, options Options) ([]byte, error) {
 	return []byte(document.Render(doc, document.Options{
 		PrintWidth: options.PrintWidth, IndentWidth: options.IndentWidth, TabWidth: options.TabWidth,
 	})), nil
+}
+
+// validate returns an *OptionsError for the first out-of-range field in
+// declaration order. The names are the Go field names because OptionsError
+// exposes them to callers.
+func (o Options) validate() error {
+	for _, option := range []struct {
+		name   string
+		value  int
+		capped bool // Spacing widths are bounded; PrintWidth only needs to be nonnegative.
+	}{
+		{"PrintWidth", o.PrintWidth, false},
+		{"IndentWidth", o.IndentWidth, true},
+		{"TabWidth", o.TabWidth, true},
+	} {
+		if option.value < 0 || (option.capped && option.value > maxSpacingWidth) {
+			return &OptionsError{Option: option.name, Value: option.value}
+		}
+	}
+	return nil
 }

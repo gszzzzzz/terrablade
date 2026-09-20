@@ -43,33 +43,38 @@ func (r Result) Position(offset int) Position {
 		Line:   strings.Count(prefix, "\n") + 1,
 		Column: 1,
 	}
+
 	// A UAX #29 boundary depends on preceding state and the next code point.
 	// Include the byte at offset and at most three following bytes, completing
 	// that code point without scanning an arbitrarily long cluster beyond it.
 	limit := offset + min(utf8.UTFMax, len(r.source)-offset)
 	data := r.source[lineStart:limit]
 	target := offset - lineStart
+
 	for consumed := 0; consumed < target; {
 		// Grapheme iteration does not validate UTF-8. Separate valid runs so
 		// even overlong or surrogate encodings cannot join a preceding cluster.
 		validEnd := consumed
 		for validEnd < len(data) {
 			runeValue, width := utf8.DecodeRuneInString(data[validEnd:])
-			if runeValue == utf8.RuneError && width == 1 {
+			if isEncodingError(runeValue, width) {
 				break
 			}
 			validEnd += width
 		}
 		if validEnd == consumed {
+			// A malformed byte is a cluster of its own, one column wide.
 			consumed++
 			position.Column++
 			continue
 		}
+
 		start := consumed
 		clusters := graphemes.FromString(data[start:validEnd])
 		for consumed < target && clusters.Next() {
 			end := start + clusters.End()
 			if end > target {
+				// The offset is inside this cluster and shares its column.
 				return position
 			}
 			consumed = end

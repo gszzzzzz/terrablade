@@ -6,6 +6,7 @@ type tokenSet uint64
 // Fail compilation when the token vocabulary no longer fits in this bit set.
 const _ tokenSet = 1 << tokenKindCount
 
+// has reports whether kind is a member of the set.
 func (s tokenSet) has(kind TokenKind) bool { return s&(tokenSet(1)<<kind) != 0 }
 
 const (

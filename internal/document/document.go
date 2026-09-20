@@ -9,6 +9,7 @@ import (
 // share storage and can be composed and rendered concurrently.
 type Doc struct{ node *node }
 
+// kind identifies which primitive a node represents.
 type kind uint8
 
 const (
@@ -25,11 +26,17 @@ const (
 	cellKind
 )
 
+// node is the shared, immutable storage behind a Doc. Which fields are
+// populated depends on kind.
 type node struct {
-	kind     kind
-	text     string
+	kind kind
+	// text is the literal content of a textKind node.
+	text string
+	// children holds the parts of a concatKind node, the single content of
+	// the wrapping kinds, or the broken and flat branches of ifBreakKind.
 	children []Doc
-	column   uint8
+	// column is the alignment column; it is only meaningful for cellKind.
+	column uint8
 	// A hard line on the flat path prevents every enclosing group from
 	// flattening. The unselected broken branch of IfBreak must not force it.
 	forceBreak bool
@@ -61,17 +68,20 @@ func Concat(parts ...Doc) Doc {
 			force = force || part.node.forceBreak
 		}
 	}
+
+	// A single non-empty part needs no node of its own.
 	if count <= 1 {
 		return only
 	}
+
+	// Copy only immediate children: repeated Concat(previous, next) remains
+	// linear to construct rather than copying the entire prefix every time.
 	children := make([]Doc, 0, count)
 	for _, part := range parts {
 		if part.node != nil {
 			children = append(children, part)
 		}
 	}
-	// Copy only immediate children: repeated Concat(previous, next) remains
-	// linear to construct rather than copying the entire prefix every time.
 	return Doc{&node{kind: concatKind, children: children, forceBreak: force}}
 }
 
@@ -90,6 +100,8 @@ func HardLine() Doc { return Doc{hardLineNode} }
 // belong in Text, allowing heredoc text and interpolations to be composed.
 func LiteralLine() Doc { return Doc{literalLineNode} }
 
+// Line primitives carry no per-instance state, so every call shares one node
+// per kind instead of allocating.
 var (
 	lineNode        = &node{kind: lineKind}
 	softLineNode    = &node{kind: softLineKind}
@@ -126,6 +138,10 @@ func Cell(column uint8, content Doc) Doc {
 	return Doc{&node{kind: cellKind, column: column, children: []Doc{content}, forceBreak: content.node.forceBreak}}
 }
 
+// wrap builds a single-child node of kind k. An empty child yields an empty
+// document, so wrappers never add nodes that render nothing. The child's
+// forceBreak propagates because a mandatory line inside a wrapper still
+// forces the groups outside it.
 func wrap(k kind, content Doc) Doc {
 	if content.node == nil {
 		return content

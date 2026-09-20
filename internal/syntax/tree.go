@@ -2,37 +2,127 @@ package syntax
 
 // NodeKind identifies a grammatical structure, separately from TokenKind.
 // Its numeric value is not a stable storage format.
+//
+// The comment on each kind lists its children in source order. Tokens are
+// named by their TokenKind, nodes by their NodeKind, and "expression" means a
+// node of any expression kind or, where the operand is missing, an empty
+// ErrorNode. Every node may also hold trivia tokens (Whitespace, Newline,
+// LineComment, BlockComment) between the listed children; only File and Body
+// begin or end with trivia. Two words distinguish absence: a child marked
+// optional may be absent in valid source because the grammar allows it, while
+// a child that is "missing" is absent only when recovery from malformed input
+// ended the node early, and a diagnostic always accompanies that.
 type NodeKind uint8
 
 const (
+	// InvalidNode is the kind of a zero SyntaxNode. Parse never produces it.
 	InvalidNode NodeKind = iota
+	// File: optional BOM, Body, EOF. After a NestingLimitExceeded diagnostic,
+	// trivia, an ErrorNode holding the unparsed remainder, and further trivia
+	// may appear between Body and EOF. The parseExpressionSource test seam puts
+	// an expression in place of Body.
 	File
+	// ErrorNode: zero or more raw tokens and no nodes. It is empty where an
+	// operand was expected but missing, and otherwise holds the malformed
+	// material up to the recovery boundary its producer chose.
 	ErrorNode
+	// LiteralExpression: one Number token, or one Identifier spelled true,
+	// false, or null.
 	LiteralExpression
+	// VariableExpression: one Identifier token. In an ObjectItem's key
+	// position it denotes a literal key; see the package documentation.
 	VariableExpression
+	// ParenthesizedExpression: OpenParen, expression, CloseParen (possibly
+	// missing).
 	ParenthesizedExpression
+	// UnaryExpression: a Minus or Bang token, then its operand expression.
 	UnaryExpression
+	// BinaryExpression: left expression, operator token, right expression.
 	BinaryExpression
+	// ConditionalExpression: condition expression, Question, true expression,
+	// then Colon and false expression, both missing when the Colon was not
+	// found.
 	ConditionalExpression
+	// FunctionCallExpression: Identifier, then zero or more DoubleColon and
+	// Identifier pairs, OpenParen, arguments, CloseParen. Arguments are
+	// expressions separated by Comma tokens, with an optional trailing Comma
+	// or Ellipsis after the last one. Recovery can end the node after any
+	// child and can place ErrorNode children among the arguments.
 	FunctionCallExpression
+	// TraversalExpression: an operand expression followed by one or more step
+	// nodes: AttributeAccess, IndexAccess, LegacyIndexAccess, AttributeSplat,
+	// FullSplat, or an ErrorNode for a stray Dot.
 	TraversalExpression
+	// AttributeAccess: Dot, Identifier.
 	AttributeAccess
+	// IndexAccess: OpenBracket, expression, CloseBracket (possibly missing).
 	IndexAccess
+	// LegacyIndexAccess: Dot, Number.
 	LegacyIndexAccess
+	// AttributeSplat: Dot, Star, then zero or more AttributeAccess or
+	// LegacyIndexAccess steps, or an ErrorNode for a nested Dot Star or a
+	// stray Dot. A bracket step ends the splat and follows it as a sibling.
 	AttributeSplat
+	// FullSplat: OpenBracket, Star, CloseBracket, then zero or more steps of
+	// any kind nested inside. A missing CloseBracket also leaves out the steps.
 	FullSplat
+	// TupleExpression: OpenBracket, elements, CloseBracket (possibly missing).
+	// Elements are expressions separated by Comma tokens with an optional
+	// trailing Comma; recovery can place ErrorNode children among them.
 	TupleExpression
+	// ObjectExpression: OpenBrace, items, CloseBrace (possibly missing). Items
+	// are ObjectItem nodes separated by Comma tokens or by newline trivia;
+	// recovery can place ErrorNode children among them.
 	ObjectExpression
+	// ObjectItem: key expression, then Equal or Colon and value expression,
+	// both missing when no separator was found.
 	ObjectItem
+	// ForExpression: OpenBracket or OpenBrace, Identifier "for", Identifier,
+	// optional Comma and Identifier, Identifier "in", collection expression,
+	// Colon, expression, optional Arrow and expression, optional Ellipsis,
+	// optional Identifier "if" and expression, CloseBracket or CloseBrace.
+	// Recovery can end the node early, place an ErrorNode before the closer,
+	// or omit the closer.
 	ForExpression
+	// TemplateExpression: QuoteOpen or HeredocOpen, for a heredoc then
+	// HeredocMarker, then content, then QuoteClose or HeredocEndMarker
+	// (missing at EOF). Content is any sequence of TemplateText tokens and
+	// TemplateInterpolation, TemplateIf, TemplateFor, and TemplateDirective
+	// nodes, the last for a directive with no matching scope, plus ErrorNode
+	// for a token the lexer should not have produced there.
 	TemplateExpression
+	// TemplateInterpolation: InterpolationOpen, optional StripMarker,
+	// expression, optional StripMarker, TemplateSequenceEnd (possibly
+	// missing); recovery can place an ErrorNode before the closer.
 	TemplateInterpolation
+	// TemplateDirective: DirectiveOpen, optional StripMarker, Identifier
+	// keyword, the keyword's header, optional StripMarker, TemplateSequenceEnd
+	// (possibly missing). The header of "if" is an expression; of "for" it is
+	// Identifier, optional Comma and Identifier, Identifier "in", and an
+	// expression; "else", "endif", and "endfor" have none. A missing or
+	// unknown keyword and a malformed header can leave an ErrorNode in the
+	// header's place.
 	TemplateDirective
+	// TemplateIf: the "if" TemplateDirective, content, optionally the "else"
+	// TemplateDirective and more content, then the "endif" TemplateDirective,
+	// missing when unmatched. Content is as in TemplateExpression.
 	TemplateIf
+	// TemplateFor: the "for" TemplateDirective, content, then the "endfor"
+	// TemplateDirective, missing when unmatched.
 	TemplateFor
+	// Body: zero or more Attribute, Block, and ErrorNode children. Body owns
+	// the trivia between and around its items, including the newline that
+	// ends each item.
 	Body
+	// Attribute: Identifier name, Equal, value expression.
 	Attribute
+	// Block: Identifier type, zero or more BlockLabel nodes, OpenBrace, Body,
+	// CloseBrace. A header that reaches no OpenBrace ends the node after its
+	// last label; a body that reaches EOF omits the CloseBrace.
 	Block
+	// BlockLabel: one Identifier, or QuoteOpen, then any sequence of
+	// TemplateText tokens and ErrorNode children (one per template sequence,
+	// which labels forbid), then QuoteClose, missing at EOF.
 	BlockLabel
 	nodeKindCount
 )

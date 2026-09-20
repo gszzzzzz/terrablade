@@ -35,6 +35,10 @@
 //     spelling and comments. Steps inside an attribute splat's projection retain
 //     legacy syntax: changing foo.*.0 to foo.*[0] would change its meaning.
 //     Ordinary traversals and full-splat projections use bracket indices.
+//   - Object item separators: a colon between an object key and its value is
+//     emitted as an equals sign. Both spellings parse to the same item; one
+//     spelling keeps every entry in the shared assignment column and lets a
+//     second pass reproduce the first.
 //   - Grammar and content: normalization preserves precedence, computed-key
 //     meaning, comment order and spelling, and retained token spelling. It adds
 //     parentheses where precedence, object-key grammar, comments, or mandatory
@@ -56,11 +60,11 @@
 //     after non-final heredocs stay on the next line.
 //     Empty delimiters stay compact unless comments require a line break.
 //   - Objects: entries use key = value, aligned on consecutive broken rows.
-//     Flat entries have
-//     comma separators and spaces inside braces; broken entries use one line
-//     per entry and a trailing comma. Bare identifier keys retain their spelling
-//     and key context, and computed keys retain explicit parentheses. Keys and
-//     values remain newline-sensitive, even inside an otherwise safe context.
+//     Flat entries have comma separators and spaces inside braces; broken
+//     entries use one line per entry and a trailing comma. Bare identifier
+//     keys retain their spelling and key context, and computed keys retain
+//     explicit parentheses. Keys and values remain newline-sensitive, even
+//     inside an otherwise safe context.
 //     An entry ending in a heredoc omits its comma: the marker's mandatory
 //     newline separates entries, and a comma on the next line is invalid HCL.
 //     A source newline after the opening brace preserves vertical layout,

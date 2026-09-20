@@ -1,27 +1,39 @@
 package syntax
 
-import "sort"
-
-// The parser bounds its own recursive descent, not the height of the resulting
-// CST. Iterative productions may legitimately build deep trees without growing
-// the parser call stack; downstream consumers must traverse those iteratively.
+// maxRecursiveExpressionDepth bounds the parser's own recursive descent, not
+// the height of the resulting CST. Iterative productions may legitimately build
+// deep trees without growing the parser call stack; downstream consumers must
+// traverse those iteratively.
 const maxRecursiveExpressionDepth = 1024
 
+// expressionContext selects whether newlines and line comments end the
+// construct being parsed. An attribute value, an object item, and a block
+// header end at the end of their line, while anything inside (), [], {}, or a
+// template sequence spans lines freely, so the same production is parsed
+// under either rule depending on where it appears.
 type expressionContext uint8
 
 const (
+	// lineExpression stops lookahead at a Newline or LineComment, which the
+	// enclosing production then treats as its terminator.
 	lineExpression expressionContext = iota
+	// delimitedExpression treats Newline and LineComment as trivia.
 	delimitedExpression
 )
 
+// triviaClass separates the two kinds of trivia because only one of them can
+// end a line-sensitive construct.
 type triviaClass uint8
 
 const (
 	notTrivia triviaClass = iota
+	// inlineTrivia is transparent to lookahead in every context.
 	inlineTrivia
+	// lineTrivia is transparent only in delimitedExpression context.
 	lineTrivia
 )
 
+// classifyTrivia reports how lookahead treats a token kind.
 func classifyTrivia(kind TokenKind) triviaClass {
 	switch kind {
 	case Whitespace, BlockComment:
@@ -36,15 +48,30 @@ func classifyTrivia(kind TokenKind) triviaClass {
 
 func isTrivia(kind TokenKind) bool { return classifyTrivia(kind) != notTrivia }
 
+// parser is a single-pass recursive-descent parser over the lexer's tokens.
+// Three fields cooperate to bound recursion without losing source. depth
+// counts the recursive productions currently active. When it reaches
+// maxRecursiveExpressionDepth, haltAtLimit sets halted; from then on look and
+// current present EOF while consumeUntil and report do nothing, so every
+// active production unwinds as if the source had ended, and pos stays frozen
+// at the first unparsed token. file then retains everything from pos through
+// retainUntil, the one path that bypasses the gate.
 type parser struct {
-	source      string
-	tokens      []SyntaxToken
-	arena       *syntaxArena
-	pending     []elementRef
+	source string
+	tokens []SyntaxToken
+	// arena receives finished nodes and their child references; every handle
+	// returned to callers points into it.
+	arena *syntaxArena
+	// pending is the child stack shared by all open builders. A builder owns
+	// the tail after its mark, and finish moves that tail into arena.children.
+	pending []elementRef
+	// pos indexes the next unconsumed token. It only moves forward.
 	pos         int
 	diagnostics []Diagnostic
-	depth       int
-	halted      bool
+	// depth counts nested expression and steps calls; see the type comment.
+	depth int
+	// halted is set once by haltAtLimit and never cleared; see the type comment.
+	halted bool
 }
 
 func newParser(source []byte) *parser {
@@ -57,10 +84,11 @@ func newParser(source []byte) *parser {
 	}
 }
 
-// look does not consume trivia. Horizontal spaces and block comments are always
-// transparent; line comments and newlines are transparent only inside delimiters.
-// Committing a grammatical token later also commits its intervening trivia to
-// the enclosing node. Unused lookahead leaves trailing trivia with the parent.
+// look returns the index of the next grammatical token without consuming
+// trivia. Horizontal spaces and block comments are always transparent; line
+// comments and newlines are transparent only inside delimiters. Committing a
+// grammatical token later also commits its intervening trivia to the enclosing
+// node. Unused lookahead leaves trailing trivia with the parent.
 func (p *parser) look(context expressionContext) int {
 	if p.halted {
 		return len(p.tokens) - 1
@@ -68,7 +96,10 @@ func (p *parser) look(context expressionContext) int {
 	return p.lookFrom(p.pos, context)
 }
 
-// File recovery needs this raw view after shutdown; grammar uses look instead.
+// lookFrom scans forward from index over the trivia that context makes
+// transparent and returns the index of the next grammatical token, or of the
+// line trivia that ends a lineExpression. It ignores the halt gate: file
+// recovery needs this raw view after shutdown, while grammar uses look.
 func (p *parser) lookFrom(index int, context expressionContext) int {
 	i := index
 	for i < len(p.tokens)-1 {
@@ -87,21 +118,28 @@ func (p *parser) lookFrom(index int, context expressionContext) int {
 	return i
 }
 
+// peek returns the kind of the token that look selects.
 func (p *parser) peek(context expressionContext) TokenKind {
 	return p.tokens[p.look(context)].kind
 }
 
+// keyword reports whether the next grammatical token is the contextual keyword
+// word. Keywords are ordinary identifiers, so the tree keeps their lexical
+// kind.
 func (p *parser) keyword(word string, context expressionContext) bool {
 	return p.keywordAt(word, p.look(context))
 }
 
-// A chosen token index lets collection lookahead test after its opener without
-// consuming it. All keyword checks share the same Identifier/text comparison.
+// keywordAt tests the token at a chosen index. Collection lookahead uses it to
+// test after an opener without consuming it. All keyword checks share the same
+// Identifier/text comparison.
 func (p *parser) keywordAt(word string, index int) bool {
 	token := p.tokens[index]
 	return token.kind == Identifier && p.source[token.span.Start:token.span.End] == word
 }
 
+// current returns the token at the cursor, or EOF once halted, so productions
+// that inspect the cursor directly see the same exhausted stream as look.
 func (p *parser) current() SyntaxToken {
 	if p.halted {
 		return p.tokens[len(p.tokens)-1]
@@ -109,25 +147,37 @@ func (p *parser) current() SyntaxToken {
 	return p.tokens[p.pos]
 }
 
+// nodeBuilder is a cursor snapshot for one node under construction: where the
+// node starts and which pending children belong to it. The parser appends
+// children through it, and finish turns them into an arena node. Builders are
+// small values; copying one is cheap and does not duplicate children.
 type nodeBuilder struct {
 	parser *parser
-	start  int
-	mark   int
+	// start is the byte offset where the node's span begins, fixed at begin so
+	// that an empty node still has a position.
+	start int
+	// mark is the length of parser.pending when the builder began; the
+	// builder's children are pending[mark:].
+	mark int
 }
 
+// begin starts a node at the real cursor. Empty error nodes stay at the real
+// cursor, not the virtual EOF after a halt, so they cannot create a gap between
+// consumed and still-unparsed source.
 func (p *parser) begin() nodeBuilder {
-	// Empty error nodes stay at the real cursor, not the virtual EOF after a halt,
-	// so they cannot create a gap between consumed and still-unparsed source.
 	return p.beginAt(p.tokens[p.pos].span.Start)
 }
 
-// Builders nest in grammar order. Each owns the tail of pending after mark;
-// finishing a nested builder restores that tail before its parent appends the
-// resulting node. Sharing this scratch buffer avoids one allocation per node.
+// beginAt starts a node at an explicit offset, which lets an operator node wrap
+// an already finished left operand. Builders nest in grammar order. Each owns
+// the tail of pending after mark; finishing a nested builder restores that
+// tail before its parent appends the resulting node. Sharing this scratch
+// buffer avoids one allocation per node.
 func (p *parser) beginAt(start int) nodeBuilder {
 	return nodeBuilder{parser: p, start: start, mark: len(p.pending)}
 }
 
+// node appends a finished node as the builder's next child.
 func (b *nodeBuilder) node(node SyntaxNode) {
 	b.parser.pending = append(b.parser.pending, elementRef(node.index+1))
 }
@@ -140,8 +190,9 @@ func (p *parser) consumeUntil(b *nodeBuilder, index int) {
 	p.retainUntil(b, index)
 }
 
-// Raw copying is shared, but only file assembly may bypass consumeUntil's halt
-// gate. Productions must never consume from this view after a limit.
+// retainUntil copies the raw tokens before index into the builder. Raw copying
+// is shared, but only file assembly may bypass consumeUntil's halt gate.
+// Productions must never consume from this view after a limit.
 func (p *parser) retainUntil(b *nodeBuilder, index int) {
 	for p.pos < index {
 		b.parser.pending = append(b.parser.pending, elementRef(-p.pos-1))
@@ -159,6 +210,9 @@ func (p *parser) consumeLookahead(b *nodeBuilder, context expressionContext) {
 	p.consumeUntil(b, i)
 }
 
+// report records a diagnostic unless the parser has halted, so the single
+// NestingLimitExceeded diagnostic is not followed by a cascade from the
+// productions unwinding after it.
 func (p *parser) report(kind DiagnosticKind, span Span) {
 	if p.halted {
 		return
@@ -174,6 +228,11 @@ func (p *parser) haltAtLimit(span Span) {
 	p.halted = true
 }
 
+// finish moves the builder's children from pending into the arena and returns
+// the new node. The span runs from start to the end of the last child, or is
+// empty at start when there are none, which is how a missing operand is
+// represented without a synthetic token. Truncating pending restores the
+// parent's view, so nested builders must finish in LIFO order.
 func (b nodeBuilder) finish(kind NodeKind) SyntaxNode {
 	p := b.parser
 	children := p.pending[b.mark:]
@@ -181,23 +240,31 @@ func (b nodeBuilder) finish(kind NodeKind) SyntaxNode {
 	if len(children) > 0 {
 		span.End = (SyntaxElement{arena: p.arena, ref: children[len(children)-1]}).Span().End
 	}
+
 	node := SyntaxNode{arena: p.arena, index: len(p.arena.nodes)}
 	p.arena.nodes = append(p.arena.nodes, nodeRecord{
 		kind: kind, span: span,
 		firstChild: len(p.arena.children), childCount: len(children),
 	})
 	p.arena.children = append(p.arena.children, children...)
+
 	p.pending = p.pending[:b.mark]
 	return node
 }
 
+// file assembles the File node once the grammar has finished: it retains any
+// unparsed remainder, merges the diagnostic order, and appends the one EOF
+// leaf.
 func (p *parser) file(root nodeBuilder) Result {
 	p.retainRemainder(&root)
+
 	// Lexical diagnostics can overlap later parser diagnostics; ties retain their
 	// original order, with lexical diagnostics first.
-	sort.SliceStable(p.diagnostics, func(i, j int) bool {
-		return p.diagnostics[i].Span.Start < p.diagnostics[j].Span.Start
-	})
+	sortDiagnostics(p.diagnostics)
+
+	// EOF is the last token, and a token's reference is -(index+1), so EOF's
+	// reference is -len(tokens). Appending it here rather than through
+	// consumeUntil is what makes file the only owner of EOF.
 	p.pending = append(p.pending, elementRef(-len(p.tokens)))
 	return Result{
 		source:      p.source,
@@ -211,6 +278,7 @@ func (p *parser) file(root nodeBuilder) Result {
 // at File level, and unparsed non-trivia remains a flat, bounded ErrorNode.
 func (p *parser) retainRemainder(root *nodeBuilder) {
 	p.retainUntil(root, p.lookFrom(p.pos, delimitedExpression))
+
 	if p.tokens[p.pos].kind != EOF {
 		p.report(UnexpectedToken, p.tokens[p.pos].span)
 		end := len(p.tokens) - 1
@@ -221,5 +289,6 @@ func (p *parser) retainRemainder(root *nodeBuilder) {
 		p.retainUntil(&rest, end)
 		root.node(rest.finish(ErrorNode))
 	}
+
 	p.retainUntil(root, len(p.tokens)-1)
 }
