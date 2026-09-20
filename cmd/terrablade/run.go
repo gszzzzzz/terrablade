@@ -1,0 +1,187 @@
+package main
+
+import (
+	"bytes"
+	"errors"
+	"flag"
+	"fmt"
+	"io"
+	"os"
+	"strconv"
+	"strings"
+	"unicode"
+	"unicode/utf8"
+
+	"terrablade"
+)
+
+const (
+	exitOK      = 0
+	exitChanged = 1
+	exitError   = 2
+)
+
+const usage = `Usage: terrablade [options] [file ...]
+
+Format stdin (no file, or -) or one file to stdout.
+Multiple files require --check or --write. Options must precede files;
+use -- before a filename beginning with a dash.
+
+Options:
+  --check             List inputs that would change; do not write formatted text
+  --write             Replace changed files in place (macOS and Linux)
+  --print-width int   Preferred display width (default 80; 0 selects default)
+  --indent-width int  Spaces per indentation level (default 2; range 0..16)
+  --tab-width int     Distance between tab stops (default 8; range 0..16)
+  --help              Show this help
+
+--check and --write are mutually exclusive. Stdin must be the only input
+and cannot be used with --write. Directories are not supported.
+Exit codes: 0 success, 1 --check found changes, 2 usage, parse, or I/O error.
+`
+
+// run owns command policy and presentation. Tests use the same arguments and
+// streams as main; filesystem behavior is exercised with real temporary files.
+// It processes files in argument order and keeps going after file-local errors.
+func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+	var options terrablade.Options
+	var check, write bool
+	flags := flag.NewFlagSet("terrablade", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	flags.BoolVar(&check, "check", false, "")
+	flags.BoolVar(&write, "write", false, "")
+	flags.IntVar(&options.PrintWidth, "print-width", 0, "")
+	flags.IntVar(&options.IndentWidth, "indent-width", 0, "")
+	flags.IntVar(&options.TabWidth, "tab-width", 0, "")
+	if err := flags.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			if err := writeText(stdout, usage); err != nil {
+				reportError(stderr, "stdout", err)
+				return exitError
+			}
+			return exitOK
+		}
+		reportError(stderr, "", err)
+		return exitError
+	}
+	paths := flags.Args()
+	if check && write {
+		reportError(stderr, "", errors.New("--check and --write are mutually exclusive"))
+		return exitError
+	}
+	if len(paths) == 0 {
+		paths = []string{"-"}
+	}
+	for _, path := range paths {
+		if path == "-" && (write || len(paths) != 1) {
+			reportError(stderr, "", errors.New("stdin must be the only input and cannot be used with --write"))
+			return exitError
+		}
+	}
+	if len(paths) > 1 && !check && !write {
+		reportError(stderr, "", errors.New("multiple files require --check or --write"))
+		return exitError
+	}
+	// Validation belongs to Format, including defaults and future option limits.
+	// Check it before reading any input or changing any file.
+	if _, err := terrablade.Format(nil, options); err != nil {
+		fmt.Fprintln(stderr, err)
+		return exitError
+	}
+	if write && !writeSupported {
+		reportError(stderr, "", errors.New("--write is only supported on macOS and Linux"))
+		return exitError
+	}
+
+	status := exitOK
+	for _, path := range paths {
+		label := path
+		var source []byte
+		var info os.FileInfo
+		var err error
+		if path == "-" {
+			label = "<stdin>"
+			source, err = io.ReadAll(stdin)
+		} else {
+			source, info, err = readFile(path)
+		}
+		if err != nil {
+			reportError(stderr, label, err)
+			status = exitError
+			continue
+		}
+		formatted, err := terrablade.Format(source, options)
+		if err != nil {
+			reportError(stderr, label, err)
+			status = exitError
+			continue
+		}
+		changed := !bytes.Equal(source, formatted)
+		switch {
+		case check:
+			if changed {
+				status = max(status, exitChanged)
+				err = writeText(stdout, pathLabel(label)+"\n")
+			}
+		case write:
+			// Even linked files are a true no-op when already canonical.
+			if changed {
+				err = replaceFile(path, formatted, info)
+				if err != nil {
+					reportError(stderr, label, err)
+					status = exitError
+					continue
+				}
+				err = writeText(stdout, pathLabel(label)+"\n")
+			}
+		default:
+			_, err = io.Copy(stdout, bytes.NewReader(formatted))
+		}
+		if err != nil {
+			// Stop on a failed output stream: continuing --write would modify
+			// more files without being able to report their successful writes.
+			reportError(stderr, "stdout", err)
+			return exitError
+		}
+	}
+	return status
+}
+
+func reportError(stderr io.Writer, label string, err error) {
+	var parsed *terrablade.ParseError
+	if errors.As(err, &parsed) {
+		for _, diagnostic := range parsed.Diagnostics() {
+			fmt.Fprintf(stderr, "%s:%d:%d: %s: %s\n", pathLabel(label),
+				diagnostic.Span.Start.Line, diagnostic.Span.Start.Column,
+				diagnostic.Kind, diagnostic.Message)
+		}
+		return
+	}
+	// OS error strings may contain raw filenames. Keep paths in our escaped
+	// label and retain the operation and underlying cause without duplicating it.
+	// Only shorten a direct OS error. A joined error also describes cleanup
+	// failure, which must not disappear just because one child is a PathError.
+	switch detail := err.(type) {
+	case *os.PathError:
+		err = fmt.Errorf("%s: %v", detail.Op, detail.Err)
+	case *os.LinkError:
+		err = fmt.Errorf("%s: %v", detail.Op, detail.Err)
+	}
+	if label == "" {
+		fmt.Fprintf(stderr, "terrablade: %s\n", pathLabel(err.Error()))
+	} else {
+		fmt.Fprintf(stderr, "terrablade: %s: %s\n", pathLabel(label), pathLabel(err.Error()))
+	}
+}
+
+func pathLabel(path string) string {
+	if !utf8.ValidString(path) || strings.ContainsFunc(path, func(r rune) bool { return !unicode.IsPrint(r) }) {
+		return strconv.Quote(path)
+	}
+	return path
+}
+
+func writeText(writer io.Writer, text string) error {
+	_, err := io.Copy(writer, strings.NewReader(text))
+	return err
+}
