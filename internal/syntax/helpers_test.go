@@ -1,33 +1,6 @@
 package syntax
 
-// Shared test helpers for the whole package. Everything here is used by more
-// than one test file; single-use helpers stay next to their test.
-//
-// # Test-file suffix vocabulary
-//
-// Test files are named after the production file they exercise. A suffix on
-// top of that name means:
-//
-//   - _resource_test: limits, scaling, fuzz targets, and benchmarks.
-//   - _recovery_test: error-tree snapshots for malformed input.
-//   - _compatibility_test: the upstream acceptance corpus and the optional
-//     reference CLI comparison.
-//   - _conformance_test: vendored Unicode fixtures.
-//
-// A suffix describes what the file contains, so it applies whether the file is
-// in package syntax or in package syntax_test. Being external is never itself a
-// suffix: the package clause already says so, which is why the external tests
-// of the exported contract are plain result_test.go, position_test.go, and
-// example_test.go. Where that rule leaves an internal and an external file
-// competing for one name, the external one takes _contract;
-// diagnostic_contract_test.go is the only such collision.
-//
-// Lexer-phase files carry the lex_ prefix, so a reader can tell which half of
-// the pipeline a file belongs to without opening it.
-//
-// Three files are named for what they are rather than for a production file:
-// this one, export_test.go (test seams into unexported entry points), and
-// example_test.go (Go's runnable examples).
+// Helpers shared by multiple test files.
 
 import (
 	"bytes"

@@ -163,8 +163,7 @@ func protectExpressionLines(node *expressionView) *expressionView {
 // Expression context). Binary and conditional layouts add break parentheses
 // when they break, but unary and traversal layouts have no group of their
 // own, so protectExpressionLines gives them permanent parentheses when this
-// reports true (TestExpressionNormalization: unwrapped traversal
-// comment, unwrapped unary comment, unwrapped heredoc traversal).
+// reports true.
 //
 // comment and newline describe the trivia run since the last significant
 // element, because a block comment keeps a source newline after it while a

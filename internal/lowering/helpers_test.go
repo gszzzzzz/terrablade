@@ -1,16 +1,3 @@
-// Package lowering_test is split by unit and by the kind of check a file
-// makes, so a reader can tell from a file name what it will find:
-//
-//   - <unit>_test.go holds behavior: layout tables, comment placement,
-//     normalization results, and the errors the entry points return.
-//   - <unit>_resource_test.go holds limits and scaling: fuzz targets,
-//     deep/wide inputs, concurrency, and benchmarks.
-//   - reference_test.go holds the reference-CLI oracle: asserting that the
-//     terraform or tofu located by internal/reference accepts this package's
-//     output unchanged.
-//   - helpers_test.go (this file) holds the helpers those files share.
-//
-// A helper used by exactly one file stays in that file.
 package lowering_test
 
 import (

@@ -5,8 +5,8 @@ import (
 	"os"
 )
 
-// readFile reads a regular file. Anything else is rejected before it is
-// opened: in particular, opening a FIFO would block until a writer appears.
+// readFile rejects paths that do not identify a regular file when inspected.
+// It does not protect against the path changing between Stat and ReadFile.
 func readFile(path string) ([]byte, error) {
 	info, err := os.Stat(path)
 	if err != nil {

@@ -44,7 +44,7 @@ func lowerObject(result syntax.Result, pieces pieceList, inSequence bool) docume
 // cell so that consecutive rows pad their equals signs to a shared column
 // (doc.go: Alignment). objectItem makes the cell conditional on the object
 // breaking: a flat object shares its enclosing expression's row and must not
-// align with its neighbors (TestObjectLayouts: flat entries do not align).
+// align with its neighbors.
 func lowerAssignment(result syntax.Result, pieces pieceList, objectItem bool) document.Doc {
 	// An assignment is exactly three pieces, in this order.
 	name, equals, value := pieces[0], pieces[1], pieces[2]

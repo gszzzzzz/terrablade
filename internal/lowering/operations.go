@@ -31,7 +31,7 @@ func breakParentheses(body document.Doc) document.Doc {
 // space. forcedMinus covers a minus that is guaranteed to start a line by a
 // heredoc marker or a mandatory comment line; inside a ForceFlat template the
 // flat branch would still be chosen there, so the spacing must be tight
-// unconditionally (TestOperationLayouts: template mandatory minus line).
+// unconditionally.
 func operationContinuation(result syntax.Result, pieces []piece, endsHeredoc bool) document.Doc {
 	parts := make([]document.Doc, 0, len(pieces)*3)
 	minus, forcedMinus := false, false

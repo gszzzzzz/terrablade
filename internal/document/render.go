@@ -293,9 +293,7 @@ type lineWidth struct {
 	tailWidth int
 }
 
-// measure adds text to the current line's width. It is named measure rather
-// than append so that it does not shadow the builtin in a package that uses
-// append throughout.
+// measure adds text to the current line's width.
 func (w *lineWidth) measure(text string, tabWidth int) {
 	if text == "" {
 		return

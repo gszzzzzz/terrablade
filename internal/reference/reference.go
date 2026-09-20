@@ -1,8 +1,5 @@
-// Package reference locates the Terraform or OpenTofu executable that
-// compatibility tests format against. It is an ordinary package rather than a
-// test helper because the root package and internal/lowering both need the
-// same lookup and the same skip message, and a _test.go helper cannot be
-// shared across packages.
+// Package reference locates the Terraform or OpenTofu executable used by
+// compatibility tests.
 package reference
 
 import (
