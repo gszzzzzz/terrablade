@@ -54,6 +54,7 @@ func TestRunUsageErrorsBeforeReading(t *testing.T) {
 		{[]string{"--write"}, "stdin must be the only input and cannot be used with --write"},
 		{[]string{"--write", "-"}, "stdin must be the only input and cannot be used with --write"},
 		{[]string{"--check", "-", "file.tf"}, "stdin must be the only input and cannot be used with --write"},
+		{[]string{"--check", "file.tf", "--", "-"}, "stdin must be the only input and cannot be used with --write"},
 		{[]string{"-", "file.tf"}, "stdin must be the only input and cannot be used with --write"},
 		{[]string{"a.tf", "b.tf"}, "multiple files require --check or --write"},
 		{[]string{"x.tf", "--check"}, `options must precede files: "--check" (use -- for a dash-prefixed filename)`},
