@@ -11,7 +11,7 @@ import (
 	"testing"
 )
 
-func TestWritePreservesOwnership(t *testing.T) {
+func TestWritePreservesMetadata(t *testing.T) {
 	for _, mode := range []os.FileMode{0600, 0640, 0755} {
 		t.Run(mode.String(), func(t *testing.T) {
 			dir := t.TempDir()

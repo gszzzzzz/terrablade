@@ -37,5 +37,15 @@ func FuzzRunArguments(f *testing.F) {
 		default:
 			t.Fatalf("undocumented exit status %d", status)
 		}
+		// The same flag after a positional argument must be diagnosed before
+		// any I/O, including when its name or value contains control bytes.
+		stdout.Reset()
+		stderr.Reset()
+		status = run([]string{"input.tf", args[0]}, forbiddenReader{t}, &stdout, &stderr)
+		if status != 2 || stdout.Len() != 0 ||
+			!strings.HasPrefix(stderr.String(), "terrablade: options must precede files: ") ||
+			strings.Count(stderr.String(), "\n") != 1 || strings.ContainsRune(stderr.String(), '\x1b') {
+			t.Fatalf("trailing option: status=%d stdout=%q stderr=%q", status, stdout.String(), stderr.String())
+		}
 	})
 }

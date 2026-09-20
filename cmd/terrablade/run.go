@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"unicode"
@@ -25,14 +26,14 @@ const usage = `Usage: terrablade [options] [file ...]
 
 Format stdin (no file, or -) or one file to stdout.
 Multiple files require --check or --write. Options must precede files;
-use -- before a filename beginning with a dash.
+use -- before a filename beginning with a dash, and ./- for a file named -.
 
 Options:
   --check             List inputs that would change; do not write formatted text
   --write             Write changed files in place
   --print-width int   Preferred display width (default 80; 0 selects default)
-  --indent-width int  Spaces per indentation level (default 2; range 0..16)
-  --tab-width int     Distance between tab stops (default 8; range 0..16)
+  --indent-width int  Spaces per level (default 2; 1..16; 0 selects default)
+  --tab-width int     Distance between tab stops (default 8; 1..16; 0 selects default)
   --help              Show this help
 
 --check and --write are mutually exclusive. Stdin must be the only input
@@ -61,12 +62,28 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			}
 			return exitOK
 		}
-		reportError(stderr, "", err)
+		reportGlobalError(stderr, err)
 		return exitError
 	}
 	paths := flags.Args()
+	// flag stops at the first positional argument. Diagnose misplaced options
+	// in that tail, unless -- already ended option parsing. A later -- also
+	// introduces literal filenames; omit that separator without mutating args.
+	parsed := len(args) - len(paths)
+	if parsed == 0 || args[parsed-1] != "--" {
+		for i, path := range paths {
+			if path == "--" {
+				paths = slices.Concat(paths[:i], paths[i+1:])
+				break
+			}
+			if len(path) > 1 && path[0] == '-' {
+				reportGlobalError(stderr, fmt.Errorf("options must precede files: %q (use -- for a dash-prefixed filename)", path))
+				return exitError
+			}
+		}
+	}
 	if check && write {
-		reportError(stderr, "", errors.New("--check and --write are mutually exclusive"))
+		reportGlobalError(stderr, errors.New("--check and --write are mutually exclusive"))
 		return exitError
 	}
 	if len(paths) == 0 {
@@ -74,12 +91,12 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	}
 	for _, path := range paths {
 		if path == "-" && (write || len(paths) != 1) {
-			reportError(stderr, "", errors.New("stdin must be the only input and cannot be used with --write"))
+			reportGlobalError(stderr, errors.New("stdin must be the only input and cannot be used with --write"))
 			return exitError
 		}
 	}
 	if len(paths) > 1 && !check && !write {
-		reportError(stderr, "", errors.New("multiple files require --check or --write"))
+		reportGlobalError(stderr, errors.New("multiple files require --check or --write"))
 		return exitError
 	}
 	// Validation belongs to Format, including defaults and future option limits.
@@ -141,6 +158,12 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	return status
 }
 
+func reportGlobalError(stderr io.Writer, err error) {
+	fmt.Fprintf(stderr, "terrablade: %s\n", pathLabel(err.Error()))
+}
+
+// reportError always identifies its input or output stream. An empty filename
+// is an actual argument, not a sentinel for a global command error.
 func reportError(stderr io.Writer, label string, err error) {
 	var parsed *terrablade.ParseError
 	if errors.As(err, &parsed) {
@@ -158,15 +181,11 @@ func reportError(stderr io.Writer, label string, err error) {
 	if detail, ok := err.(*os.PathError); ok {
 		err = fmt.Errorf("%s: %v", detail.Op, detail.Err)
 	}
-	if label == "" {
-		fmt.Fprintf(stderr, "terrablade: %s\n", pathLabel(err.Error()))
-	} else {
-		fmt.Fprintf(stderr, "terrablade: %s: %s\n", pathLabel(label), pathLabel(err.Error()))
-	}
+	fmt.Fprintf(stderr, "terrablade: %s: %s\n", pathLabel(label), pathLabel(err.Error()))
 }
 
 func pathLabel(path string) string {
-	if !utf8.ValidString(path) || strings.ContainsFunc(path, func(r rune) bool { return !unicode.IsPrint(r) }) {
+	if path == "" || !utf8.ValidString(path) || strings.ContainsFunc(path, func(r rune) bool { return !unicode.IsPrint(r) }) {
 		return strconv.Quote(path)
 	}
 	return path

@@ -25,6 +25,13 @@ func TestCLIProcess(t *testing.T) {
 	if output, err := exec.CommandContext(ctx, "go", "build", "-o", binary, ".").CombinedOutput(); err != nil {
 		t.Fatalf("build CLI: %v\n%s", err, output)
 	}
+	// The OS wording varies across platforms; the CLI's empty argument label
+	// and diagnostic structure must match exactly everywhere.
+	_, err := os.Stat("")
+	var emptyPath *os.PathError
+	if !errors.As(err, &emptyPath) {
+		t.Fatalf("expected an OS error for an empty path: %v", err)
+	}
 	for _, test := range []struct {
 		name, input, stdout, stderr string
 		args                        []string
@@ -37,6 +44,11 @@ func TestCLIProcess(t *testing.T) {
 		{name: "parse error", input: "a=", stderr: "<stdin>:1:3: ExpectedExpression: Expected an expression.\n", status: 2},
 		{name: "bad option", args: []string{"--tab-width=17"}, input: "a=1", stderr: "terrablade: TabWidth must not exceed 16 (got 17)\n", status: 2},
 		{name: "help", args: []string{"--help"}, stdout: usage},
+		{name: "trailing option", args: []string{"x.tf", "--check"}, status: 2,
+			stderr: "terrablade: options must precede files: \"--check\" (use -- for a dash-prefixed filename)\n"},
+		{name: "empty path", args: []string{""}, status: 2, stderr: "terrablade: \"\": " + emptyPath.Op + ": " + emptyPath.Err.Error() + "\n"},
+		{name: "unknown option", args: []string{"--unknown"}, status: 2, stderr: "terrablade: flag provided but not defined: -unknown\n"},
+		{name: "multiple paths without mode", args: []string{"x.tf", "y.tf"}, status: 2, stderr: "terrablade: multiple files require --check or --write\n"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			assertProcess(t, binary, dir, test.args, test.input, test.status, test.stdout, test.stderr)
@@ -56,6 +68,14 @@ func TestCLIProcess(t *testing.T) {
 		assertContents(t, filepath.Join(dir, "bad.tf"), "b=")
 		assertProcess(t, binary, dir, []string{"--write", "z.tf", "a.tf"}, "", 0, "", "")
 		assertProcess(t, binary, dir, []string{"--check", "z.tf", "a.tf"}, "", 0, "", "")
+	})
+	t.Run("dash filenames", func(t *testing.T) {
+		putFile(t, dir, "--check", "a=1")
+		putFile(t, dir, "-", "b=2")
+		putFile(t, dir, "x.tf", "x=3")
+		assertProcess(t, binary, dir, []string{"--", "--check"}, "", 0, "a = 1\n", "")
+		assertProcess(t, binary, dir, []string{"./-"}, "", 0, "b = 2\n", "")
+		assertProcess(t, binary, dir, []string{"--check", "x.tf", "--", "--check"}, "", 1, "x.tf\n--check\n", "")
 	})
 	t.Run("broken stdout", func(t *testing.T) {
 		reader, writer, err := os.Pipe()

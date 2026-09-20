@@ -56,6 +56,9 @@ func TestRunUsageErrorsBeforeReading(t *testing.T) {
 		{[]string{"--check", "-", "file.tf"}, "stdin must be the only input and cannot be used with --write"},
 		{[]string{"-", "file.tf"}, "stdin must be the only input and cannot be used with --write"},
 		{[]string{"a.tf", "b.tf"}, "multiple files require --check or --write"},
+		{[]string{"x.tf", "--check"}, `options must precede files: "--check" (use -- for a dash-prefixed filename)`},
+		{[]string{"--check", "x.tf", "--unknown"}, `options must precede files: "--unknown" (use -- for a dash-prefixed filename)`},
+		{[]string{"x.tf", "-h"}, `options must precede files: "-h" (use -- for a dash-prefixed filename)`},
 		{[]string{"--unknown"}, "flag provided but not defined: -unknown"},
 		{[]string{"--print-width"}, "flag needs an argument: -print-width"},
 		{[]string{"--print-width=abc"}, `invalid value "abc" for flag -print-width: parse error`},
@@ -104,19 +107,46 @@ func TestRunDashFilename(t *testing.T) {
 	t.Chdir(t.TempDir())
 	putFile(t, ".", "--check", "a=1")
 	putFile(t, ".", "-", "b=2")
+	putFile(t, ".", "x.tf", "x=3")
+	putFile(t, ".", "--", "c=4")
 	assertRun(t, []string{"--", "--check"}, "", 0, "a = 1\n", "")
 	assertRun(t, []string{"./-"}, "", 0, "b = 2\n", "")
+	assertRun(t, []string{"--check", "x.tf"}, "", 1, "x.tf\n", "")
+	assertRun(t, []string{"--check", "--", "x.tf", "--check"}, "", 1, "x.tf\n--check\n", "")
+	assertRun(t, []string{"--check", "x.tf", "--", "--check"}, "", 1, "x.tf\n--check\n", "")
+	assertRun(t, []string{"--", "--"}, "", 0, "c = 4\n", "")
+	assertRun(t, []string{"--write", "x.tf", "--check"}, "", 2, "",
+		"terrablade: options must precede files: \"--check\" (use -- for a dash-prefixed filename)\n")
+	assertContents(t, "x.tf", "x=3")
+}
+
+func TestRunEmptyPath(t *testing.T) {
+	_, err := os.Stat("")
+	var pathError *os.PathError
+	if !errors.As(err, &pathError) {
+		t.Fatalf("expected an OS error for an empty path: %v", err)
+	}
+	want := `terrablade: "": ` + pathError.Op + ": " + pathError.Err.Error() + "\n"
+	var stdout, stderr bytes.Buffer
+	status := run([]string{""}, forbiddenReader{t}, &stdout, &stderr)
+	if status != 2 || stdout.Len() != 0 || stderr.String() != want {
+		t.Fatalf("empty path: status=%d stdout=%q stderr=%q", status, stdout.String(), stderr.String())
+	}
 }
 
 func TestRunMissingFiles(t *testing.T) {
 	dir := t.TempDir()
 	missing := filepath.Join(dir, "missing.tf")
 	good := putFile(t, dir, "good.tf", "a=1")
+	_, err := os.Stat(missing)
+	var pathError *os.PathError
+	if !errors.As(err, &pathError) {
+		t.Fatalf("expected an OS error for a missing path: %v", err)
+	}
+	want := "terrablade: " + missing + ": " + pathError.Op + ": " + pathError.Err.Error() + "\n"
 	var stdout, stderr bytes.Buffer
 	status := run([]string{"--check", missing, good}, forbiddenReader{t}, &stdout, &stderr)
-	if status != 2 || stdout.String() != good+"\n" ||
-		!strings.HasPrefix(stderr.String(), "terrablade: "+missing+": stat: ") ||
-		strings.Count(stderr.String(), "\n") != 1 {
+	if status != 2 || stdout.String() != good+"\n" || stderr.String() != want {
 		t.Fatalf("got status=%d stdout=%q stderr=%q", status, stdout.String(), stderr.String())
 	}
 }
@@ -142,9 +172,9 @@ func TestRunStreamFailures(t *testing.T) {
 }
 
 func TestLabelsEscapeControlCharacters(t *testing.T) {
-	for _, path := range []string{"ordinary.tf", "path with spaces.tf", "한글.tf", "bad\nname.tf", "bad\x1b[31m.tf", "bad\tname.tf", "bad\xff.tf"} {
+	for _, path := range []string{"", "ordinary.tf", "path with spaces.tf", "한글.tf", "bad\nname.tf", "bad\x1b[31m.tf", "bad\tname.tf", "bad\xff.tf"} {
 		want := path
-		if strings.ContainsAny(path, "\n\x1b\t") || strings.Contains(path, "\xff") {
+		if path == "" || strings.ContainsAny(path, "\n\x1b\t") || strings.Contains(path, "\xff") {
 			want = strconv.Quote(path)
 		}
 		if got := pathLabel(path); got != want {
