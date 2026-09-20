@@ -205,16 +205,16 @@ func commentSeparator(newlines int, lineComment bool, fallback spacing, blankLin
 func literal(text string) document.Doc {
 	var parts []document.Doc
 	for {
-		index := strings.IndexByte(text, '\n')
-		if index < 0 {
+		newline := strings.IndexByte(text, '\n')
+		if newline < 0 {
 			return document.Concat(append(parts, document.Text(text))...)
 		}
 
-		line := text[:index]
-		if !strings.HasSuffix(line, "\r\r") {
-			line = strings.TrimSuffix(line, "\r")
+		chunk := text[:newline]
+		if !strings.HasSuffix(chunk, "\r\r") {
+			chunk = strings.TrimSuffix(chunk, "\r")
 		}
-		parts = append(parts, document.Text(line), document.LiteralLine())
-		text = text[index+1:]
+		parts = append(parts, document.Text(chunk), document.LiteralLine())
+		text = text[newline+1:]
 	}
 }

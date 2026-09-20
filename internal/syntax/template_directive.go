@@ -8,28 +8,28 @@ package syntax
 func (p *parser) templateDirective() (SyntaxNode, string) {
 	b := p.begin()
 	p.templateSequenceOpen(&b)
-	keyword := p.tokens[p.look(delimitedExpression)]
+	keyword := p.tokens[p.look(newlineTransparent)]
 	if keyword.kind != Identifier {
 		p.report(ExpectedTemplateDirective, keyword.span)
-		p.recoverUntil(&b, delimitedExpression, templateBoundaries)
+		p.recoverUntil(&b, newlineTransparent, templateBoundaries)
 		p.templateSequenceEnd(&b)
 		return b.finish(TemplateDirective), ""
 	}
 
-	p.consumeLookahead(&b, delimitedExpression)
+	p.consumeLookahead(&b, newlineTransparent)
 	name := p.source[keyword.span.Start:keyword.span.End]
 	switch name {
 	case "if":
-		p.operand(&b, lowestPower, delimitedExpression)
+		p.operand(&b, lowestPower, newlineTransparent)
 	case "for":
 		if !p.forIntroduction(&b) {
-			p.recoverUntil(&b, delimitedExpression, templateBoundaries)
+			p.recoverUntil(&b, newlineTransparent, templateBoundaries)
 		}
 	case "else", "endif", "endfor":
 		// These boundaries contain no expression; the sequence closer follows.
 	default:
 		p.report(UnknownTemplateDirective, keyword.span)
-		p.recoverUntil(&b, delimitedExpression, templateBoundaries)
+		p.recoverUntil(&b, newlineTransparent, templateBoundaries)
 		name = ""
 	}
 

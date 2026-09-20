@@ -5,17 +5,19 @@ import (
 	"github.com/gszzzzzz/terrablade/internal/syntax"
 )
 
-// object lays out an object constructor through delimited. A source newline
-// after the opening brace keeps the object vertical even when it would fit,
-// except inside a template sequence, which flattens every source-only choice
-// (doc.go: Objects). Braces keep inner spaces while flat, so the edge is line
-// rather than the soft edge brackets use.
-func object(result syntax.Result, pieces []piece, inSequence bool) document.Doc {
+// lowerObject lays out an object constructor through delimited. A source
+// newline after the opening brace keeps the object vertical even when it
+// would fit, except inside a template sequence, which flattens every
+// source-only choice (doc.go: Objects). Braces keep inner spaces while flat,
+// so the edge is line rather than the soft edge brackets use.
+func lowerObject(result syntax.Result, pieces pieceList, inSequence bool) document.Doc {
 	edge := line
 	if !inSequence {
 		// Source-only vertical layout is subordinate to template flattening.
 		// Comment and heredoc hard lines remain mandatory in either context.
-		for _, token := range pieces[1].before {
+		// An empty object has no first entry, so inner is then the closing
+		// brace, whose leading trivia is the same gap.
+		for _, token := range pieces.inner().before {
 			if token.Kind() == syntax.Newline {
 				edge = hard
 				break
@@ -37,16 +39,18 @@ func object(result syntax.Result, pieces []piece, inSequence bool) document.Doc 
 	return delimited(result, withCommas, 0, true, edge)
 }
 
-// assignment lays out key = value for a body attribute or an object item from
-// its three pieces. The separator and value form one alignment cell so that
-// consecutive rows pad their equals signs to a shared column (doc.go:
-// Alignment). objectItem makes the cell conditional on the object breaking: a
-// flat object shares its enclosing expression's row and must not align with
-// its neighbors (TestObjectLayouts: flat entries do not align).
-func assignment(result syntax.Result, pieces []piece, objectItem bool) document.Doc {
-	before, separator := commentGap(result, pieces[1].before, spacedGap(space))
-	gap, start := commentGap(result, pieces[2].before, spacedGap(space))
-	tail := document.Concat(separator, pieces[1].doc, gap, start, pieces[2].doc)
+// lowerAssignment lays out key = value for a body attribute or an object
+// item from its three pieces. The separator and value form one alignment
+// cell so that consecutive rows pad their equals signs to a shared column
+// (doc.go: Alignment). objectItem makes the cell conditional on the object
+// breaking: a flat object shares its enclosing expression's row and must not
+// align with its neighbors (TestObjectLayouts: flat entries do not align).
+func lowerAssignment(result syntax.Result, pieces pieceList, objectItem bool) document.Doc {
+	// An assignment is exactly three pieces, in this order.
+	name, equals, value := pieces[0], pieces[1], pieces[2]
+	afterName, beforeEquals := commentGap(result, equals.before, spacedGap(space))
+	afterEquals, beforeValue := commentGap(result, value.before, spacedGap(space))
+	tail := document.Concat(beforeEquals, equals.doc, afterEquals, beforeValue, value.doc)
 
 	aligned := document.Cell(assignmentColumn, tail)
 	if objectItem {
@@ -54,7 +58,9 @@ func assignment(result syntax.Result, pieces []piece, objectItem bool) document.
 		// in a broken object establish assignment columns of their own.
 		aligned = document.IfBreak(aligned, tail)
 	}
-	return document.Concat(pieces[0].doc, before, aligned)
+	// Comments between the name and the separator stay outside the cell, so
+	// they cannot pad the shared assignment column.
+	return document.Concat(name.doc, afterName, aligned)
 }
 
 // spacedSequence joins pieces with single spaces, as in a block header or a
@@ -80,7 +86,7 @@ func spacedSequence(result syntax.Result, pieces []piece) document.Doc {
 	return document.Concat(parts...)
 }
 
-// forExpression lays out a tuple or object for expression. The header (for
+// lowerForExpression lays out a tuple or object for expression. The header (for
 // bindings in collection :), the projection, and the optional if clause each
 // start a continuation line once the group breaks (doc.go: For expressions).
 // The last direct colon ends the header, because a conditional collection's
@@ -88,7 +94,7 @@ func spacedSequence(result syntax.Result, pieces []piece) document.Doc {
 // Identifier token is the contextual if keyword. An object for uses the line
 // edge so its braces keep inner spaces while flat, as object entries do; a
 // tuple for uses the soft edge of brackets.
-func forExpression(result syntax.Result, pieces []piece) document.Doc {
+func lowerForExpression(result syntax.Result, pieces pieceList) document.Doc {
 	colon, condition := 0, len(pieces)-1
 	for i, part := range pieces {
 		if part.token && part.kind == syntax.Colon {
@@ -100,7 +106,7 @@ func forExpression(result syntax.Result, pieces []piece) document.Doc {
 		}
 	}
 	edge := soft
-	if pieces[0].kind == syntax.OpenBrace {
+	if pieces.opener().kind == syntax.OpenBrace {
 		edge = line
 	}
 
@@ -110,7 +116,7 @@ func forExpression(result syntax.Result, pieces []piece) document.Doc {
 
 	projection, projectionTrivia := detachLeading(pieces[colon+1 : condition])
 	gap, next := commentGap(result, projectionTrivia, breakingGap(line, false))
-	parts = append(parts, gap, next, forProjection(result, projection))
+	parts = append(parts, gap, next, lowerForProjection(result, projection))
 
 	if condition < len(pieces)-1 {
 		clause, clauseTrivia := detachLeading(pieces[condition : len(pieces)-1])
@@ -118,22 +124,24 @@ func forExpression(result syntax.Result, pieces []piece) document.Doc {
 		parts = append(parts, gap, next, spacedSequence(result, clause))
 	}
 
-	close := pieces[len(pieces)-1]
-	gap, end := commentGap(result, close.before, breakingGap(edge, pieces[len(pieces)-2].child.endsHeredoc))
+	closer := pieces.closer()
+	gap, end := commentGap(result, closer.before, breakingGap(edge, pieces.beforeCloser().child.endsHeredoc))
 	parts = append(parts, gap)
-	return document.Group(document.Concat(pieces[0].doc, document.Indent(document.Concat(parts...)), end, close.doc))
+	return document.Group(document.Concat(pieces.opener().doc, document.Indent(document.Concat(parts...)), end, closer.doc))
 }
 
-// forProjection lays out the projection: a single value, or key => value for
-// an object for. The arrow may start a continuation line at the same indent
-// (doc.go: For expressions), so its gap is laid out here as a clause break
-// and the arrow then heads one spaced sequence with the value.
-func forProjection(result syntax.Result, pieces []piece) document.Doc {
+// lowerForProjection lays out the projection: a single value, or key => value
+// for an object for. The arrow may start a continuation line at the same
+// indent (doc.go: For expressions), so its gap is laid out here as a clause
+// break and the arrow then heads one spaced sequence with the value.
+func lowerForProjection(result syntax.Result, pieces []piece) document.Doc {
+	// An object projection is key, arrow, value; anything else is one value.
 	if len(pieces) < 3 || !pieces[1].token || pieces[1].kind != syntax.Arrow {
 		return spacedSequence(result, pieces)
 	}
 
+	key := pieces[0]
 	tail, arrowTrivia := detachLeading(pieces[1:])
-	gap, end := commentGap(result, arrowTrivia, breakingGap(line, pieces[0].child.endsHeredoc))
-	return document.Group(document.Concat(pieces[0].doc, gap, end, spacedSequence(result, tail)))
+	gap, end := commentGap(result, arrowTrivia, breakingGap(line, key.child.endsHeredoc))
+	return document.Group(document.Concat(key.doc, gap, end, spacedSequence(result, tail)))
 }

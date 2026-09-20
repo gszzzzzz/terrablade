@@ -1,2 +1,0 @@
-go test fuzz v1
-[]byte("!!!!!!!!\xae\xf2\xc0\x9b\xf3A")

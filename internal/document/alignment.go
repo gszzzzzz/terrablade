@@ -18,9 +18,9 @@ type renderedCell struct {
 	// firstRow and lastRow are the structural rows the cell's content spans.
 	// They differ only when the cell contains an ordinary line break.
 	firstRow, lastRow int
-	// pending is the indentation still owed to the row at the cell's start.
-	// The renderer has not written it, so the prefix does not contain it.
-	pending int
+	// pendingIndent is the indentation still owed to the row at the cell's
+	// start. The renderer has not written it, so the prefix omits it.
+	pendingIndent int
 	// padding is the number of spaces alignment inserts at position.
 	padding int
 }
@@ -59,7 +59,22 @@ func alignCells(output string, cells []renderedCell) string {
 // index is always the previous cell of that column.
 func bucketCells(cells []renderedCell) [256][]int {
 	var columns [256][]int
+	// Cells arrive in output order, so a row's cells are contiguous here and
+	// their columns must not decrease. Padding a lower column after a higher
+	// one on the same row would shift the higher column's already-measured
+	// prefix, so enforce the precondition Cell documents instead of emitting
+	// silently misaligned output.
+	row, highest := -1, uint8(0)
 	for i, cell := range cells {
+		switch {
+		case cell.firstRow != row:
+			row, highest = cell.firstRow, cell.column
+		case cell.column < highest:
+			panic("document: Cell columns decrease within one row")
+		default:
+			highest = cell.column
+		}
+
 		indices := columns[cell.column]
 		if len(indices) > 0 && cells[indices[len(indices)-1]].firstRow == cell.firstRow {
 			continue
@@ -114,7 +129,7 @@ func padChains(output string, cells []renderedCell, indices []int, rowPadding ma
 // been spliced in yet, and indentation owed at the cell's start has not been
 // written. Both occupy one cluster per space.
 func cellWidth(output string, cell renderedCell, rowPadding map[int]int) int {
-	width := addWidth(rowPadding[cell.firstRow], cell.pending)
+	width := addWidth(rowPadding[cell.firstRow], cell.pendingIndent)
 
 	clusters := graphemes.FromString(output[cell.rowStart:cell.position])
 	for clusters.Next() {

@@ -34,6 +34,7 @@ func TestTemplateDirectiveShapes(t *testing.T) {
 			`"%{if a}%{if b}x%{endif}%{else}y%{endif}"`,
 			`File(Template("\"", TemplateIf(Directive("%{", "if", Variable("a"), "}"), TemplateIf(Directive("%{", "if", Variable("b"), "}"), "x", Directive("%{", "endif", "}")), Directive("%{", "else", "}"), "y", Directive("%{", "endif", "}")), "\""))`,
 		},
+
 		{
 			"strip markers and literal whitespace are preserved",
 			`" a %{~ if a ~} b %{~ else ~} c %{~ endif ~} d "`,
@@ -123,6 +124,7 @@ func TestTemplateDirectiveDiagnostics(t *testing.T) {
 			},
 			`File(Template("\"", TemplateIf(Directive("%{", "if", Variable("a"), "}"), Directive("%{", "else", Error("b"), "}"), Directive("%{", "endif", "}")), "\""))`,
 		},
+
 		{
 			"unmatched else",
 			`"%{else}"`,
@@ -164,6 +166,7 @@ func TestTemplateDirectiveDiagnostics(t *testing.T) {
 			},
 			`File(Template("\"", TemplateIf(Directive("%{", "if", Variable("a"), "}"), TemplateFor(Directive("%{", "for", "x", "in", Variable("xs"), "}"), "x"), Directive("%{", "else", "}"), "y", Directive("%{", "endif", "}")), "\""))`,
 		},
+
 		{
 			"missing endif preserves quote closer",
 			`"%{if a}x"`,
@@ -213,7 +216,7 @@ func TestTemplateDirectiveNestingIsIterative(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			file := parseExpressionSource([]byte(test.source))
-			assertExpressionPartition(t, []byte(test.source), file)
+			assertTreeInvariants(t, []byte(test.source), file)
 			if len(file.diagnostics) != 0 {
 				t.Fatalf("iterative directive nesting rejected: %+v", file.diagnostics)
 			}
@@ -225,7 +228,7 @@ func TestUnmatchedDirectiveEndingsPreserveOpenScopes(t *testing.T) {
 	const depth = maxRecursiveExpressionDepth * 8
 	source := `"` + strings.Repeat("%{if a}", depth) + strings.Repeat("%{endfor}", depth) + strings.Repeat("%{endif}", depth) + `"`
 	file := parseExpressionSource([]byte(source))
-	assertExpressionPartition(t, []byte(source), file)
+	assertTreeInvariants(t, []byte(source), file)
 	if len(file.diagnostics) != depth {
 		t.Fatalf("got %d diagnostics, want one for each unmatched endfor", len(file.diagnostics))
 	}

@@ -57,9 +57,9 @@ func declaredDiagnosticKinds(t *testing.T) map[DiagnosticKind]string {
 		if strings.HasSuffix(filename, "_test.go") {
 			continue
 		}
-		file, err := parser.ParseFile(fset, filename, nil, 0)
-		if err != nil {
-			t.Fatal(err)
+		file, parseErr := parser.ParseFile(fset, filename, nil, 0)
+		if parseErr != nil {
+			t.Fatal(parseErr)
 		}
 		for _, declaration := range file.Decls {
 			group, ok := declaration.(*ast.GenDecl)

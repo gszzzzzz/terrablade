@@ -68,6 +68,7 @@ func TestBodyRecovery(t *testing.T) {
       Literal
         "2"`,
 		},
+
 		{
 			"broken single line mode recovers at newline",
 			"b {a=1\nc=2\n}\nd=3",
@@ -215,6 +216,7 @@ func TestBodyRecovery(t *testing.T) {
         Error
           "c"`,
 		},
+
 		{
 			"incomplete header retains type and label",
 			"b x = 1\na=2",
@@ -307,6 +309,7 @@ func TestBodyRecovery(t *testing.T) {
       Literal
         "1"`,
 		},
+
 		{
 			"malformed inner construct leaves enclosing body closer",
 			"b { \n? [1 }\na=2",
@@ -357,6 +360,7 @@ func TestBodyRecovery(t *testing.T) {
       Literal
         "1"`,
 		},
+
 		{
 			"duplicate attributes both survive in source order",
 			"a=1\na=2",
@@ -472,7 +476,7 @@ func TestBodyRecoveryTriviaOwnership(t *testing.T) {
 		"b { c /*gap*/ : [1] /*tail*/ }\na=2",
 	} {
 		file := Parse([]byte(source))
-		assertExpressionPartition(t, []byte(source), file)
+		assertTreeInvariants(t, []byte(source), file)
 		comments := 0
 		stack := []SyntaxNode{file.root}
 		for len(stack) > 0 {

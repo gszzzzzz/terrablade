@@ -6,19 +6,20 @@ package syntax
 // traverse those iteratively.
 const maxRecursiveExpressionDepth = 1024
 
-// expressionContext selects whether newlines and line comments end the
-// construct being parsed. An attribute value, an object item, and a block
-// header end at the end of their line, while anything inside (), [], {}, or a
-// template sequence spans lines freely, so the same production is parsed
-// under either rule depending on where it appears.
-type expressionContext uint8
+// newlineContext selects whether newlines and line comments end the construct
+// being parsed. An attribute value, an object item, and a block header end at
+// the end of their line, while anything inside (), [], {}, or a template
+// sequence spans lines freely, so the same production is parsed under either
+// rule depending on where it appears. Body parsing uses it too: a body item
+// ends at its line, while the trivia between items does not.
+type newlineContext uint8
 
 const (
-	// lineExpression stops lookahead at a Newline or LineComment, which the
+	// newlineTerminates stops lookahead at a Newline or LineComment, which the
 	// enclosing production then treats as its terminator.
-	lineExpression expressionContext = iota
-	// delimitedExpression treats Newline and LineComment as trivia.
-	delimitedExpression
+	newlineTerminates newlineContext = iota
+	// newlineTransparent treats Newline and LineComment as trivia.
+	newlineTransparent
 )
 
 // triviaClass separates the two kinds of trivia because only one of them can
@@ -29,7 +30,7 @@ const (
 	notTrivia triviaClass = iota
 	// inlineTrivia is transparent to lookahead in every context.
 	inlineTrivia
-	// lineTrivia is transparent only in delimitedExpression context.
+	// lineTrivia is transparent only in newlineTransparent context.
 	lineTrivia
 )
 
@@ -89,7 +90,7 @@ func newParser(source []byte) *parser {
 // comments and newlines are transparent only inside delimiters. Committing a
 // grammatical token later also commits its intervening trivia to the enclosing
 // node. Unused lookahead leaves trailing trivia with the parent.
-func (p *parser) look(context expressionContext) int {
+func (p *parser) look(context newlineContext) int {
 	if p.halted {
 		return len(p.tokens) - 1
 	}
@@ -98,16 +99,17 @@ func (p *parser) look(context expressionContext) int {
 
 // lookFrom scans forward from index over the trivia that context makes
 // transparent and returns the index of the next grammatical token, or of the
-// line trivia that ends a lineExpression. It ignores the halt gate: file
-// recovery needs this raw view after shutdown, while grammar uses look.
-func (p *parser) lookFrom(index int, context expressionContext) int {
+// line trivia that ends a newlineTerminates construct. It ignores the halt
+// gate: file recovery needs this raw view after shutdown, while grammar uses
+// look.
+func (p *parser) lookFrom(index int, context newlineContext) int {
 	i := index
 	for i < len(p.tokens)-1 {
 		switch classifyTrivia(p.tokens[i].kind) {
 		case inlineTrivia:
 			i++
 		case lineTrivia:
-			if context == lineExpression {
+			if context == newlineTerminates {
 				return i
 			}
 			i++
@@ -119,14 +121,14 @@ func (p *parser) lookFrom(index int, context expressionContext) int {
 }
 
 // peek returns the kind of the token that look selects.
-func (p *parser) peek(context expressionContext) TokenKind {
+func (p *parser) peek(context newlineContext) TokenKind {
 	return p.tokens[p.look(context)].kind
 }
 
 // keyword reports whether the next grammatical token is the contextual keyword
 // word. Keywords are ordinary identifiers, so the tree keeps their lexical
 // kind.
-func (p *parser) keyword(word string, context expressionContext) bool {
+func (p *parser) keyword(word string, context newlineContext) bool {
 	return p.keywordAt(word, p.look(context))
 }
 
@@ -202,7 +204,7 @@ func (p *parser) retainUntil(b *nodeBuilder, index int) {
 
 // consumeLookahead includes the looked-ahead grammatical token, but never EOF.
 // The file assembler alone owns EOF, preventing duplicate sentinel leaves.
-func (p *parser) consumeLookahead(b *nodeBuilder, context expressionContext) {
+func (p *parser) consumeLookahead(b *nodeBuilder, context newlineContext) {
 	i := p.look(context)
 	if p.tokens[i].kind != EOF {
 		i++
@@ -277,7 +279,7 @@ func (p *parser) file(root nodeBuilder) Result {
 // original tail even when productions see EOF after a limit. Outer trivia stays
 // at File level, and unparsed non-trivia remains a flat, bounded ErrorNode.
 func (p *parser) retainRemainder(root *nodeBuilder) {
-	p.retainUntil(root, p.lookFrom(p.pos, delimitedExpression))
+	p.retainUntil(root, p.lookFrom(p.pos, newlineTransparent))
 
 	if p.tokens[p.pos].kind != EOF {
 		p.report(UnexpectedToken, p.tokens[p.pos].span)

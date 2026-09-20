@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"reflect"
 	"slices"
-	"strconv"
 	"strings"
 	"testing"
 )
@@ -33,6 +32,7 @@ func TestExpressionShapes(t *testing.T) {
 			"1.e2-foo",
 			`File(Binary(Literal("1.e2"), "-", Variable("foo")))`,
 		},
+
 		{
 			"contextual true",
 			"true",
@@ -53,6 +53,7 @@ func TestExpressionShapes(t *testing.T) {
 			"for",
 			`File(Variable("for"))`,
 		},
+
 		{
 			"multiply before addition",
 			"1 + 2 * 3",
@@ -93,6 +94,7 @@ func TestExpressionShapes(t *testing.T) {
 			"!-a + b",
 			`File(Binary(Unary("!", Unary("-", Variable("a"))), "+", Variable("b")))`,
 		},
+
 		{
 			"conditional false arm associates right",
 			"a ? b : c ? d : e",
@@ -103,6 +105,7 @@ func TestExpressionShapes(t *testing.T) {
 			"a || b ? c ? d : e : f",
 			`File(Conditional(Binary(Variable("a"), "||", Variable("b")), "?", Conditional(Variable("c"), "?", Variable("d"), ":", Variable("e")), ":", Variable("f")))`,
 		},
+
 		{
 			"empty function call",
 			"f()",
@@ -123,6 +126,7 @@ func TestExpressionShapes(t *testing.T) {
 			"provider::aws::f(x).id",
 			`File(Traversal(Call("provider", "::", "aws", "::", "f", "(", Variable("x"), ")"), AttrAccess(".", "id")))`,
 		},
+
 		{
 			"multiline call",
 			"f(\n a, # line\n b\n)",
@@ -133,6 +137,7 @@ func TestExpressionShapes(t *testing.T) {
 			"(a\n+ b # c\n* c)",
 			`File(Paren("(", Binary(Variable("a"), "+", Binary(Variable("b"), "*", Variable("c"))), ")"))`,
 		},
+
 		{
 			"unary before conditional",
 			"!a ? -b : c",
@@ -141,7 +146,7 @@ func TestExpressionShapes(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			file := parseExpressionSource([]byte(test.source))
-			assertExpressionPartition(t, []byte(test.source), file)
+			assertTreeInvariants(t, []byte(test.source), file)
 			if len(file.diagnostics) != 0 {
 				t.Fatalf("unexpected diagnostics: %+v", file.diagnostics)
 			}
@@ -191,6 +196,7 @@ func TestExpressionDiagnostics(t *testing.T) {
 			[]Diagnostic{{ExpectedExpression, Span{0, 1}}, {UnexpectedToken, Span{2, 3}}},
 			`File(Error("*"), Error("a"))`,
 		},
+
 		{
 			"missing close paren",
 			"(a + b",
@@ -203,6 +209,7 @@ func TestExpressionDiagnostics(t *testing.T) {
 			[]Diagnostic{{ExpectedExpression, Span{1, 2}}},
 			`File(Paren("(", Error(), ")"))`,
 		},
+
 		{
 			"missing conditional colon",
 			"a ? b",
@@ -215,6 +222,7 @@ func TestExpressionDiagnostics(t *testing.T) {
 			[]Diagnostic{{ExpectedExpression, Span{4, 5}}, {ExpectedExpression, Span{6, 6}}},
 			`File(Conditional(Variable("a"), "?", Error(), ":", Error()))`,
 		},
+
 		{
 			"missing function name",
 			"a::()",
@@ -257,6 +265,7 @@ func TestExpressionDiagnostics(t *testing.T) {
 			[]Diagnostic{{ExpectedClosingParen, Span{6, 7}}, {UnexpectedToken, Span{6, 7}}},
 			`File(Call("f", "(", Variable("a"), "..."), Error(",", "b", ")"))`,
 		},
+
 		{
 			"line break cannot continue unparenthesized binary",
 			"a\n+ b",
@@ -282,27 +291,13 @@ func TestExpressionDiagnostics(t *testing.T) {
 	}
 }
 
-// assertDiagnosticsAndShape pins the exact diagnostics, including spans, and
-// the recovered tree so that cascading errors and recovery regressions surface.
-func assertDiagnosticsAndShape(t *testing.T, source string, diagnostics []Diagnostic, shape string) {
-	t.Helper()
-	file := parseExpressionSource([]byte(source))
-	assertExpressionPartition(t, []byte(source), file)
-	if !reflect.DeepEqual(file.diagnostics, diagnostics) {
-		t.Errorf("diagnostics = %+v\nwant %+v", file.diagnostics, diagnostics)
-	}
-	if got := expressionShape(file, file.root.Element()); got != shape {
-		t.Errorf("shape:\n%s\nwant:\n%s", got, shape)
-	}
-}
-
 func TestUnterminatedExpressionLeavesTrailingTrivia(t *testing.T) {
 	// Quoted and heredoc bodies absorb whitespace into TemplateText, so only
 	// bracketed constructs can be followed by config-level trivia at EOF.
 	for _, source := range []string{"[for ", "{for # c\n", "{for a in xs : a => [1,\n\n", "[for a in xs : \"x\" /* c */\n"} {
 		t.Run(source, func(t *testing.T) {
 			file := parseExpressionSource([]byte(source))
-			assertExpressionPartition(t, []byte(source), file)
+			assertTreeInvariants(t, []byte(source), file)
 			if len(file.diagnostics) == 0 {
 				t.Fatal("unterminated expression must have a diagnostic")
 			}
@@ -328,7 +323,7 @@ func TestExpressionRecoveryPreservesFollowingArgument(t *testing.T) {
 func TestExpressionPreservesLexicalDiagnostics(t *testing.T) {
 	source := []byte("a + /*\xff")
 	file := parseExpressionSource(source)
-	assertExpressionPartition(t, source, file)
+	assertTreeInvariants(t, source, file)
 	for _, diagnostic := range lex(source).Diagnostics {
 		if !slices.Contains(file.diagnostics, diagnostic) {
 			t.Fatalf("lost lexical diagnostic %+v", diagnostic)
@@ -336,8 +331,9 @@ func TestExpressionPreservesLexicalDiagnostics(t *testing.T) {
 	}
 }
 
-// Inputs the fuzzer found interesting are checked in under testdata/fuzz/FuzzExpression
-// and run as part of the ordinary test suite, alongside the seeds below.
+// A discovered regression belongs in testdata/fuzz/FuzzExpression, where the ordinary
+// test suite runs it alongside the seeds below. See that directory's README for
+// what earns a checked-in entry.
 func FuzzExpression(f *testing.F) {
 	for _, source := range []string{
 		"",
@@ -380,7 +376,7 @@ func FuzzExpression(f *testing.F) {
 		// their original bytes; only our caller-owned clone may be cleared.
 		input := bytes.Clone(source)
 		file := parseExpressionSource(input)
-		assertExpressionPartition(t, source, file)
+		assertTreeInvariants(t, source, file)
 		if !bytes.Equal(input, source) {
 			t.Fatal("parser mutated source")
 		}
@@ -388,89 +384,8 @@ func FuzzExpression(f *testing.F) {
 			t.Fatal("parser is not deterministic")
 		}
 		clear(input)
-		assertExpressionPartition(t, source, file)
+		assertTreeInvariants(t, source, file)
 	})
-}
-
-// assertExpressionPartition checks the invariants every expression tree must
-// satisfy beyond byte-level losslessness: leaves are exactly the lexer's tokens,
-// only File and Body may begin or end with trivia, and error nodes imply
-// at least one diagnostic. Diagnostics without error nodes remain legitimate,
-// for example a missing closer or an unrepresentable number literal. Exact
-// ErrorNode-to-diagnostic relationships belong to focused recovery tests.
-func assertExpressionPartition(t *testing.T, source []byte, file Result) {
-	t.Helper()
-	assertFilePartition(t, source, file)
-	var tokens []SyntaxToken
-	errors := 0
-	stack := []SyntaxElement{file.root.Element()}
-	for len(stack) > 0 {
-		current := stack[len(stack)-1]
-		stack = stack[:len(stack)-1]
-		if element, ok := current.Node(); ok {
-			if element.Kind() == ErrorNode {
-				errors++
-			}
-			count := element.ChildCount()
-			if element.Kind() != File && element.Kind() != Body && count > 0 {
-				if token, ok := element.Child(0).Token(); ok && isTrivia(token.Kind()) {
-					t.Fatalf("%v begins with %v trivia: %s", element.Kind(), token.Kind(), expressionShape(file, element.Element()))
-				}
-				if token, ok := element.Child(count - 1).Token(); ok && isTrivia(token.Kind()) {
-					t.Fatalf("%v ends with %v trivia: %s", element.Kind(), token.Kind(), expressionShape(file, element.Element()))
-				}
-			}
-			for i := count - 1; i >= 0; i-- {
-				stack = append(stack, element.Child(i))
-			}
-		} else if element, ok := current.Token(); ok {
-			tokens = append(tokens, SyntaxToken{kind: element.Kind(), span: element.Span()})
-		}
-	}
-	if want := lex(source).Tokens; !reflect.DeepEqual(tokens, want) {
-		t.Fatalf("tree leaves differ from lexer tokens:\n%+v\nwant:\n%+v", tokens, want)
-	}
-	if errors > 0 && len(file.diagnostics) == 0 {
-		t.Fatalf("%d error nodes without any diagnostic: %s", errors, expressionShape(file, file.root.Element()))
-	}
-}
-
-// expressionShape omits trivia only for readable grammar assertions. Separate
-// partition and placement assertions verify every token, including all trivia.
-func expressionShape(file Result, current SyntaxElement) string {
-	if element, ok := current.Token(); ok {
-		if isTrivia(element.Kind()) || element.Kind() == EOF {
-			return ""
-		}
-		span := element.Span()
-		return strconv.Quote(file.source[span.Start:span.End])
-	} else if element, ok := current.Node(); ok {
-		names := shapeNodeNames
-		var children []string
-		for i := range element.ChildCount() {
-			if child := expressionShape(file, element.Child(i)); child != "" {
-				children = append(children, child)
-			}
-		}
-		return names[element.Kind()] + "(" + strings.Join(children, ", ") + ")"
-	}
-	return "<invalid>"
-}
-
-var shapeNodeNames = map[NodeKind]string{
-	File: "File", ErrorNode: "Error", LiteralExpression: "Literal",
-	VariableExpression: "Variable", ParenthesizedExpression: "Paren",
-	UnaryExpression: "Unary", BinaryExpression: "Binary",
-	ConditionalExpression: "Conditional", FunctionCallExpression: "Call",
-	TraversalExpression: "Traversal", AttributeAccess: "AttrAccess",
-	IndexAccess: "Index", LegacyIndexAccess: "LegacyIndex",
-	AttributeSplat: "AttributeSplat", FullSplat: "FullSplat",
-	TupleExpression:  "Tuple",
-	ObjectExpression: "Object", ObjectItem: "Item",
-	ForExpression:      "For",
-	TemplateExpression: "Template", TemplateInterpolation: "Interpolation",
-	TemplateDirective: "Directive", TemplateIf: "TemplateIf", TemplateFor: "TemplateFor",
-	Body: "Body", Attribute: "Attribute", Block: "Block", BlockLabel: "Label",
 }
 
 func TestShapeNodeNames(t *testing.T) {
@@ -536,7 +451,7 @@ func TestContiguousNumericCandidateDiagnostics(t *testing.T) {
 	} {
 		t.Run(test.source, func(t *testing.T) {
 			file := parseExpressionSource([]byte(test.source))
-			assertExpressionPartition(t, []byte(test.source), file)
+			assertTreeInvariants(t, []byte(test.source), file)
 			if len(file.diagnostics) != 1 || file.diagnostics[0] != test.want {
 				t.Fatalf("diagnostics = %+v, want %+v", file.diagnostics, test.want)
 			}
@@ -593,14 +508,14 @@ func TestExpressionDepthBoundaries(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			accepted := []byte(test.make(maxRecursiveExpressionDepth - 1))
 			file := parseExpressionSource(accepted)
-			assertExpressionPartition(t, accepted, file)
+			assertTreeInvariants(t, accepted, file)
 			if len(file.diagnostics) != 0 {
 				t.Fatalf("boundary input rejected: %+v", file.diagnostics)
 			}
 			for _, count := range []int{maxRecursiveExpressionDepth, maxRecursiveExpressionDepth * 8} {
 				source := []byte(test.make(count))
 				file = parseExpressionSource(source)
-				assertExpressionPartition(t, source, file)
+				assertTreeInvariants(t, source, file)
 				if len(file.diagnostics) != 1 || file.diagnostics[0].Kind != NestingLimitExceeded {
 					t.Fatalf("limit diagnostics = %+v", file.diagnostics)
 				}
@@ -616,7 +531,7 @@ func TestFlatBinaryChainDoesNotHitRecursionLimit(t *testing.T) {
 	const terms = maxRecursiveExpressionDepth * 8
 	source := []byte(strings.Repeat("a + ", terms-1) + "a")
 	file := parseExpressionSource(source)
-	assertExpressionPartition(t, source, file)
+	assertTreeInvariants(t, source, file)
 	if len(file.diagnostics) != 0 {
 		t.Fatalf("flat binary chain rejected: %+v", file.diagnostics)
 	}

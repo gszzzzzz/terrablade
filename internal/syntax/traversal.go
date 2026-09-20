@@ -21,7 +21,7 @@ func continuesTraversal(kind TokenKind, mode traversalMode) bool {
 // Attribute splats contain only following dot accesses; a full splat contains every
 // following traversal, including nested splats. This follows upstream HCL's
 // parseExpressionTraversals without introducing evaluated or synthetic nodes.
-func (p *parser) steps(parent *nodeBuilder, context expressionContext, mode traversalMode) {
+func (p *parser) steps(parent *nodeBuilder, context newlineContext, mode traversalMode) {
 	// An absent suffix costs no recursive level. Otherwise a complete splat at
 	// the depth boundary would fail merely while checking for another step.
 	if !continuesTraversal(p.peek(context), mode) {
@@ -58,7 +58,7 @@ func (p *parser) steps(parent *nodeBuilder, context expressionContext, mode trav
 // legacy numeric index, or an attribute splat. It reports false when nothing
 // valid follows the dot, which ends the traversal with an ErrorNode for the
 // stray dot.
-func (p *parser) dotStep(parent, b *nodeBuilder, context expressionContext, mode traversalMode) bool {
+func (p *parser) dotStep(parent, b *nodeBuilder, context newlineContext, mode traversalMode) bool {
 	switch p.peek(context) {
 	case Identifier:
 		p.consumeLookahead(b, context)
@@ -93,7 +93,7 @@ func (p *parser) dotStep(parent, b *nodeBuilder, context expressionContext, mode
 // an index expression. Upstream detects [*] in the outer newline context before
 // entering ordinary index-expression mode. Thus a[\n*] is invalid outside
 // parens, while a[\n0] is valid. Preserve this distinction and all raw trivia.
-func (p *parser) bracketStep(parent, b *nodeBuilder, context expressionContext) {
+func (p *parser) bracketStep(parent, b *nodeBuilder, context newlineContext) {
 	if p.peek(context) == Star {
 		p.consumeLookahead(b, context)
 		if p.expect(b, CloseBracket, ExpectedClosingBracket, context) {
@@ -104,7 +104,7 @@ func (p *parser) bracketStep(parent, b *nodeBuilder, context expressionContext) 
 		return
 	}
 
-	p.operand(b, lowestPower, delimitedExpression)
-	p.expect(b, CloseBracket, ExpectedClosingBracket, delimitedExpression)
+	p.operand(b, lowestPower, newlineTransparent)
+	p.expect(b, CloseBracket, ExpectedClosingBracket, newlineTransparent)
 	parent.node(b.finish(IndexAccess))
 }

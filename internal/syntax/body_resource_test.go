@@ -21,7 +21,7 @@ func TestBodyDeepNesting(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			source := []byte(strings.Repeat("b {\n", depth) + "a=1\n" + test.ending)
 			file := Parse(source)
-			assertExpressionPartition(t, source, file)
+			assertTreeInvariants(t, source, file)
 			wantDiagnostics := 0
 			if test.missing {
 				wantDiagnostics = depth
@@ -45,7 +45,7 @@ func TestBodyDeepNesting(t *testing.T) {
 func TestBodyExpressionLimitRetainsOuterTail(t *testing.T) {
 	source := []byte("outer {\n inner { a=" + strings.Repeat("!", maxRecursiveExpressionDepth+1) + "x }\n}\ntail=1\n")
 	file := Parse(source)
-	assertExpressionPartition(t, source, file)
+	assertTreeInvariants(t, source, file)
 	if len(file.diagnostics) != 1 || file.diagnostics[0].Kind != NestingLimitExceeded {
 		t.Fatalf("expression shutdown cascaded into body errors: %+v", file.diagnostics)
 	}
@@ -67,7 +67,7 @@ func TestBodyFlatItemsAndArena(t *testing.T) {
 	}
 	data := []byte(source.String())
 	file := Parse(data)
-	assertExpressionPartition(t, data, file)
+	assertTreeInvariants(t, data, file)
 	if len(file.diagnostics) != 0 {
 		t.Fatalf("flat sibling bodies share attribute scopes: %+v", file.diagnostics)
 	}
@@ -127,7 +127,7 @@ func TestBodyLongLabelsAndRecovery(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			file := Parse([]byte(test.source))
-			assertExpressionPartition(t, []byte(test.source), file)
+			assertTreeInvariants(t, []byte(test.source), file)
 			if !reflect.DeepEqual(file.diagnostics, test.diagnostics) {
 				t.Fatalf("diagnostics = %+v, want %+v", file.diagnostics, test.diagnostics)
 			}
@@ -140,8 +140,9 @@ func TestBodyLongLabelsAndRecovery(t *testing.T) {
 	}
 }
 
-// Inputs the fuzzer found interesting are checked in under testdata/fuzz/FuzzBody
-// and run as part of the ordinary test suite, alongside the seeds below.
+// A discovered regression belongs in testdata/fuzz/FuzzBody, where the ordinary
+// test suite runs it alongside the seeds below. See that directory's README for
+// what earns a checked-in entry.
 func FuzzBody(f *testing.F) {
 	for _, test := range bodyCompatibilityCases {
 		f.Add([]byte(test.source))
@@ -164,7 +165,7 @@ func FuzzBody(f *testing.F) {
 		// retain its original input after this callback for corpus minimization.
 		input := bytes.Clone(source)
 		file := Parse(input)
-		assertExpressionPartition(t, source, file)
+		assertTreeInvariants(t, source, file)
 		if !bytes.Equal(input, source) {
 			t.Fatal("body parser mutated input")
 		}
@@ -177,6 +178,6 @@ func FuzzBody(f *testing.F) {
 			t.Fatal("body parser is not deterministic")
 		}
 		clear(input)
-		assertExpressionPartition(t, source, file)
+		assertTreeInvariants(t, source, file)
 	})
 }

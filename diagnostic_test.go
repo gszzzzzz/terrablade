@@ -38,7 +38,10 @@ func TestDiagnosticKinds(t *testing.T) {
 		{"a=ns::f", terrablade.ExpectedOpeningParen, "ExpectedOpeningParen"},
 		{"a=x.0.1", terrablade.InvalidLegacyIndex, "InvalidLegacyIndex"},
 		{"a=x.*.*", terrablade.NestedAttributeSplat, "NestedAttributeSplat"},
-		{"a=" + strings.Repeat("(", 2000) + "x" + strings.Repeat(")", 2000), terrablade.NestingLimitExceeded, "NestingLimitExceeded"},
+		{
+			"a=" + strings.Repeat("(", 2000) + "x" + strings.Repeat(")", 2000),
+			terrablade.NestingLimitExceeded, "NestingLimitExceeded",
+		},
 		{"a=1.0.2", terrablade.InvalidNumber, "InvalidNumber"},
 		{"a=[x y]", terrablade.ExpectedTupleSeparator, "ExpectedTupleSeparator"},
 		{"b {", terrablade.ExpectedClosingBrace, "ExpectedClosingBrace"},
@@ -124,9 +127,21 @@ func TestDiagnosticClusterInteriors(t *testing.T) {
 		source     string
 		start, end terrablade.Position
 	}{
-		{"👩‍💻", terrablade.Position{Offset: 0, Line: 1, Column: 1}, terrablade.Position{Offset: 4, Line: 1, Column: 1}},
-		{"\r\n👩‍💻", terrablade.Position{Offset: 2, Line: 2, Column: 1}, terrablade.Position{Offset: 6, Line: 2, Column: 1}},
-		{"\u0600\xff", terrablade.Position{Offset: 2, Line: 1, Column: 2}, terrablade.Position{Offset: 3, Line: 1, Column: 3}},
+		{
+			"👩‍💻",
+			terrablade.Position{Offset: 0, Line: 1, Column: 1},
+			terrablade.Position{Offset: 4, Line: 1, Column: 1},
+		},
+		{
+			"\r\n👩‍💻",
+			terrablade.Position{Offset: 2, Line: 2, Column: 1},
+			terrablade.Position{Offset: 6, Line: 2, Column: 1},
+		},
+		{
+			"\u0600\xff",
+			terrablade.Position{Offset: 2, Line: 1, Column: 2},
+			terrablade.Position{Offset: 3, Line: 1, Column: 3},
+		},
 	} {
 		diagnostics := parseDiagnostics(t, []byte(test.source))
 		found := false

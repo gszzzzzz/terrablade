@@ -27,7 +27,10 @@ func TestFormat(t *testing.T) {
 		{"BOM only", "\ufeff \n", "\n"},
 		{"BOM and CRLF", "\ufeffa=1\r\nlong=2\r\n", "a    = 1\nlong = 2\n"},
 		{"blank groups", "\na=1\nlong=2\n\n\nx=3\n\n", "a    = 1\nlong = 2\n\nx = 3\n"},
-		{"blocks", "resource aws_instance web {ami=\"x\"}\nz=1", "resource \"aws_instance\" \"web\" {\n  ami = \"x\"\n}\n\nz = 1\n"},
+		{
+			"blocks", "resource aws_instance web {ami=\"x\"}\nz=1",
+			"resource \"aws_instance\" \"web\" {\n  ami = \"x\"\n}\n\nz = 1\n",
+		},
 		{"header comments", `block /*type*/ bare /*label*/ "q" {}`, "block \"bare\" \"q\" /*type*/ /*label*/ {}\n"},
 		{"normalization", `a="${foo.0.bar}"`, "a = foo[0].bar\n"},
 		{"computed key", `a={"${name}"=1}`, "a = { (name) = 1 }\n"},

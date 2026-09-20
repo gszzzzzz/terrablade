@@ -1,2 +1,0 @@
-go test fuzz v1
-[]byte("\"${A a aa aa}${a}0000000${a}${aa{~aaaaaa~a")

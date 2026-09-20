@@ -6,11 +6,6 @@ import (
 	"testing"
 )
 
-type tokenText struct {
-	kind TokenKind
-	text string
-}
-
 func TestLexTokens(t *testing.T) {
 	for _, test := range []struct {
 		name, source string
@@ -54,6 +49,7 @@ func TestLexTokens(t *testing.T) {
 				{BlockComment, "/*\uFEFF*/"},
 			},
 		},
+
 		{
 			"namespaced function",
 			"provider::aws::arn_parse(x)",
@@ -92,6 +88,7 @@ func TestLexTokens(t *testing.T) {
 				{Identifier, "b"},
 			},
 		},
+
 		{
 			"trivia",
 			" \t\t \n\r\n\n",
@@ -136,6 +133,7 @@ func TestLexTokens(t *testing.T) {
 				{Slash, "/"},
 			},
 		},
+
 		{
 			"unicode",
 			"_a-2 한글 e\u0301 é \u2118x x\u200Cz \U00010940 \U00011DB0",
@@ -190,6 +188,7 @@ func TestLexTokens(t *testing.T) {
 				{Number, "3"},
 			},
 		},
+
 		{
 			"numbers",
 			"0 012 1.25 1e3 1E+3 1.5e-20",
@@ -235,6 +234,7 @@ func TestLexTokens(t *testing.T) {
 				{Number, "0.0"},
 			},
 		},
+
 		{
 			"operators",
 			"+-*/%&&||!==!=<>>===>:?.,...{}[]()",
@@ -293,6 +293,7 @@ func TestLexTokens(t *testing.T) {
 				{Dot, "."},
 			},
 		},
+
 		{
 			"body",
 			"locals {\n a=[1,foo.bar]\n}\n",
@@ -320,7 +321,7 @@ func TestLexTokens(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			source := []byte(test.source)
 			result := lex(source)
-			assertPartition(t, source, result)
+			assertLexInvariants(t, source, result)
 			if len(result.Diagnostics) != 0 {
 				t.Fatalf("unexpected diagnostics: %+v", result.Diagnostics)
 			}
@@ -380,7 +381,7 @@ func TestLexDiagnostics(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			result := lex([]byte(test.source))
-			assertPartition(t, []byte(test.source), result)
+			assertLexInvariants(t, []byte(test.source), result)
 			if !reflect.DeepEqual(result.Diagnostics, test.want) {
 				t.Errorf("diagnostics = %+v, want %+v", result.Diagnostics, test.want)
 			}
@@ -391,7 +392,7 @@ func TestLexDiagnostics(t *testing.T) {
 func TestLexEveryByte(t *testing.T) {
 	for value := range 256 {
 		source := []byte{byte(value)}
-		assertPartition(t, source, lex(source))
+		assertLexInvariants(t, source, lex(source))
 	}
 }
 
@@ -458,6 +459,7 @@ func TestLexNumericCandidates(t *testing.T) {
 				{Number, "1.0.2"},
 			},
 		},
+
 		{
 			"legacy index with exponent and decimal point",
 			"foo.0e1.0",
@@ -479,6 +481,7 @@ func TestLexNumericCandidates(t *testing.T) {
 				{Number, "0"},
 			},
 		},
+
 		{
 			"trailing ellipsis",
 			"1...",
@@ -494,6 +497,7 @@ func TestLexNumericCandidates(t *testing.T) {
 				{Number, "1...2"},
 			},
 		},
+
 		{
 			"incomplete positive exponent is attribute and operator",
 			"1.e+",
@@ -533,7 +537,7 @@ func TestLexNumericCandidates(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			source := []byte(test.source)
 			result := lex(source)
-			assertPartition(t, source, result)
+			assertLexInvariants(t, source, result)
 			if len(result.Diagnostics) != 0 {
 				t.Fatalf("unexpected lexical diagnostics: %+v", result.Diagnostics)
 			}
@@ -548,8 +552,9 @@ func TestLexNumericCandidates(t *testing.T) {
 	}
 }
 
-// Inputs the fuzzer found interesting are checked in under testdata/fuzz/FuzzLex
-// and run as part of the ordinary test suite, alongside the seeds below.
+// A discovered regression belongs in testdata/fuzz/FuzzLex, where the ordinary
+// test suite runs it alongside the seeds below. See that directory's README for
+// what earns a checked-in entry.
 func FuzzLex(f *testing.F) {
 	f.Add([]byte("\uFEFFa\uFEFF#\uFEFF\n/*\uFEFF*/"))
 	for _, source := range []string{
@@ -580,7 +585,7 @@ func FuzzLex(f *testing.F) {
 	f.Fuzz(func(t *testing.T, source []byte) {
 		original := bytes.Clone(source)
 		first := lex(source)
-		assertPartition(t, source, first)
+		assertLexInvariants(t, source, first)
 		if !bytes.Equal(source, original) {
 			t.Fatal("lex modified source")
 		}
@@ -588,45 +593,4 @@ func FuzzLex(f *testing.F) {
 			t.Fatal("lex is not deterministic")
 		}
 	})
-}
-
-func assertPartition(t *testing.T, source []byte, result lexResult) {
-	t.Helper()
-	if len(result.Tokens) == 0 {
-		t.Fatal("missing EOF")
-	}
-	end := 0
-	var reconstructed []byte
-	for i, token := range result.Tokens {
-		span := token.Span()
-		if span.Start != end || span.End < span.Start || span.End > len(source) {
-			t.Fatalf("invalid partition at token %d: %+v, previous end %d", i, token, end)
-		}
-		if token.Kind() == EOF {
-			if i != len(result.Tokens)-1 || span.Start != len(source) || span.End != len(source) {
-				t.Fatalf("invalid EOF: %+v", token)
-			}
-		} else if span.Start == span.End {
-			t.Fatalf("empty non-EOF token: %+v", token)
-		}
-		if token.Kind() == BOM && !bytes.Equal(source[span.Start:span.End], []byte("\uFEFF")) {
-			t.Fatalf("BOM token does not span exactly one UTF-8 BOM: %+v", token)
-		}
-		reconstructed = append(reconstructed, source[span.Start:span.End]...)
-		end = span.End
-	}
-	if result.Tokens[len(result.Tokens)-1].Kind() != EOF || end != len(source) {
-		t.Fatal("missing final EOF or source bytes")
-	}
-	if !bytes.Equal(reconstructed, source) {
-		t.Fatal("tokens do not reconstruct source")
-	}
-	lastStart := -1
-	for _, diagnostic := range result.Diagnostics {
-		span := diagnostic.Span
-		if span.Start < lastStart || span.Start < 0 || span.End < span.Start || span.End > len(source) {
-			t.Fatalf("invalid diagnostic span/order: %+v", diagnostic)
-		}
-		lastStart = span.Start
-	}
 }

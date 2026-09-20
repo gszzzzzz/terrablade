@@ -11,6 +11,9 @@ import (
 	"github.com/gszzzzzz/terrablade/internal/syntax"
 )
 
+// The seed corpus stays in escaped form. A seed is opaque input for the
+// fuzzer rather than a layout expectation, and the dense list is easier to
+// scan for coverage gaps than one call per line would be.
 func FuzzFile(f *testing.F) {
 	for _, source := range []string{
 		"", "\ufeff\n", "a=1", "a=1\nlong=2", "a=1\n\nlong=2",
@@ -130,14 +133,4 @@ func BenchmarkFileLowering(b *testing.B) {
 			})
 		}
 	}
-}
-
-func wideBody(count int) string {
-	var source strings.Builder
-	for i := range count {
-		source.WriteString("a")
-		source.WriteString(strconv.Itoa(i))
-		source.WriteString("=x # value\nb { a=x }\n")
-	}
-	return source.String()
 }

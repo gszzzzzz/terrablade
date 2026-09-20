@@ -21,6 +21,7 @@ func TestForExpressionShapes(t *testing.T) {
 			"{for k, v in xs : k => v... if v}",
 			`File(For("{", "for", "k", ",", "v", "in", Variable("xs"), ":", Variable("k"), "=>", Variable("v"), "...", "if", Variable("v"), "}"))`,
 		},
+
 		{
 			"newlines are transparent throughout",
 			"{\nfor k,\nv in\nxs\n:\nk\n=>\nv\n...\nif\nv\n}",
@@ -94,6 +95,7 @@ func TestForExpressionDiagnostics(t *testing.T) {
 			},
 			`File(For("[", "for", "x", "in", Variable("xs"), Error("x"), "]"))`,
 		},
+
 		{
 			"missing projection",
 			"[for x in xs : ]",
@@ -135,6 +137,7 @@ func TestForExpressionDiagnostics(t *testing.T) {
 			},
 			`File(For("[", "for", "x", "in", Variable("xs"), ":", Variable("x"), "if", Error(), "]"))`,
 		},
+
 		{
 			"trailing comma is not a collection separator",
 			"f([for x in xs : x, y], z)",

@@ -28,7 +28,7 @@ func lex(source []byte) lexResult {
 		case modeHeredoc:
 			kind, width = UnterminatedHeredoc, frame.marker.Start-frame.start
 		}
-		l.error(kind, frame.start, frame.start+width)
+		l.report(kind, frame.start, frame.start+width)
 	}
 
 	l.result.Tokens = append(l.result.Tokens, SyntaxToken{kind: EOF, span: Span{len(source), len(source)}})
@@ -58,26 +58,26 @@ func (l *lexer) scan() TokenKind {
 	if len(l.modes) > 0 {
 		switch l.modes[len(l.modes)-1].mode {
 		case modeQuoted:
-			return l.quoted()
+			return l.scanQuoted()
 		case modeExpression:
-			return l.templateExpression()
+			return l.scanTemplateExpression()
 		case modeHeredoc:
-			return l.heredoc()
+			return l.scanHeredoc()
 		}
 	}
-	return l.config()
+	return l.scanConfig()
 }
 
 // byteOrderMark is U+FEFF. Only a leading one is meaningful, but the lexer
 // records every occurrence as a BOM token and leaves placement to the parser.
 const byteOrderMark rune = 0xFEFF
 
-// config scans one token of the configuration sub-language, which is also the
-// language inside ${...} and %{...} sequences. It works in two phases: the
+// scanConfig scans one token of the configuration sub-language, which is also
+// the language inside ${...} and %{...} sequences. It works in two phases: the
 // byte switch handles every construct that begins with a specific ASCII byte,
 // then the remainder decodes one rune, because BOM, identifiers, and invalid
 // characters are defined on code points rather than bytes.
-func (l *lexer) config() TokenKind {
+func (l *lexer) scanConfig() TokenKind {
 	c := l.source[l.offset]
 	switch {
 	case c == ' ' || c == '\t':
@@ -88,23 +88,23 @@ func (l *lexer) config() TokenKind {
 	case c == '\n':
 		l.offset++
 		return Newline
-	case l.has("\r\n"):
+	case l.hasPrefix("\r\n"):
 		l.offset += 2
 		return Newline
-	case c == '#' || l.has("//"):
+	case c == '#' || l.hasPrefix("//"):
 		// Keep the terminator separate so the parser can honor newline-sensitive
 		// values while preserving the exact comment spelling.
-		for l.offset < len(l.source) && l.source[l.offset] != '\n' && !l.has("\r\n") {
+		for l.offset < len(l.source) && l.source[l.offset] != '\n' && !l.hasPrefix("\r\n") {
 			l.advanceRune()
 		}
 		return LineComment
-	case l.has("/*"):
+	case l.hasPrefix("/*"):
 		return l.blockComment()
 	case c == '"':
 		l.modes = append(l.modes, modeFrame{mode: modeQuoted, start: l.offset})
 		l.offset++
 		return QuoteOpen
-	case l.has(heredocIntroducer):
+	case l.hasPrefix(heredocIntroducer):
 		// A complete marker commits template mode; otherwise consume only the
 		// first '<' so the second remains available to the next scan.
 		if marker, ok := l.heredocOpener(); ok {
@@ -135,8 +135,9 @@ func (l *lexer) config() TokenKind {
 		}
 		return Identifier
 	}
-	if kind, width := l.punctuation(); width > 0 {
-		l.offset += width
+	// size, not width: the rune width above is still live below.
+	if kind, size := l.punctuation(); size > 0 {
+		l.offset += size
 		return kind
 	}
 
@@ -144,7 +145,7 @@ func (l *lexer) config() TokenKind {
 	l.advanceRune()
 	// advanceRune already reports malformed encoding; do not double-label it.
 	if !isEncodingError(r, width) {
-		l.error(InvalidCharacter, start, l.offset)
+		l.report(InvalidCharacter, start, l.offset)
 	}
 	return Invalid
 }
@@ -156,13 +157,13 @@ func (l *lexer) blockComment() TokenKind {
 	start := l.offset
 	l.offset += 2
 	for l.offset < len(l.source) {
-		if l.has("*/") {
+		if l.hasPrefix("*/") {
 			l.offset += 2
 			return BlockComment
 		}
 		l.advanceRune()
 	}
-	l.error(UnterminatedBlockComment, start, l.offset)
+	l.report(UnterminatedBlockComment, start, l.offset)
 	return BlockComment
 }
 
@@ -226,14 +227,14 @@ var singlePunctuation = [256]TokenKind{
 }
 
 // punctuation matches the longest operator or delimiter at the cursor without
-// consuming it, so config decides how to record it. A zero width means none.
-// Every punctuation token passes through here, so the two-byte operators are
-// a switch on the byte pair rather than a table scan: the sequential prefix
-// comparisons of a table cost the lexer about ten percent on operator-heavy
-// input. They are tested before the one-byte table so that, for example, "=="
-// cannot lex as two Equal tokens.
+// consuming it, so scanConfig decides how to record it. A zero width means
+// none. Every punctuation token passes through here, so the two-byte
+// operators are a switch on the byte pair rather than a table scan: the
+// sequential prefix comparisons of a table cost the lexer about ten percent on
+// operator-heavy input. They are tested before the one-byte table so that, for
+// example, "==" cannot lex as two Equal tokens.
 func (l *lexer) punctuation() (TokenKind, int) {
-	if l.has("...") {
+	if l.hasPrefix("...") {
 		return Ellipsis, 3
 	}
 
@@ -264,7 +265,9 @@ func (l *lexer) punctuation() (TokenKind, int) {
 	return Invalid, 0
 }
 
-func (l *lexer) has(text string) bool { return bytes.HasPrefix(l.source[l.offset:], []byte(text)) }
+func (l *lexer) hasPrefix(text string) bool {
+	return bytes.HasPrefix(l.source[l.offset:], []byte(text))
+}
 
 // advanceRune validates encoding even inside comments and template literals.
 // Every malformed UTF-8 byte advances by one; valid U+FFFD is not an encoding error.
@@ -273,7 +276,7 @@ func (l *lexer) advanceRune() {
 	r, width := utf8.DecodeRune(l.source[start:])
 	l.offset += width
 	if isEncodingError(r, width) {
-		l.error(InvalidUTF8, start, l.offset)
+		l.report(InvalidUTF8, start, l.offset)
 	}
 }
 
@@ -282,6 +285,6 @@ func (l *lexer) advanceRune() {
 // one only for invalid input, while an encoded U+FFFD has width three.
 func isEncodingError(r rune, width int) bool { return r == utf8.RuneError && width == 1 }
 
-func (l *lexer) error(kind DiagnosticKind, start, end int) {
+func (l *lexer) report(kind DiagnosticKind, start, end int) {
 	l.result.Diagnostics = append(l.result.Diagnostics, Diagnostic{Kind: kind, Span: Span{start, end}})
 }

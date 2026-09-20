@@ -148,7 +148,7 @@ func TestDiagnosticKindString(t *testing.T) {
 		"ExpectedSingleLineBlockEnd",
 		"DuplicateAttribute",
 	}
-	assertEnumNames(t, want, uint8(diagnosticKindCount), func(value uint8) string { return DiagnosticKind(value).String() })
+	assertEnumNames(t, want, uint8(DiagnosticKindCount), func(value uint8) string { return DiagnosticKind(value).String() })
 	if got := DiagnosticKind(255).String(); got != "DiagnosticKind(255)" {
 		t.Fatalf("unknown DiagnosticKind = %q, want %q", got, "DiagnosticKind(255)")
 	}
@@ -161,17 +161,5 @@ func TestDiagnosticFormattingUsesKindName(t *testing.T) {
 	})
 	if !strings.Contains(formatted, "Kind:InvalidNumber") {
 		t.Fatalf("formatted diagnostic = %q, want readable kind", formatted)
-	}
-}
-
-func assertEnumNames(t *testing.T, want []string, count uint8, name func(uint8) string) {
-	t.Helper()
-	if len(want) != int(count) {
-		t.Fatalf("test covers %d values, enum defines %d", len(want), count)
-	}
-	for value, expected := range want {
-		if got := name(uint8(value)); got != expected {
-			t.Errorf("value %d = %q, want %q", value, got, expected)
-		}
 	}
 }

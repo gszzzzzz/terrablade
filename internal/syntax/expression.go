@@ -21,21 +21,10 @@ const (
 	unaryPower
 )
 
-// parseExpressionSource is an internal test seam for an attribute-style value:
-// unparenthesized newlines terminate it. It is not a configuration-file parser.
-// Leading and trailing trivia belong to File. Remaining non-trivia is an error.
-func parseExpressionSource(source []byte) Result {
-	p := newParser(source)
-	root := p.begin()
-	p.consumeUntil(&root, p.look(delimitedExpression))
-	p.operand(&root, lowestPower, lineExpression)
-	return p.file(root)
-}
-
 // operand commits only trivia that precedes an actual expression. A missing
 // operand gets an empty ErrorNode at the cursor; no synthetic token is emitted
 // and trailing trivia remains available to the enclosing structure.
-func (p *parser) operand(b *nodeBuilder, minimum int, context expressionContext) {
+func (p *parser) operand(b *nodeBuilder, minimum int, context newlineContext) {
 	i := p.look(context)
 	if operandTerminators.has(p.tokens[i].kind) {
 		p.report(ExpectedExpression, p.tokens[i].span)
@@ -51,7 +40,7 @@ func (p *parser) operand(b *nodeBuilder, minimum int, context expressionContext)
 // operators bind from orPower to multiplicativePower and associate left;
 // unary operators bind at unaryPower; postfix traversal binds tightest and is
 // handled inside prefix.
-func (p *parser) expression(minimum int, context expressionContext) SyntaxNode {
+func (p *parser) expression(minimum int, context newlineContext) SyntaxNode {
 	if p.depth == maxRecursiveExpressionDepth {
 		span := p.current().span
 		b := p.begin()
@@ -125,7 +114,7 @@ func binaryPower(kind TokenKind) int {
 // template, followed by any traversal steps. kind starts as ErrorNode so that
 // only the fallback arm, which reports the missing expression and retains the
 // offending token, leaves it unchanged; every grammatical arm sets its own.
-func (p *parser) prefix(context expressionContext) SyntaxNode {
+func (p *parser) prefix(context newlineContext) SyntaxNode {
 	b := p.begin()
 	token := p.current()
 	kind := ErrorNode
@@ -149,8 +138,8 @@ func (p *parser) prefix(context expressionContext) SyntaxNode {
 		}
 	case OpenParen:
 		p.consumeLookahead(&b, context)
-		p.operand(&b, lowestPower, delimitedExpression)
-		p.expect(&b, CloseParen, ExpectedClosingParen, delimitedExpression)
+		p.operand(&b, lowestPower, newlineTransparent)
+		p.expect(&b, CloseParen, ExpectedClosingParen, newlineTransparent)
 		kind = ParenthesizedExpression
 	case Minus, Bang:
 		p.consumeLookahead(&b, context)
@@ -190,7 +179,7 @@ func (p *parser) prefix(context expressionContext) SyntaxNode {
 
 // number validates the lexer's numeric candidate without evaluating the
 // expression. Legacy dot-index syntax additionally rejects any decimal point.
-func (p *parser) number(b *nodeBuilder, context expressionContext, legacy bool) {
+func (p *parser) number(b *nodeBuilder, context newlineContext, legacy bool) {
 	span := p.tokens[p.look(context)].span
 	text := p.source[span.Start:span.End]
 	if legacy && strings.Contains(text, ".") {
@@ -207,7 +196,7 @@ func (p *parser) number(b *nodeBuilder, context expressionContext, legacy bool) 
 // otherwise reports diagnostic at it. A mismatch leaves the token for the
 // enclosing production. Consuming it here could steal that production's closer
 // or attach trailing trivia to this node.
-func (p *parser) expect(b *nodeBuilder, kind TokenKind, diagnostic DiagnosticKind, context expressionContext) bool {
+func (p *parser) expect(b *nodeBuilder, kind TokenKind, diagnostic DiagnosticKind, context newlineContext) bool {
 	if p.peek(context) == kind {
 		p.consumeLookahead(b, context)
 		return true
@@ -220,7 +209,7 @@ func (p *parser) expect(b *nodeBuilder, kind TokenKind, diagnostic DiagnosticKin
 // "::"-separated namespace parts, then the parenthesized argument list. The
 // arguments are expressions separated by commas; a trailing comma is allowed,
 // and a final "..." expands the last argument, after which only ')' may follow.
-func (p *parser) call(b *nodeBuilder, context expressionContext) {
+func (p *parser) call(b *nodeBuilder, context newlineContext) {
 	for p.peek(context) == DoubleColon {
 		p.consumeLookahead(b, context)
 		if !p.expect(b, Identifier, ExpectedFunctionName, context) {
@@ -234,35 +223,35 @@ func (p *parser) call(b *nodeBuilder, context expressionContext) {
 	// Only the arguments ignore newlines; namespace/name and '(' use the outer
 	// context. Testing ')' before an operand permits empty lists and trailing ','.
 	for {
-		if p.peek(delimitedExpression) == CloseParen {
-			p.consumeLookahead(b, delimitedExpression)
+		if p.peek(newlineTransparent) == CloseParen {
+			p.consumeLookahead(b, newlineTransparent)
 			return
 		}
 
-		p.operand(b, lowestPower, delimitedExpression)
-		kind := p.peek(delimitedExpression)
+		p.operand(b, lowestPower, newlineTransparent)
+		kind := p.peek(newlineTransparent)
 		switch {
 		case expressionBoundaries.has(kind):
-			p.expect(b, CloseParen, ExpectedClosingParen, delimitedExpression)
+			p.expect(b, CloseParen, ExpectedClosingParen, newlineTransparent)
 			return
 		case kind == Ellipsis:
 			// Expansion is final: a following comma must not reopen the argument loop.
-			p.consumeLookahead(b, delimitedExpression)
-			p.expect(b, CloseParen, ExpectedClosingParen, delimitedExpression)
+			p.consumeLookahead(b, newlineTransparent)
+			p.expect(b, CloseParen, ExpectedClosingParen, newlineTransparent)
 			return
 		case kind == Comma:
-			p.consumeLookahead(b, delimitedExpression)
+			p.consumeLookahead(b, newlineTransparent)
 		default:
 			// Report the missing comma once, then keep the material up to the
 			// next comma or closer as one ErrorNode so the arguments after it
 			// still parse. Anything but a comma there ends the call.
-			p.report(ExpectedArgumentSeparator, p.tokens[p.look(delimitedExpression)].span)
-			p.recoverUntil(b, delimitedExpression, itemBoundaries)
-			if p.peek(delimitedExpression) != Comma {
-				p.expect(b, CloseParen, ExpectedClosingParen, delimitedExpression)
+			p.report(ExpectedArgumentSeparator, p.tokens[p.look(newlineTransparent)].span)
+			p.recoverUntil(b, newlineTransparent, itemBoundaries)
+			if p.peek(newlineTransparent) != Comma {
+				p.expect(b, CloseParen, ExpectedClosingParen, newlineTransparent)
 				return
 			}
-			p.consumeLookahead(b, delimitedExpression)
+			p.consumeLookahead(b, newlineTransparent)
 		}
 	}
 }

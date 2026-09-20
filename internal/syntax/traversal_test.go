@@ -25,6 +25,7 @@ func TestTraversalShapes(t *testing.T) {
 			"1.e-",
 			`File(Traversal(Literal("1"), AttrAccess(".", "e-")))`,
 		},
+
 		{
 			"postfix binds inside unary",
 			"-foo.bar[0]",
@@ -45,6 +46,7 @@ func TestTraversalShapes(t *testing.T) {
 			"foo.0e1",
 			`File(Traversal(Variable("foo"), LegacyIndex(".", "0e1")))`,
 		},
+
 		{
 			"legacy splat index is outside projection",
 			"foo.*.bar[0].baz",
@@ -75,6 +77,7 @@ func TestTraversalShapes(t *testing.T) {
 			"foo.*.bar[0].*.baz",
 			`File(Traversal(Variable("foo"), AttributeSplat(".", "*", AttrAccess(".", "bar")), Index("[", Literal("0"), "]"), AttributeSplat(".", "*", AttrAccess(".", "baz"))))`,
 		},
+
 		{
 			"trivia separates legacy numeric candidates",
 			"foo.0 .0",
@@ -93,7 +96,7 @@ func TestTraversalShapes(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			file := parseExpressionSource([]byte(test.source))
-			assertExpressionPartition(t, []byte(test.source), file)
+			assertTreeInvariants(t, []byte(test.source), file)
 			if len(file.diagnostics) != 0 {
 				t.Fatalf("unexpected diagnostics: %+v", file.diagnostics)
 			}
@@ -206,7 +209,7 @@ func TestUpstreamNumericExpressionCompatibility(t *testing.T) {
 	} {
 		t.Run(test.source, func(t *testing.T) {
 			file := parseExpressionSource([]byte(test.source))
-			assertExpressionPartition(t, []byte(test.source), file)
+			assertTreeInvariants(t, []byte(test.source), file)
 			if valid := len(file.diagnostics) == 0; valid != test.valid {
 				t.Fatalf("valid = %v, want %v; diagnostics: %+v", valid, test.valid, file.diagnostics)
 			}
@@ -232,6 +235,7 @@ func TestTraversalDiagnostics(t *testing.T) {
 			[]Diagnostic{{ExpectedExpression, Span{2, 3}}},
 			`File(Traversal(Variable("a"), Index("[", Error(), "]")))`,
 		},
+
 		{
 			"missing attribute name",
 			"foo.",
@@ -250,6 +254,7 @@ func TestTraversalDiagnostics(t *testing.T) {
 			[]Diagnostic{{NestedAttributeSplat, Span{10, 11}}},
 			`File(Traversal(Variable("foo"), AttributeSplat(".", "*", AttrAccess(".", "bar"), Error(".", "*"), AttrAccess(".", "baz"))))`,
 		},
+
 		{
 			"newline before full splat marker",
 			"foo[\n*]",
@@ -396,7 +401,7 @@ func TestLegacyIndexCompatibility(t *testing.T) {
 	} {
 		t.Run(test.source, func(t *testing.T) {
 			file := parseExpressionSource([]byte(test.source))
-			assertExpressionPartition(t, []byte(test.source), file)
+			assertTreeInvariants(t, []byte(test.source), file)
 			var got []DiagnosticKind
 			for _, diagnostic := range file.diagnostics {
 				got = append(got, diagnostic.Kind)
@@ -411,7 +416,7 @@ func TestLegacyIndexCompatibility(t *testing.T) {
 func TestFlatTraversalDoesNotUseRecursionPerStep(t *testing.T) {
 	source := []byte("foo" + strings.Repeat(".bar", maxRecursiveExpressionDepth*8))
 	file := parseExpressionSource(source)
-	assertExpressionPartition(t, source, file)
+	assertTreeInvariants(t, source, file)
 	if len(file.diagnostics) != 0 {
 		t.Fatalf("flat traversal hit nesting limit: %+v", file.diagnostics)
 	}

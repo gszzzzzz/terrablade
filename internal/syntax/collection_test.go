@@ -29,6 +29,7 @@ func TestTupleShapes(t *testing.T) {
 			"[a\n+ b, # next\n c\n]",
 			`File(Tuple("[", Binary(Variable("a"), "+", Variable("b")), ",", Variable("c"), "]"))`,
 		},
+
 		{
 			"nested tuple and postfix",
 			"[[a], []][0]",
@@ -39,6 +40,7 @@ func TestTupleShapes(t *testing.T) {
 			"f([a, b], c)",
 			`File(Call("f", "(", Tuple("[", Variable("a"), ",", Variable("b"), "]"), ",", Variable("c"), ")"))`,
 		},
+
 		{
 			"parentheses disambiguate first for",
 			"[(for), for]",
@@ -105,6 +107,7 @@ func TestTupleDiagnostics(t *testing.T) {
 			},
 			`File(Tuple("[", Binary(Literal("1"), "+", Error()), ",", Literal("2"), "]"))`,
 		},
+
 		{
 			"missing closer after trailing trivia",
 			"[1, # tail\n",
@@ -129,6 +132,7 @@ func TestTupleDiagnostics(t *testing.T) {
 			},
 			`File(Call("f", "(", Tuple("[", Literal("1")), ")"))`,
 		},
+
 		{
 			"expansion is not tuple syntax",
 			"[xs...]",
@@ -176,6 +180,7 @@ func TestObjectShapes(t *testing.T) {
 			"f({a=1\nb=2})",
 			`File(Call("f", "(", Object("{", Item(Variable("a"), "=", Literal("1")), Item(Variable("b"), "=", Literal("2")), "}"), ")"))`,
 		},
+
 		{
 			"quoted keys preserve template syntax",
 			`{"key"=1}`,
@@ -196,6 +201,7 @@ func TestObjectShapes(t *testing.T) {
 			"{a ? b : c : d}",
 			`File(Object("{", Item(Conditional(Variable("a"), "?", Variable("b"), ":", Variable("c")), ":", Variable("d")), "}"))`,
 		},
+
 		{
 			"parentheses allow multiline values",
 			"{a=(1\n+2)\nb=3}",
@@ -206,6 +212,7 @@ func TestObjectShapes(t *testing.T) {
 			"{a=1 /*\n*/ +2}",
 			`File(Object("{", Item(Variable("a"), "=", Binary(Literal("1"), "+", Literal("2"))), "}"))`,
 		},
+
 		{
 			"nested collections and postfix",
 			"{a=[1, {b=2}]}[key]",
@@ -269,6 +276,7 @@ func TestObjectDiagnostics(t *testing.T) {
 			},
 			`File(Object("{", Item(Variable("a"), "=", Literal("1")), Error("bad"), Item(Variable("b"), "=", Literal("2")), "}"))`,
 		},
+
 		{
 			"missing value before comma",
 			"{a=, b=2}",
@@ -301,6 +309,7 @@ func TestObjectDiagnostics(t *testing.T) {
 			},
 			`File(Object("{", Item(Variable("a"), "=", Error()), "}"))`,
 		},
+
 		{
 			"missing closer after item",
 			"{a=1 # tail\n",
@@ -334,6 +343,7 @@ func TestObjectDiagnostics(t *testing.T) {
 			},
 			`File(Tuple("[", Object("{", Item(Variable("a"), "=", Literal("1"))), "]"))`,
 		},
+
 		{
 			"first for stays reserved after trivia",
 			"{ # lead\n for=1}",
@@ -365,7 +375,7 @@ func TestFlatCollectionsDoNotHitRecursionLimit(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			file := parseExpressionSource([]byte(test.source))
-			assertExpressionPartition(t, []byte(test.source), file)
+			assertTreeInvariants(t, []byte(test.source), file)
 			if len(file.diagnostics) != 0 {
 				t.Fatalf("flat collection rejected: %+v", file.diagnostics)
 			}

@@ -9,31 +9,31 @@ func TestParserTriviaLookahead(t *testing.T) {
 	for _, test := range []struct {
 		name    string
 		source  string
-		context expressionContext
+		context newlineContext
 		kind    TokenKind
 	}{
 		{
 			"horizontal and multiline block comment",
 			" \t/*\n comment */1",
-			lineExpression,
+			newlineTerminates,
 			Number,
 		},
 		{
 			"line comment terminates line expression",
 			" # comment\n1",
-			lineExpression,
+			newlineTerminates,
 			LineComment,
 		},
 		{
 			"newline terminates line expression",
 			" \n1",
-			lineExpression,
+			newlineTerminates,
 			Newline,
 		},
 		{
 			"delimited context accepts newlines and comments",
 			" # comment\r\n1",
-			delimitedExpression,
+			newlineTransparent,
 			Number,
 		},
 	} {
@@ -53,19 +53,19 @@ func TestParserCursorPreservesTriviaAndEOF(t *testing.T) {
 	source := []byte(" /* lead */1 \t# tail\n")
 	p := newParser(source)
 	root := p.begin()
-	p.consumeUntil(&root, p.look(delimitedExpression))
+	p.consumeUntil(&root, p.look(newlineTransparent))
 	expression := p.begin()
-	p.consumeLookahead(&expression, lineExpression)
+	p.consumeLookahead(&expression, newlineTerminates)
 	root.node(expression.finish(LiteralExpression))
-	if p.peek(lineExpression) != LineComment {
+	if p.peek(newlineTerminates) != LineComment {
 		t.Fatal("line comment must remain outside the expression")
 	}
 	p.consumeUntil(&root, len(p.tokens)-1)
 	// Even repeated reads at EOF do not duplicate the sentinel.
-	p.consumeLookahead(&root, lineExpression)
-	p.consumeLookahead(&root, lineExpression)
+	p.consumeLookahead(&root, newlineTerminates)
+	p.consumeLookahead(&root, newlineTerminates)
 	file := p.file(root)
-	assertFilePartition(t, source, file)
+	assertTreeInvariants(t, source, file)
 	node, _ := file.root.Child(2).Node()
 	if node.Kind() != LiteralExpression || node.Span() != (Span{Start: 11, End: 12}) {
 		t.Fatalf("trivia leaked into expression: %+v", node)
@@ -150,7 +150,7 @@ func TestExpressionTriviaPlacement(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			file := parseExpressionSource([]byte(test.source))
-			assertExpressionPartition(t, []byte(test.source), file)
+			assertTreeInvariants(t, []byte(test.source), file)
 			if len(file.diagnostics) != 0 {
 				t.Fatalf("unexpected diagnostics: %+v", file.diagnostics)
 			}
@@ -198,35 +198,35 @@ func TestLimitStopsGrammarAndRetainsUnparsedTokens(t *testing.T) {
 	p := newParser(source)
 	root := p.begin()
 	variable := p.begin()
-	p.consumeLookahead(&variable, lineExpression)
+	p.consumeLookahead(&variable, newlineTerminates)
 	root.node(variable.finish(VariableExpression))
 	position := p.pos
-	limitSpan := p.tokens[p.look(lineExpression)].span
+	limitSpan := p.tokens[p.look(newlineTerminates)].span
 	p.haltAtLimit(limitSpan)
 	p.haltAtLimit(limitSpan)
 
-	if p.current().kind != EOF || p.peek(lineExpression) != EOF || p.peek(delimitedExpression) != EOF {
+	if p.current().kind != EOF || p.peek(newlineTerminates) != EOF || p.peek(newlineTransparent) != EOF {
 		t.Fatal("all grammar cursor views must appear exhausted after a limit")
 	}
 	// A production need not know about the halt flag to stop consuming/reporting.
 	p.consumeUntil(&root, len(p.tokens)-1)
-	p.consumeLookahead(&root, delimitedExpression)
+	p.consumeLookahead(&root, newlineTransparent)
 	p.report(ExpectedExpression, limitSpan)
-	p.call(&root, lineExpression)
-	p.steps(&root, lineExpression, allTraversalSteps)
-	p.recoverUntil(&root, delimitedExpression, itemBoundaries)
+	p.call(&root, newlineTerminates)
+	p.steps(&root, newlineTerminates, allTraversalSteps)
+	p.recoverUntil(&root, newlineTransparent, itemBoundaries)
 	p.skipConstruct(&root)
 	p.tuple(&root)
 	p.object(&root)
-	p.recoverUntil(&root, lineExpression, itemBoundaries)
-	p.recoverUntil(&root, delimitedExpression, expressionBoundaries)
-	p.recoverUntil(&root, delimitedExpression, templateBoundaries)
+	p.recoverUntil(&root, newlineTerminates, itemBoundaries)
+	p.recoverUntil(&root, newlineTransparent, expressionBoundaries)
+	p.recoverUntil(&root, newlineTransparent, templateBoundaries)
 	if p.pos != position {
 		t.Fatal("grammar consumed tokens after shutdown")
 	}
 
 	file := p.file(root)
-	assertExpressionPartition(t, source, file)
+	assertTreeInvariants(t, source, file)
 	if node, ok := file.root.Child(2).Node(); !ok || node.Kind() != ErrorNode {
 		t.Fatal("unparsed non-trivia must remain in a file-level ErrorNode")
 	}

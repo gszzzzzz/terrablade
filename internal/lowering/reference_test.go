@@ -1,26 +1,30 @@
 package lowering_test
 
 import (
-	"os"
+	"context"
 	"os/exec"
+	"strings"
 	"testing"
+	"time"
+
+	"github.com/gszzzzzz/terrablade/internal/reference"
 )
 
-const referenceCLIEnv = "TERRABLADE_REFERENCE_CLI"
-
-func referenceCLIEnabled() bool {
-	return os.Getenv(referenceCLIEnv) != ""
-}
-
-func referenceCLI(t testing.TB) string {
+// assertReferenceFormat fails unless the reference CLI leaves output exactly
+// as it is. This package's output is canonical only if the tool it has to
+// coexist with agrees, so the oracle is "fmt changes nothing", not "fmt
+// produces something similar".
+func assertReferenceFormat(t *testing.T, output string) {
 	t.Helper()
-	name := os.Getenv(referenceCLIEnv)
-	if name == "" {
-		t.Skip("set " + referenceCLIEnv + " to terraform or tofu to run compatibility tests")
-	}
-	path, err := exec.LookPath(name)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	command := exec.CommandContext(ctx, reference.CLI(t), "fmt", "-no-color", "-")
+	command.Stdin = strings.NewReader(output)
+	formatted, err := command.CombinedOutput()
 	if err != nil {
-		t.Fatalf("find reference CLI %q: %v", name, err)
+		t.Fatalf("reference CLI failed: %v\n%s", err, formatted)
 	}
-	return path
+	if string(formatted) != output {
+		t.Errorf("reference CLI changed canonical formatting:\n%q\n=>\n%q", output, formatted)
+	}
 }

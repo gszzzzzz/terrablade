@@ -40,7 +40,7 @@ func (p *parser) body() SyntaxNode {
 			p.singleLineBodyEnd(frame)
 		}
 
-		p.consumeUntil(&frame.body, p.look(delimitedExpression))
+		p.consumeUntil(&frame.body, p.look(newlineTransparent))
 		kind := p.current().kind
 		if len(frames) == 1 && kind == EOF {
 			return frame.body.finish(Body)
@@ -62,12 +62,12 @@ func (p *parser) body() SyntaxNode {
 // body is a useful recovery point, retaining later attributes rather than
 // swallowing the block.
 func (p *parser) singleLineBodyEnd(frame *bodyFrame) {
-	kind := p.peek(lineExpression)
+	kind := p.peek(newlineTerminates)
 	if kind == CloseBrace || kind == EOF {
 		return
 	}
-	p.report(ExpectedSingleLineBlockEnd, p.tokens[p.look(lineExpression)].span)
-	p.recoverUntil(&frame.body, lineExpression, bodyItemBoundaries)
+	p.report(ExpectedSingleLineBlockEnd, p.tokens[p.look(newlineTerminates)].span)
+	p.recoverUntil(&frame.body, newlineTerminates, bodyItemBoundaries)
 	frame.single = false
 }
 
@@ -78,7 +78,7 @@ func (p *parser) closeBlock(frames []bodyFrame) []bodyFrame {
 	frame := frames[len(frames)-1]
 	block := frame.block
 	block.node(frame.body.finish(Body))
-	p.expect(&block, CloseBrace, ExpectedClosingBrace, lineExpression)
+	p.expect(&block, CloseBrace, ExpectedClosingBrace, newlineTerminates)
 
 	frames = frames[:len(frames)-1]
 	parent := &frames[len(frames)-1].body
@@ -103,7 +103,7 @@ func (p *parser) bodyItem(frames []bodyFrame, attributes map[bodyAttributeKey]st
 			p.consumeUntil(&bad, p.pos+1)
 			frame.body.node(bad.finish(ErrorNode))
 		} else {
-			p.recoverUntil(&frame.body, lineExpression, bodyItemBoundaries)
+			p.recoverUntil(&frame.body, newlineTerminates, bodyItemBoundaries)
 		}
 		frame.single = false
 		return frames
@@ -112,7 +112,7 @@ func (p *parser) bodyItem(frames []bodyFrame, attributes map[bodyAttributeKey]st
 	item := p.begin()
 	name := p.current().span
 	p.consumeUntil(&item, p.pos+1)
-	if p.peek(lineExpression) == Equal {
+	if p.peek(newlineTerminates) == Equal {
 		p.bodyAttribute(frame, &item, name, attributes)
 		return frames
 	}
@@ -122,27 +122,27 @@ func (p *parser) bodyItem(frames []bodyFrame, attributes map[bodyAttributeKey]st
 		p.report(ExpectedSingleLineAttribute, name)
 		// Finish the partial item before recovery reuses the pending tail.
 		frame.body.node(item.finish(ErrorNode))
-		p.recoverUntil(&frame.body, lineExpression, bodyItemBoundaries)
+		p.recoverUntil(&frame.body, newlineTerminates, bodyItemBoundaries)
 		frame.single = false
 		return frames
 	}
 
-	next := p.peek(lineExpression)
+	next := p.peek(newlineTerminates)
 	if next != OpenBrace && next != QuoteOpen && next != Identifier {
-		p.report(ExpectedAttributeOrBlock, p.tokens[p.look(lineExpression)].span)
+		p.report(ExpectedAttributeOrBlock, p.tokens[p.look(newlineTerminates)].span)
 		frame.body.node(item.finish(ErrorNode))
-		p.recoverUntil(&frame.body, lineExpression, bodyItemBoundaries)
+		p.recoverUntil(&frame.body, newlineTerminates, bodyItemBoundaries)
 		return frames
 	}
 	if !p.blockHeader(&item) {
 		frame.body.node(item.finish(Block))
-		p.recoverUntil(&frame.body, lineExpression, bodyItemBoundaries)
+		p.recoverUntil(&frame.body, newlineTerminates, bodyItemBoundaries)
 		return frames
 	}
 
 	// A body that begins on the header line is single-line unless that line
 	// ends immediately, which leaves an ordinary multi-line body.
-	next = p.peek(lineExpression)
+	next = p.peek(newlineTerminates)
 	return append(frames, bodyFrame{
 		block:  item,
 		body:   p.begin(),
@@ -160,8 +160,8 @@ func (p *parser) bodyAttribute(frame *bodyFrame, item *nodeBuilder, name Span, a
 	}
 	attributes[key] = struct{}{}
 
-	p.consumeLookahead(item, lineExpression)
-	p.operand(item, lowestPower, lineExpression)
+	p.consumeLookahead(item, newlineTerminates)
+	p.operand(item, lowestPower, newlineTerminates)
 	frame.body.node(item.finish(Attribute))
 	frame.attribute = true
 	// A single-line body checks its end at the top of the body loop instead.
@@ -175,12 +175,12 @@ func (p *parser) bodyAttribute(frame *bodyFrame, item *nodeBuilder, name Span, a
 // attributes and blocks require a newline, including before an outer '}'. EOF
 // can terminate a file's last item without a final newline, as upstream does.
 func (p *parser) bodyItemEnd(body *nodeBuilder) {
-	kind := p.peek(lineExpression)
+	kind := p.peek(newlineTerminates)
 	if lineSeparators.has(kind) || kind == EOF {
 		return
 	}
-	p.report(ExpectedBodyItemSeparator, p.tokens[p.look(lineExpression)].span)
-	p.recoverUntil(body, lineExpression, bodyItemBoundaries)
+	p.report(ExpectedBodyItemSeparator, p.tokens[p.look(newlineTerminates)].span)
+	p.recoverUntil(body, newlineTerminates, bodyItemBoundaries)
 }
 
 // blockHeader parses the labels after a block type and its opening brace,
@@ -188,12 +188,12 @@ func (p *parser) bodyItemEnd(body *nodeBuilder) {
 // literals, never expressions, so a label sees only the lexer's tokens.
 func (p *parser) blockHeader(block *nodeBuilder) bool {
 	for {
-		switch p.peek(lineExpression) {
+		switch p.peek(newlineTerminates) {
 		case OpenBrace:
-			p.consumeLookahead(block, lineExpression)
+			p.consumeLookahead(block, newlineTerminates)
 			return true
 		case Identifier, QuoteOpen:
-			p.consumeUntil(block, p.look(lineExpression))
+			p.consumeUntil(block, p.look(newlineTerminates))
 			label := p.begin()
 			if p.current().kind == QuoteOpen {
 				p.quotedBlockLabel(&label)
@@ -202,7 +202,7 @@ func (p *parser) blockHeader(block *nodeBuilder) bool {
 			}
 			block.node(label.finish(BlockLabel))
 		default:
-			p.report(ExpectedBlockOpeningBrace, p.tokens[p.look(lineExpression)].span)
+			p.report(ExpectedBlockOpeningBrace, p.tokens[p.look(newlineTerminates)].span)
 			return false
 		}
 	}
@@ -227,7 +227,7 @@ func (p *parser) quotedBlockLabel(label *nodeBuilder) {
 		case Whitespace, Newline, LineComment, BlockComment:
 			// Recovery from an unterminated sequence can leave expression trivia
 			// at EOF. Keep that tail with Body, as for unfinished expressions.
-			next := p.look(delimitedExpression)
+			next := p.look(newlineTransparent)
 			if p.tokens[next].kind == EOF {
 				return
 			}

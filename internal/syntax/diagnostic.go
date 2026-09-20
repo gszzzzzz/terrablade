@@ -5,7 +5,73 @@ import (
 	"slices"
 )
 
-var diagnosticMessages = [diagnosticKindCount]string{
+// DiagnosticKind identifies a lexical or syntax error. Message provides English
+// prose and String its stable symbolic name. Its numeric value is not a stable
+// storage format.
+type DiagnosticKind uint8
+
+const (
+	InvalidUTF8 DiagnosticKind = iota
+	InvalidCharacter
+	UnterminatedBlockComment
+	UnterminatedQuotedTemplate
+	UnterminatedTemplateSequence
+	InvalidEscape
+	NewlineInQuotedTemplate
+	UnterminatedHeredoc
+	ExpectedExpression
+	UnexpectedToken
+	ExpectedClosingParen
+	ExpectedClosingBracket
+	ExpectedConditionalColon
+	ExpectedArgumentSeparator
+	ExpectedAttributeName
+	ExpectedFunctionName
+	ExpectedOpeningParen
+	InvalidLegacyIndex
+	NestedAttributeSplat
+	NestingLimitExceeded
+	InvalidNumber
+	ExpectedTupleSeparator
+	ExpectedClosingBrace
+	ExpectedObjectValueSeparator
+	ExpectedObjectItemSeparator
+	ExpectedForVariable
+	ExpectedForIn
+	ExpectedForColon
+	ExpectedForArrow
+	UnexpectedForKey
+	UnexpectedForGrouping
+	ExpectedTemplateSequenceEnd
+	ExpectedTemplateDirective
+	UnknownTemplateDirective
+	UnexpectedTemplateDirective
+	ExpectedTemplateEndIf
+	ExpectedTemplateEndFor
+	ExpectedBodyItem
+	ExpectedAttributeOrBlock
+	ExpectedBodyItemSeparator
+	ExpectedBlockOpeningBrace
+	ExpectedLiteralBlockLabel
+	ExpectedSingleLineAttribute
+	ExpectedSingleLineBlockEnd
+	DuplicateAttribute
+	// DiagnosticKindCount bounds the contiguous diagnostic enumeration.
+	// Consumers with exhaustive diagnostic mappings use it to detect added
+	// kinds.
+	DiagnosticKindCount
+)
+
+// Diagnostic points to the source responsible for a lexical or syntax error.
+// An error does not require an Invalid token: an unterminated comment, for
+// example, retains its BlockComment kind so its source remains recognizable.
+// Use Kind.Message for prose and Result.Position to locate either span endpoint.
+type Diagnostic struct {
+	Kind DiagnosticKind
+	Span Span
+}
+
+var diagnosticMessages = [DiagnosticKindCount]string{
 	InvalidUTF8:                  "Invalid UTF-8 encoding.",
 	InvalidCharacter:             "Invalid character.",
 	UnterminatedBlockComment:     "Unterminated block comment; expected '*/'.",
@@ -60,7 +126,7 @@ var diagnosticMessages = [diagnosticKindCount]string{
 // Wording may improve over time. Use the kind for programmatic decisions and
 // String for its stable symbolic name, rather than matching message text.
 func (k DiagnosticKind) Message() string {
-	if k < diagnosticKindCount {
+	if k < DiagnosticKindCount {
 		return diagnosticMessages[k]
 	}
 	return "Unknown diagnostic."

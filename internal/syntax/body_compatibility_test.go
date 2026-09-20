@@ -2,11 +2,12 @@ package syntax
 
 import (
 	"context"
-	"os"
 	"os/exec"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/gszzzzzz/terrablade/internal/reference"
 )
 
 // Acceptance follows the upstream native parser, including its EOF and BOM
@@ -101,7 +102,7 @@ func TestBodyCompatibility(t *testing.T) {
 	for _, test := range bodyCompatibilityCases {
 		t.Run(test.name, func(t *testing.T) {
 			file := Parse([]byte(test.source))
-			assertExpressionPartition(t, []byte(test.source), file)
+			assertTreeInvariants(t, []byte(test.source), file)
 			if valid := len(file.diagnostics) == 0; valid != test.valid {
 				t.Fatalf("valid = %v, want %v: %+v", valid, test.valid, file.diagnostics)
 			}
@@ -110,20 +111,12 @@ func TestBodyCompatibility(t *testing.T) {
 }
 
 func TestBodyReferenceCompatibility(t *testing.T) {
-	const environment = "TERRABLADE_REFERENCE_CLI"
-	name := os.Getenv(environment)
-	if name == "" {
-		t.Skip("set " + environment + " to terraform or tofu to run compatibility tests")
-	}
-	reference, err := exec.LookPath(name)
-	if err != nil {
-		t.Fatalf("find reference CLI %q: %v", name, err)
-	}
+	cli := reference.CLI(t)
 	for _, test := range bodyCompatibilityCases {
 		t.Run(test.name, func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
-			command := exec.CommandContext(ctx, reference, "fmt", "-no-color", "-")
+			command := exec.CommandContext(ctx, cli, "fmt", "-no-color", "-")
 			command.Stdin = strings.NewReader(test.source)
 			output, err := command.CombinedOutput()
 			if ctx.Err() != nil {

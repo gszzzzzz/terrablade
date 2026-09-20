@@ -5,11 +5,13 @@ import (
 	"github.com/gszzzzzz/terrablade/internal/syntax"
 )
 
-// syntheticParentheses wraps an operation that may break where the grammar
+// breakParentheses wraps an operation that may break where the grammar
 // forbids expression newlines. The parentheses appear only in the broken
 // layout, so a fitting expression keeps its source spelling and a broken one
-// stays parseable (doc.go: Parentheses).
-func syntheticParentheses(body document.Doc) document.Doc {
+// stays parseable (doc.go: Parentheses). This is the width-conditional half
+// of the pair; normalization's permanentParentheses adds the other half,
+// which is present in every layout because the grammar needs it.
+func breakParentheses(body document.Doc) document.Doc {
 	return document.Group(document.Concat(
 		document.IfBreak(document.Text("("), document.Doc{}),
 		document.Indent(document.Concat(document.SoftLine(), body)),
@@ -132,11 +134,11 @@ func numberContinuesAcrossDot(next string) bool {
 	return next != "" && next[0] >= '0' && next[0] <= '9'
 }
 
-// index lays out one bracketed index step. An index holding a bare literal or
-// name is atomic and never breaks; any other index may break inside its
-// brackets (doc.go: Traversals).
-func index(result syntax.Result, node *expressionView, pieces []piece) document.Doc {
-	inner, close := pieces[1], pieces[2]
+// lowerIndex lays out one bracketed index step. An index holding a bare
+// literal or name is atomic and never breaks; any other index may break
+// inside its brackets (doc.go: Traversals).
+func lowerIndex(result syntax.Result, node *expressionView, pieces pieceList) document.Doc {
+	opener, inner, closer := pieces.opener(), pieces.inner(), pieces.closer()
 	atomic := false
 	for i := range node.ChildCount() {
 		if child, ok := node.Child(i).Node(); ok {
@@ -154,12 +156,12 @@ func index(result syntax.Result, node *expressionView, pieces []piece) document.
 	if atomic {
 		// A long following traversal must not peel an indivisible index onto
 		// a line of its own. There is no useful break inside [name] or [0].
-		return document.Concat(pieces[0].doc, inner.doc, close.doc)
+		return document.Concat(opener.doc, inner.doc, closer.doc)
 	}
 	leading, start := commentGap(result, inner.before, openingGap(soft))
-	trailing, end := commentGap(result, close.before, breakingGap(soft, inner.child.endsHeredoc))
-	return document.Group(document.Concat(pieces[0].doc,
-		document.Indent(document.Concat(leading, start, inner.doc, trailing)), end, close.doc))
+	trailing, end := commentGap(result, closer.before, breakingGap(soft, inner.child.endsHeredoc))
+	return document.Group(document.Concat(opener.doc,
+		document.Indent(document.Concat(leading, start, inner.doc, trailing)), end, closer.doc))
 }
 
 // Binding powers order HCL's expression forms from loosest to tightest. An

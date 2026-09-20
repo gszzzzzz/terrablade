@@ -15,15 +15,16 @@ import (
 	"io/fs"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 )
 
 const (
-	version      = "17.0.0"
-	sourceURL    = "https://www.unicode.org/Public/" + version + "/ucd/DerivedCoreProperties.txt"
-	sourceSHA256 = "24c7fed1195c482faaefd5c1e7eb821c5ee1fb6de07ecdbaa64b56a99da22c08"
+	unicodeVersion = "17.0.0"
+	sourceURL      = "https://www.unicode.org/Public/" + unicodeVersion + "/ucd/DerivedCoreProperties.txt"
+	sourceSHA256   = "24c7fed1195c482faaefd5c1e7eb821c5ee1fb6de07ecdbaa64b56a99da22c08"
 
 	// outputFile is written into the current directory, which go generate
 	// sets to the package holding the directive. anchorFile must already be
@@ -46,9 +47,9 @@ var properties = []struct{ property, name string }{
 }
 
 // interval is an inclusive range of code points as parsed from the source.
-// It uses uint64 to match strconv.ParseUint; the parser bounds hi to the
-// Unicode code space before the interval is stored.
-type interval struct{ lo, hi uint64 }
+// It stores rune, like the runeRange the tables are emitted as, so the parser
+// converts only after it has bounded the range to the Unicode code space.
+type interval struct{ lo, hi rune }
 
 func main() {
 	if err := generate(); err != nil {
@@ -67,7 +68,7 @@ func generate() error {
 		return err
 	}
 
-	data, err := download()
+	data, err := download(&http.Client{Timeout: 30 * time.Second}, sourceURL, sourceSHA256)
 	if err != nil {
 		return err
 	}
@@ -80,29 +81,61 @@ func generate() error {
 		return err
 	}
 
-	return os.WriteFile(outputFile, output, 0o644)
+	return writeAtomically(outputFile, output)
 }
 
-// download fetches the pinned source and verifies its checksum, so a changed
-// or tampered upstream file can never reach the tables unnoticed.
-func download() ([]byte, error) {
-	client := &http.Client{Timeout: 30 * time.Second}
-	response, err := client.Get(sourceURL)
+// writeAtomically replaces name with data through a temporary file in the same
+// directory. A partial write would otherwise leave behind a table file that
+// still compiles but describes the wrong identifiers, and the rename is what
+// makes an interrupted run a no-op instead.
+func writeAtomically(name string, data []byte) (err error) {
+	temporary, err := os.CreateTemp(filepath.Dir(name), filepath.Base(name)+".tmp")
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err != nil {
+			temporary.Close()
+			os.Remove(temporary.Name())
+		}
+	}()
+
+	if _, err = temporary.Write(data); err != nil {
+		return err
+	}
+	// CreateTemp makes the file private; generated sources are readable.
+	if err = temporary.Chmod(0o644); err != nil {
+		return err
+	}
+	if err = temporary.Close(); err != nil {
+		return err
+	}
+	return os.Rename(temporary.Name(), name)
+}
+
+// download fetches url and verifies its checksum, so a changed or tampered
+// upstream file can never reach the tables unnoticed. The client and the
+// pinned url/checksum are parameters so that the failure paths can be
+// exercised against a local server; generate supplies the pinned values.
+func download(client *http.Client, url, checksum string) ([]byte, error) {
+	response, err := client.Get(url)
 	if err != nil {
 		return nil, err
 	}
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("download %s: %s", sourceURL, response.Status)
+		return nil, fmt.Errorf("download %s: %s", url, response.Status)
 	}
 
+	// A response longer than the limit is cut off here rather than buffered
+	// in full; the checksum below is what turns that into a hard failure.
 	data, err := io.ReadAll(io.LimitReader(response.Body, maxSourceBytes))
 	if err != nil {
-		return nil, fmt.Errorf("download %s: %w", sourceURL, err)
+		return nil, fmt.Errorf("download %s: %w", url, err)
 	}
 
-	if got := fmt.Sprintf("%x", sha256.Sum256(data)); got != sourceSHA256 {
-		return nil, fmt.Errorf("%s: SHA-256 %s does not match pinned %s", sourceURL, got, sourceSHA256)
+	if got := fmt.Sprintf("%x", sha256.Sum256(data)); got != checksum {
+		return nil, fmt.Errorf("%s: SHA-256 %s does not match pinned %s", url, got, checksum)
 	}
 	return data, nil
 }
@@ -146,19 +179,21 @@ func parseProperties(data []byte) (map[string][]interval, error) {
 		if hi < lo || hi > 0x10FFFF {
 			return nil, fmt.Errorf("invalid code point range %s", rangeText)
 		}
+		// This bound is what makes the conversion to rune lossless.
+		current := interval{rune(lo), rune(hi)}
 
 		// The lexer's binary search needs sorted, disjoint ranges, so any
 		// range that starts at or before the previous end is a corrupt
 		// source. One that starts right after it extends that range, keeping
 		// the table as short as possible.
 		ranges := tables[property]
-		if len(ranges) > 0 && lo <= ranges[len(ranges)-1].hi+1 {
-			if lo <= ranges[len(ranges)-1].hi {
+		if len(ranges) > 0 && current.lo <= ranges[len(ranges)-1].hi+1 {
+			if current.lo <= ranges[len(ranges)-1].hi {
 				return nil, fmt.Errorf("%s: unordered or overlapping range %s", property, rangeText)
 			}
-			ranges[len(ranges)-1].hi = hi
+			ranges[len(ranges)-1].hi = current.hi
 		} else {
-			ranges = append(ranges, interval{lo, hi})
+			ranges = append(ranges, current)
 		}
 		tables[property] = ranges
 	}
@@ -179,10 +214,8 @@ func render(tables map[string][]interval) ([]byte, error) {
 	var output bytes.Buffer
 	fmt.Fprintln(&output, "// Code generated by tools/genunicode; DO NOT EDIT.")
 	fmt.Fprintln(&output, "// Pinned ID_Start/ID_Continue properties; see identifier.go for rationale and regeneration.")
-	fmt.Fprintf(&output, "// Unicode %s, %s\n// SHA-256: %s\n", version, sourceURL, sourceSHA256)
+	fmt.Fprintf(&output, "// Unicode %s, %s\n// SHA-256: %s\n", unicodeVersion, sourceURL, sourceSHA256)
 	fmt.Fprintln(&output, "// Derived Unicode data is covered by ../../LICENSE-UNICODE.\n\npackage syntax")
-	fmt.Fprintln(&output, "\n// UnicodeVersion pins identifiers independently of the Go toolchain's tables.")
-	fmt.Fprintf(&output, "const UnicodeVersion = %q\n", version)
 
 	for _, p := range properties {
 		fmt.Fprintf(&output, "\nvar %s = [...]runeRange{\n", p.name)

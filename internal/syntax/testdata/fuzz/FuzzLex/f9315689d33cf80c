@@ -1,2 +1,0 @@
-go test fuzz v1
-[]byte("A\xdcAƐ\xccAɋ\xd3AΟ\xdcAƐ")

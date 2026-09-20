@@ -6,9 +6,9 @@ package syntax
 // expression grammar; literal template bytes are never expression trivia.
 // Directive scopes are tracked by templateNesting rather than by recursion.
 func (p *parser) templateExpression(b *nodeBuilder) {
-	close := QuoteClose
+	closer := QuoteClose
 	if p.current().kind == HeredocOpen {
-		close = HeredocEndMarker
+		closer = HeredocEndMarker
 	}
 	p.consumeUntil(b, p.pos+1)
 
@@ -18,7 +18,7 @@ func (p *parser) templateExpression(b *nodeBuilder) {
 	for {
 		body := nesting.current()
 		switch p.current().kind {
-		case close:
+		case closer:
 			nesting.closeMissing(0, p.current().span)
 			p.consumeUntil(b, p.pos+1)
 			return
@@ -36,7 +36,7 @@ func (p *parser) templateExpression(b *nodeBuilder) {
 		case Whitespace, Newline, LineComment, BlockComment:
 			// The heredoc header owns a newline when followed by content or its
 			// closer. Trivia left at EOF by malformed sequences remains outside.
-			next := p.look(delimitedExpression)
+			next := p.look(newlineTransparent)
 			if p.tokens[next].kind == EOF {
 				nesting.closeMissing(0, p.tokens[next].span)
 				return
@@ -59,7 +59,7 @@ func (p *parser) interpolation(parent *nodeBuilder) {
 	b := p.begin()
 	p.templateSequenceOpen(&b)
 	// Interpolations permit newlines even inside a quoted, single-line template.
-	p.operand(&b, lowestPower, delimitedExpression)
+	p.operand(&b, lowestPower, newlineTransparent)
 	p.templateSequenceEnd(&b)
 	parent.node(b.finish(TemplateInterpolation))
 }
@@ -79,16 +79,16 @@ func (p *parser) templateSequenceOpen(b *nodeBuilder) {
 // the closer becomes one ErrorNode bounded by the template's own closers, so a
 // broken sequence cannot swallow the template's closing quote or marker.
 func (p *parser) templateSequenceEnd(b *nodeBuilder) {
-	kind := p.peek(delimitedExpression)
+	kind := p.peek(newlineTransparent)
 	if kind != TemplateSequenceEnd && kind != StripMarker && kind != EOF {
-		p.report(ExpectedTemplateSequenceEnd, p.tokens[p.look(delimitedExpression)].span)
-		p.recoverUntil(b, delimitedExpression, templateBoundaries)
+		p.report(ExpectedTemplateSequenceEnd, p.tokens[p.look(newlineTransparent)].span)
+		p.recoverUntil(b, newlineTransparent, templateBoundaries)
 	}
 
-	if p.peek(delimitedExpression) == StripMarker {
-		p.consumeLookahead(b, delimitedExpression)
+	if p.peek(newlineTransparent) == StripMarker {
+		p.consumeLookahead(b, newlineTransparent)
 	}
-	if p.peek(delimitedExpression) == TemplateSequenceEnd {
-		p.consumeLookahead(b, delimitedExpression)
+	if p.peek(newlineTransparent) == TemplateSequenceEnd {
+		p.consumeLookahead(b, newlineTransparent)
 	}
 }

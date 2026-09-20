@@ -42,7 +42,6 @@ func (n *expressionView) Child(i int) expressionElement    { return n.children[i
 func (e expressionElement) Node() (*expressionView, bool)  { return e.node, e.node != nil }
 func (e expressionElement) Token() (expressionToken, bool) { return e.token, e.node == nil }
 func (t expressionToken) Kind() syntax.TokenKind           { return t.kind }
-func (t expressionToken) Span() syntax.Span                { return t.source.Span() }
 
 func (t expressionToken) spelling(result syntax.Result) string {
 	if t.text != "" {
@@ -97,7 +96,7 @@ func normalizeExpression(result syntax.Result, root syntax.SyntaxNode) *expressi
 			if child, ok := node.Child(i).Node(); ok {
 				rewritten := views[child]
 				if rewritten.unwrapped && needsGrouping(result, node, position, rewritten.node) {
-					rewritten.node = groupedExpression(rewritten.node, nil, nil)
+					rewritten.node = permanentParentheses(rewritten.node, nil, nil)
 				}
 				if node.Kind() == syntax.ObjectItem {
 					rewritten.node = protectExpressionLines(rewritten.node)
@@ -118,7 +117,7 @@ func normalizeExpression(result syntax.Result, root syntax.SyntaxNode) *expressi
 				// Delimiter comments need a stable home after both template
 				// edges disappear. Parentheses also make every line comment
 				// newline legal.
-				rewritten = rewrite{node: groupedExpression(inner, before, after)}
+				rewritten = rewrite{node: permanentParentheses(inner, before, after)}
 			}
 		} else if node.Kind() == syntax.LegacyIndexAccess && !current.attributeProjection {
 			// Brackets inside .* would index the projected tuple instead of
@@ -146,7 +145,7 @@ func normalizeExpression(result syntax.Result, root syntax.SyntaxNode) *expressi
 // or object key/value. Delimited descendants own their lines.
 func protectExpressionLines(node *expressionView) *expressionView {
 	if node.needsNewlineContext && (node.kind == syntax.UnaryExpression || node.kind == syntax.TraversalExpression) {
-		return groupedExpression(node, nil, nil)
+		return permanentParentheses(node, nil, nil)
 	}
 	return node
 }
@@ -161,10 +160,10 @@ func protectExpressionLines(node *expressionView) *expressionView {
 // The answer matters once a quoted wrapper is removed: the "${ }" that made
 // newlines legal is gone, and an attribute value or an object key or value
 // ends where the grammar forbids an unparenthesized newline (doc.go:
-// Expression context). Binary and conditional layouts add synthetic
-// parentheses when they break, but unary and traversal layouts have no group
-// of their own, so protectExpressionLines gives them permanent parentheses
-// when this reports true (TestExpressionNormalization: unwrapped traversal
+// Expression context). Binary and conditional layouts add break parentheses
+// when they break, but unary and traversal layouts have no group of their
+// own, so protectExpressionLines gives them permanent parentheses when this
+// reports true (TestExpressionNormalization: unwrapped traversal
 // comment, unwrapped unary comment, unwrapped heredoc traversal).
 //
 // comment and newline describe the trivia run since the last significant
@@ -229,7 +228,7 @@ func expressionEndsHeredoc(node *expressionView) bool {
 		if child.node != nil {
 			return child.node.endsHeredoc
 		}
-		if !bodyTrivia(child.token.kind) {
+		if !isTrivia(child.token.kind) {
 			return false
 		}
 	}
@@ -247,15 +246,15 @@ func quotedWrapper(node *expressionView) (inner *expressionView, before, after [
 		node.children[0].token.kind != syntax.QuoteOpen || node.children[2].token.kind != syntax.QuoteClose {
 		return nil, nil, nil
 	}
-	sequence := node.children[1].node
-	if sequence == nil || sequence.kind != syntax.TemplateInterpolation {
+	interpolation := node.children[1].node
+	if interpolation == nil || interpolation.kind != syntax.TemplateInterpolation {
 		return nil, nil, nil
 	}
 
-	for _, element := range sequence.children {
+	for _, element := range interpolation.children {
 		if element.node != nil {
 			inner = element.node
-		} else if bodyTrivia(element.token.kind) {
+		} else if isTrivia(element.token.kind) {
 			if inner == nil {
 				before = append(before, element)
 			} else {
@@ -275,9 +274,12 @@ func hasComments(elements []expressionElement) bool {
 	return false
 }
 
-// groupedExpression wraps inner in synthesized parentheses, keeping any
-// wrapper-edge trivia inside them so those comments retain their position.
-func groupedExpression(inner *expressionView, before, after []expressionElement) *expressionView {
+// permanentParentheses wraps inner in parentheses that appear in every
+// layout, keeping any wrapper-edge trivia inside them so those comments
+// retain their position. Unlike operations.breakParentheses, which appears
+// only when a group breaks, these parentheses are part of the view itself:
+// the grammar or the operand's precedence needs them at every width.
+func permanentParentheses(inner *expressionView, before, after []expressionElement) *expressionView {
 	children := make([]expressionElement, 0, len(before)+len(after)+3)
 	children = append(children, delimiter(syntax.OpenParen, "("))
 	children = append(children, before...)
@@ -314,7 +316,7 @@ func needsGrouping(result syntax.Result, parent syntax.SyntaxNode, position int,
 		// direct token that is not trivia.
 		power := 0
 		for i := range parent.ChildCount() {
-			if token, ok := parent.Child(i).Token(); ok && !bodyTrivia(token.Kind()) {
+			if token, ok := parent.Child(i).Token(); ok && !isTrivia(token.Kind()) {
 				power = binaryPower(token.Kind())
 				break
 			}
@@ -366,7 +368,7 @@ func expressionPower(node *expressionView) int {
 		return conditionalPower
 	case syntax.BinaryExpression:
 		for _, element := range node.children {
-			if element.node == nil && !bodyTrivia(element.token.kind) {
+			if element.node == nil && !isTrivia(element.token.kind) {
 				return binaryPower(element.token.kind)
 			}
 		}

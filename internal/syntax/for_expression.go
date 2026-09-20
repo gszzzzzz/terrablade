@@ -7,45 +7,45 @@ package syntax
 // diagnosed in the tuple form, so the tree keeps their bytes either way.
 func (p *parser) forExpression(b *nodeBuilder) {
 	open := p.current().kind
-	close, missingClose := CloseBracket, ExpectedClosingBracket
+	closer, missingCloser := CloseBracket, ExpectedClosingBracket
 	if open == OpenBrace {
-		close, missingClose = CloseBrace, ExpectedClosingBrace
+		closer, missingCloser = CloseBrace, ExpectedClosingBrace
 	}
-	p.consumeLookahead(b, delimitedExpression) // opening bracket or brace
-	p.consumeLookahead(b, delimitedExpression) // contextual for
-	if !p.forIntroduction(b) || !p.expect(b, Colon, ExpectedForColon, delimitedExpression) {
-		p.recoverUntil(b, delimitedExpression, expressionBoundaries)
-		p.expect(b, close, missingClose, delimitedExpression)
+	p.consumeLookahead(b, newlineTransparent) // opening bracket or brace
+	p.consumeLookahead(b, newlineTransparent) // contextual for
+	if !p.forIntroduction(b) || !p.expect(b, Colon, ExpectedForColon, newlineTransparent) {
+		p.recoverUntil(b, newlineTransparent, expressionBoundaries)
+		p.expect(b, closer, missingCloser, newlineTransparent)
 		return
 	}
 
-	p.operand(b, lowestPower, delimitedExpression)
-	if p.peek(delimitedExpression) == Arrow {
+	p.operand(b, lowestPower, newlineTransparent)
+	if p.peek(newlineTransparent) == Arrow {
 		if open == OpenBracket {
-			p.report(UnexpectedForKey, p.tokens[p.look(delimitedExpression)].span)
+			p.report(UnexpectedForKey, p.tokens[p.look(newlineTransparent)].span)
 		}
-		p.consumeLookahead(b, delimitedExpression)
-		p.operand(b, lowestPower, delimitedExpression)
+		p.consumeLookahead(b, newlineTransparent)
+		p.operand(b, lowestPower, newlineTransparent)
 	} else if open == OpenBrace {
-		p.report(ExpectedForArrow, p.tokens[p.look(delimitedExpression)].span)
+		p.report(ExpectedForArrow, p.tokens[p.look(newlineTransparent)].span)
 	}
-	if p.peek(delimitedExpression) == Ellipsis {
+	if p.peek(newlineTransparent) == Ellipsis {
 		if open == OpenBracket {
-			p.report(UnexpectedForGrouping, p.tokens[p.look(delimitedExpression)].span)
+			p.report(UnexpectedForGrouping, p.tokens[p.look(newlineTransparent)].span)
 		}
-		p.consumeLookahead(b, delimitedExpression)
+		p.consumeLookahead(b, newlineTransparent)
 	}
-	if p.keyword("if", delimitedExpression) {
-		p.consumeLookahead(b, delimitedExpression)
-		p.operand(b, lowestPower, delimitedExpression)
+	if p.keyword("if", newlineTransparent) {
+		p.consumeLookahead(b, newlineTransparent)
+		p.operand(b, lowestPower, newlineTransparent)
 	}
 
-	if !p.expect(b, close, missingClose, delimitedExpression) {
+	if !p.expect(b, closer, missingCloser, newlineTransparent) {
 		// A for-expression has no item separators. Recover its remaining tail as
 		// one region rather than interpreting a stray comma as a new projection.
-		p.recoverUntil(b, delimitedExpression, expressionBoundaries)
-		if p.peek(delimitedExpression) == close {
-			p.consumeLookahead(b, delimitedExpression)
+		p.recoverUntil(b, newlineTransparent, expressionBoundaries)
+		if p.peek(newlineTransparent) == closer {
+			p.consumeLookahead(b, newlineTransparent)
 		}
 	}
 }
@@ -54,21 +54,21 @@ func (p *parser) forExpression(b *nodeBuilder) {
 // keyword. The same grammar introduces template for directives. Callers consume
 // `for` and supply their own following ':' or template closer.
 func (p *parser) forIntroduction(b *nodeBuilder) bool {
-	if !p.expect(b, Identifier, ExpectedForVariable, delimitedExpression) {
+	if !p.expect(b, Identifier, ExpectedForVariable, newlineTransparent) {
 		return false
 	}
-	if p.peek(delimitedExpression) == Comma {
-		p.consumeLookahead(b, delimitedExpression)
-		if !p.expect(b, Identifier, ExpectedForVariable, delimitedExpression) {
+	if p.peek(newlineTransparent) == Comma {
+		p.consumeLookahead(b, newlineTransparent)
+		if !p.expect(b, Identifier, ExpectedForVariable, newlineTransparent) {
 			return false
 		}
 	}
 
-	if !p.keyword("in", delimitedExpression) {
-		p.report(ExpectedForIn, p.tokens[p.look(delimitedExpression)].span)
+	if !p.keyword("in", newlineTransparent) {
+		p.report(ExpectedForIn, p.tokens[p.look(newlineTransparent)].span)
 		return false
 	}
-	p.consumeLookahead(b, delimitedExpression)
-	p.operand(b, lowestPower, delimitedExpression)
+	p.consumeLookahead(b, newlineTransparent)
+	p.operand(b, lowestPower, newlineTransparent)
 	return true
 }

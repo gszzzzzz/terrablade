@@ -2,7 +2,10 @@ package document_test
 
 import (
 	"fmt"
+	"strings"
 	"testing"
+
+	"github.com/clipperhouse/displaywidth"
 
 	"github.com/gszzzzzz/terrablade/internal/document"
 )
@@ -187,6 +190,78 @@ func mustPanic(t *testing.T, action func()) {
 		}
 	}()
 	action()
+}
+
+func TestDisplayWidthIgnoresEnvironmentAndDependencyDefaults(t *testing.T) {
+	t.Setenv("RUNEWIDTH_EASTASIAN", "1")
+	t.Setenv("LC_ALL", "ko_KR.UTF-8")
+	original := displaywidth.DefaultOptions
+	displaywidth.DefaultOptions = displaywidth.Options{EastAsianWidth: true, ControlSequences: true}
+	t.Cleanup(func() { displaywidth.DefaultOptions = original })
+	doc := document.Group(document.Concat(document.Text("Ω"), document.Line(), document.Text("x")))
+	if got := document.Render(doc, document.Options{PrintWidth: 3}); got != "Ω x" {
+		t.Fatalf("environment or dependency defaults changed layout: %q", got)
+	}
+}
+
+func TestGraphemeAcrossGroupEdges(t *testing.T) {
+	for _, doc := range []document.Doc{
+		document.Concat(document.Text("👩"), document.Group(document.Concat(
+			document.Text("\u200d💻"), document.Line(), document.Text("x"),
+		))),
+		document.Concat(document.Group(document.Concat(
+			document.Text("x"), document.Line(), document.Text("👩"),
+		)), document.Text("\u200d💻")),
+	} {
+		if got := document.Render(doc, document.Options{PrintWidth: 4}); strings.Contains(got, "\n") {
+			t.Fatalf("cluster crossing group edge was over-counted: %q", got)
+		}
+		if got := document.Render(doc, document.Options{PrintWidth: 3}); !strings.Contains(got, "\n") {
+			t.Fatalf("cluster crossing group edge was under-counted: %q", got)
+		}
+	}
+}
+
+func TestGraphemeBoundarySegments(t *testing.T) {
+	for _, text := range []string{
+		"🇰🇷🇦🇧🇨x", "👩‍👩‍👧‍👦x", "क्\u200dकx", "\u0600\u0600a b", "e\u0301\u0302x",
+	} {
+		for offset := range text {
+			for width := 1; width <= 12; width++ {
+				layout := func(content document.Doc) document.Doc {
+					return document.Group(document.Concat(content, document.Line(), document.Text("end")))
+				}
+				options := document.Options{PrintWidth: width}
+				whole := layout(document.Text(text))
+				split := layout(document.Concat(document.Text(text[:offset]), document.Text(text[offset:])))
+				if got, want := document.Render(split, options), document.Render(whole, options); got != want {
+					t.Errorf("%q split at %d width %d: %q, want %q", text, offset, width, got, want)
+				}
+			}
+		}
+	}
+}
+
+func TestLiteralLineWithStructuredInterpolation(t *testing.T) {
+	// Literal newlines preserve heredoc-owned leading spaces. A formatted
+	// interpolation can still use the surrounding structural indentation.
+	doc := document.Concat(
+		document.Text("block {"),
+		document.Indent(document.Concat(
+			document.HardLine(), document.Text("value = <<E"),
+			document.LiteralLine(), document.Text("  raw  "),
+			document.LiteralLine(), document.Text("${"),
+			document.Indent(document.Concat(document.HardLine(), document.Text("value"))),
+			document.HardLine(), document.Text("}"),
+			document.LiteralLine(), document.Text("E"),
+			document.HardLine(), document.Text("next = 1"),
+		)),
+		document.HardLine(), document.Text("}"), document.HardLine(),
+	)
+	want := "block {\n  value = <<E\n  raw  \n${\n    value\n  }\nE\n  next = 1\n}\n"
+	if got := document.Render(doc, document.Options{}); got != want {
+		t.Fatalf("heredoc composition = %q, want %q", got, want)
+	}
 }
 
 func ExampleRender() {

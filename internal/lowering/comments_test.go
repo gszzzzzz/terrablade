@@ -5,10 +5,14 @@ import (
 	"testing"
 )
 
+// Every case here is written with escaped bytes on purpose: carriage
+// returns, not layout, are what these tests are about.
 func TestFileLineCommentCarriageReturns(t *testing.T) {
 	for _, test := range []struct{ name, source, want string }{
 		{"EOF", "#\r", "#\r\r\n"},
 		{"EOF CR run", "//x\r\r", "//x\r\r\r\n"},
+
+		// CRLF collapses, but a literal CR before it must survive a second pass.
 		{"CRLF", "#x\r\n", "#x\n"},
 		{"literal CR before CRLF", "#x\r\r\n", "#x\r\r\n"},
 		{"literal CR run before CRLF", "#x\r\r\r\n", "#x\r\r\r\n"},
@@ -31,6 +35,7 @@ func TestFileLineCommentCarriageReturns(t *testing.T) {
 	}
 }
 
+// As above, these cases keep escaped bytes because the bytes are the point.
 func TestExpressionLineCommentCarriageReturns(t *testing.T) {
 	for _, test := range []struct{ name, source, want string }{
 		{"call", "f(a, #x\r\r\nb)", "f(\n  a, #x\r\r\n  b,\n)"},

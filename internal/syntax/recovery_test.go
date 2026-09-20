@@ -70,6 +70,7 @@ func TestRecoveryKeepsNestedConstructsTogether(t *testing.T) {
 			},
 			`File(Object("{", Item(Variable("a"), "=", Literal("1")), Error("{", "b", "=", "2", ",", "c", "=", "3", "}"), ",", Item(Variable("d"), "=", Literal("4")), "}"))`,
 		},
+
 		{
 			"quoted interpolation keeps its nested call delimiters",
 			`f(1 "${g(2,3)}",4)`,

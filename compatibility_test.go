@@ -3,21 +3,22 @@ package terrablade_test
 import (
 	"bytes"
 	"context"
-	"os"
 	"os/exec"
 	"testing"
 	"time"
 
 	"github.com/gszzzzzz/terrablade"
+	"github.com/gszzzzzz/terrablade/internal/reference"
 )
 
 func TestReferenceFixedPoints(t *testing.T) {
-	reference := referenceCLI(t)
+	cli := reference.CLI(t)
 	// These fixtures use upstream's indentation convention. Custom indentation
 	// and the narrow exceptions documented in doc.go are not upstream fixed points.
 	for _, source := range []string{
 		"", "\ufeffa=1\r\nlong=2\r\n", "#\r", "a=1 #x\r\r\nb=2",
-		"resource aws_instance web {\n ami=\"${var.ami}\"\n instance_type=\"small\"\n\n tags={name=\"web\",owner=\"ops\"}\n}\n",
+		"resource aws_instance web {\n ami=\"${var.ami}\"\n" +
+			" instance_type=\"small\"\n\n tags={name=\"web\",owner=\"ops\"}\n}\n",
 		`block /*type*/ bare /*label*/ "q" {}`, `a="${foo.0.bar}"`,
 		`a={"${name}"="${value}"}`, `a={"${"k"}"=1}`, `a=-"${x+y}"`,
 		`a="${"${x}"}"`, `a=(foo[*].b)[0]`, `a=foo[*].b[0]`, `a=foo[*].0.bar`,
@@ -29,7 +30,7 @@ func TestReferenceFixedPoints(t *testing.T) {
 		for _, width := range []int{16, 80} {
 			output := format(t, []byte(source), terrablade.Options{PrintWidth: width})
 			ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
-			command := exec.CommandContext(ctx, reference, "fmt", "-no-color", "-")
+			command := exec.CommandContext(ctx, cli, "fmt", "-no-color", "-")
 			command.Stdin = bytes.NewReader(output)
 			formatted, err := command.CombinedOutput()
 			cancel()
@@ -41,18 +42,4 @@ func TestReferenceFixedPoints(t *testing.T) {
 			}
 		}
 	}
-}
-
-func referenceCLI(t testing.TB) string {
-	t.Helper()
-	const environment = "TERRABLADE_REFERENCE_CLI"
-	name := os.Getenv(environment)
-	if name == "" {
-		t.Skip("set " + environment + " to terraform or tofu to run compatibility tests")
-	}
-	path, err := exec.LookPath(name)
-	if err != nil {
-		t.Fatalf("find reference CLI %q: %v", name, err)
-	}
-	return path
 }

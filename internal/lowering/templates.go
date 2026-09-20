@@ -11,7 +11,7 @@ import (
 // chunks alternate with already-lowered sequences. Quoted templates,
 // heredocs, and directive bodies share this composition, and no synthesized
 // whitespace escapes a sequence into literal text (doc.go: Templates).
-func templateParts(result syntax.Result, node *expressionView, docs map[*expressionView]layout) layout {
+func templateParts(result syntax.Result, node *expressionView, layouts map[*expressionView]layout) layout {
 	parts := make([]document.Doc, 0, node.ChildCount())
 	heredoc := false
 	for i := 0; i < node.ChildCount(); i++ {
@@ -22,7 +22,7 @@ func templateParts(result syntax.Result, node *expressionView, docs map[*express
 			if token.Kind() == syntax.HeredocOpen {
 				heredoc = true
 			}
-			if token.Kind() == syntax.HeredocEndMarker && strings.HasSuffix(text, "\r") && strings.HasPrefix(result.Source()[token.Span().End:], "\r\n") {
+			if token.Kind() == syntax.HeredocEndMarker && strings.HasSuffix(text, "\r") && strings.HasPrefix(result.Source()[token.source.Span().End:], "\r\n") {
 				// As with literal CR runs, retain the line-ending CR when
 				// removing it would fuse the preceding literal CR with the
 				// enclosing LF.
@@ -30,7 +30,7 @@ func templateParts(result syntax.Result, node *expressionView, docs map[*express
 			}
 		} else {
 			nested, _ := child.Node()
-			parts = append(parts, docs[nested].doc)
+			parts = append(parts, layouts[nested].doc)
 		}
 	}
 

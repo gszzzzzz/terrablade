@@ -126,9 +126,9 @@ func Indent(content Doc) Doc { return wrap(indentKind, content) }
 // rendered rows. Lower-numbered columns must precede higher-numbered columns.
 // Only the first cell in each column on a row participates, even if it spans
 // multiple rows; later nested cells may participate on their own starting rows.
-// Content supplies its own minimum separator. Alignment
-// adds spaces before it after all line breaks have been chosen, so padding may
-// exceed PrintWidth. Columns count grapheme clusters, not terminal display cells.
+// Content supplies its own minimum separator. Alignment adds spaces before it
+// after all line breaks have been chosen, so padding may exceed PrintWidth.
+// Columns count grapheme clusters, not terminal display cells.
 // A cell spanning an ordinary newline is ineligible and splits its chain.
 // LiteralLine belongs to opaque text and does not separate alignment rows.
 func Cell(column uint8, content Doc) Doc {

@@ -88,7 +88,7 @@ var nodeKindNames = [nodeKindCount]string{
 	BlockLabel:              "BlockLabel",
 }
 
-var diagnosticKindNames = [diagnosticKindCount]string{
+var diagnosticKindNames = [DiagnosticKindCount]string{
 	InvalidUTF8:                  "InvalidUTF8",
 	InvalidCharacter:             "InvalidCharacter",
 	UnterminatedBlockComment:     "UnterminatedBlockComment",
@@ -155,7 +155,7 @@ func (k NodeKind) String() string {
 // String returns the stable symbolic name of a diagnostic category. Use Message
 // for user-facing prose; unknown kinds use the form DiagnosticKind(n).
 func (k DiagnosticKind) String() string {
-	if k < diagnosticKindCount && diagnosticKindNames[k] != "" {
+	if k < DiagnosticKindCount && diagnosticKindNames[k] != "" {
 		return diagnosticKindNames[k]
 	}
 	return "DiagnosticKind(" + strconv.FormatUint(uint64(k), 10) + ")"

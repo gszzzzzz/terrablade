@@ -1,68 +1,164 @@
 package lowering_test
 
 import (
-	"context"
-	"os/exec"
-	"reflect"
-	"strings"
 	"testing"
-	"time"
 
 	"github.com/gszzzzzz/terrablade/internal/document"
 	"github.com/gszzzzzz/terrablade/internal/lowering"
+	"github.com/gszzzzzz/terrablade/internal/reference"
 	"github.com/gszzzzzz/terrablade/internal/syntax"
 )
 
 func TestFileLayouts(t *testing.T) {
 	for _, test := range []struct{ name, source, want string }{
+		// File boundaries. BOM, tab, and CR cases stay escaped: their exact
+		// bytes are what the policy is about.
 		{"empty", "", "\n"},
 		{"outer whitespace", " \n\t\r\n", "\n"},
 		{"BOM only", "\ufeff\n\n", "\n"},
 		{"BOM and attribute", "\ufeffa=1", "a = 1\n"},
 		{"final newline", "a=1", "a = 1\n"},
-		{"outer padding", "\n\na=1\n\n\n", "a = 1\n"},
-		{"attribute blank gap caps", "a=1\n\n\nb=2\n", "a = 1\n\nb = 2\n"},
-		{"empty block", "empty { \n\n }", "empty {}\n"},
-		{"short block expands", "short { a=1 }", "short {\n  a = 1\n}\n"},
-		{"block boundaries", "a=1\nb {}\nc=2\nd {}\ne {}", "a = 1\n\nb {}\n\nc = 2\n\nd {}\n\ne {}\n"},
-		{"nested block boundaries", "outer {\n a=1\n inner { x=2 }\n b=3\n}", "outer {\n  a = 1\n\n  inner {\n    x = 2\n  }\n\n  b = 3\n}\n"},
+		{"outer padding", lines("", "", "a=1", "", "", ""), "a = 1\n"},
+
+		// Item boundaries.
+		{"attribute blank gap caps", lines("a=1", "", "", "b=2", ""), lines("a = 1", "", "b = 2", "")},
+
+		// Blocks and labels.
+		{"empty block", lines("empty { ", "", " }"), "empty {}\n"},
+		{"short block expands", "short { a=1 }", lines("short {", "  a = 1", "}", "")},
+		{
+			name:   "block boundaries",
+			source: lines("a=1", "b {}", "c=2", "d {}", "e {}"),
+			want:   lines("a = 1", "", "b {}", "", "c = 2", "", "d {}", "", "e {}", ""),
+		},
+		{
+			name:   "nested block boundaries",
+			source: lines("outer {", " a=1", " inner { x=2 }", " b=3", "}"),
+			want:   lines("outer {", "  a = 1", "", "  inner {", "    x = 2", "  }", "", "  b = 3", "}", ""),
+		},
 		{"labels", `resource aws_instance "web\u0020server" {}`, "resource \"aws_instance\" \"web\\u0020server\" {}\n"},
-		{"header comments", `block /*type*/ bare /*label*/ "quoted" /*brace*/ {}`, "block \"bare\" \"quoted\" /*type*/ /*label*/ /*brace*/ {}\n"},
+
+		// Header comments move to the brace in source order.
+		{
+			name:   "header comments",
+			source: `block /*type*/ bare /*label*/ "quoted" /*brace*/ {}`,
+			want:   "block \"bare\" \"quoted\" /*type*/ /*label*/ /*brace*/ {}\n",
+		},
 		{"unlabeled header comment", `block /*type*/ {}`, "block /*type*/ {}\n"},
-		{"multiline label trivia relocated", "block /*type\n end*/ \"a\" {}", "block \"a\" /*type\n end*/ {}\n"},
-		{"multiline brace trivia retained", "block \"a\" /*brace\n end*/ {}", "block \"a\" /*brace\n end*/ {}\n"},
-		{"repeated header comments", `block /*same*/ first /*same*/ second /*same*/ {}`, "block \"first\" \"second\" /*same*/ /*same*/ /*same*/ {}\n"},
-		{"header and surrounding comments", "# lead\nblock /*first*/ bare /*second\nline*/ \"quoted\" /*brace*/ { # open\n # body\n} // end\n", "# lead\nblock \"bare\" \"quoted\" /*first*/ /*second\nline*/ /*brace*/ { # open\n  # body\n} // end\n"},
-		{"nested header comments", "outer {\n inner /*type*/ bare /*label*/ { a=1 }\n}", "outer {\n  inner \"bare\" /*type*/ /*label*/ {\n    a = 1\n  }\n}\n"},
+		{
+			name:   "multiline label trivia relocated",
+			source: lines("block /*type", ` end*/ "a" {}`),
+			want:   lines(`block "a" /*type`, " end*/ {}", ""),
+		},
+		{
+			name:   "multiline brace trivia retained",
+			source: lines(`block "a" /*brace`, " end*/ {}"),
+			want:   lines(`block "a" /*brace`, " end*/ {}", ""),
+		},
+		{
+			name:   "repeated header comments",
+			source: `block /*same*/ first /*same*/ second /*same*/ {}`,
+			want:   "block \"first\" \"second\" /*same*/ /*same*/ /*same*/ {}\n",
+		},
+		{
+			name: "header and surrounding comments",
+			source: lines(
+				"# lead", "block /*first*/ bare /*second",
+				`line*/ "quoted" /*brace*/ { # open`, " # body", "} // end", "",
+			),
+			want: lines(
+				"# lead", `block "bare" "quoted" /*first*/ /*second`,
+				"line*/ /*brace*/ { # open", "  # body", "} // end", "",
+			),
+		},
+		{
+			name:   "nested header comments",
+			source: lines("outer {", " inner /*type*/ bare /*label*/ { a=1 }", "}"),
+			want:   lines("outer {", `  inner "bare" /*type*/ /*label*/ {`, "    a = 1", "  }", "}", ""),
+		},
+
+		// Comment placement and sections inside a body.
 		{"attribute comments", "a /*key*/=/*value*/ 1 /*tail*/ # end\n", "a /*key*/ = /*value*/ 1 /*tail*/ # end\n"},
-		{"leading and trailing comments", "\n\n# lead\na=1\n# end\n\n", "# lead\na = 1\n# end\n"},
-		{"only comments", "\n# one\n\n\n# two\n\n", "# one\n\n# two\n"},
-		{"comment sections", "a=1\n\n\n# section\n\n\nb=2\n", "a = 1\n\n# section\n\nb = 2\n"},
-		{"same-line comment run section", "a=1\n/*first*/ /*second*/ # third\n\n\nb=2", "a = 1\n/*first*/ /*second*/ # third\n\nb = 2\n"},
-		{"same-line block comments section", "a=1\n/*first*/ /*second*/\n\n\nb=2", "a = 1\n/*first*/ /*second*/\n\nb = 2\n"},
-		{"comment prefix follows attribute group boundary", "a=1\n\n/*prefix*/ b=2", "a = 1\n\n/*prefix*/ b = 2\n"},
-		{"inline comment preserves attribute group boundary", "a=1 # tail\n\n\nb=2", "a = 1 # tail\n\nb = 2\n"},
-		{"comment before block", "a=1\n# block\nb {}", "a = 1\n\n# block\nb {}\n"},
-		{"comment after block", "a {}\n# next\nb=1", "a {}\n\n# next\nb = 1\n"},
-		{"inline comment before block boundary", "a=1 /*tail*/\nb {}", "a = 1 /*tail*/\n\nb {}\n"},
-		{"same-line comment run after block boundary", "a {}\n/*first*/ /*second*/\nb=1", "a {}\n\n/*first*/ /*second*/\nb = 1\n"},
-		{"comment prefix after block boundary", "a=1\n/*prefix*/ b {}", "a = 1\n\n/*prefix*/ b {}\n"},
-		{"opener comment", "b { # open\n a=1\n}", "b { # open\n  a = 1\n}\n"},
-		{"opener block comment before attribute", "b { /*open*/ a=1 }", "b { /*open*/\n  a = 1\n}\n"},
-		{"opener comment run before attribute", "b { /*first*/ /*second*/ a=1 }", "b { /*first*/ /*second*/\n  a = 1\n}\n"},
-		{"opener multiline comment before attribute", "b { /*first\nsecond*/ a=1 }", "b { /*first\nsecond*/\n  a = 1\n}\n"},
-		{"body comment prefix stays adjacent", "b {\n /*prefix*/ a=1\n}", "b {\n  /*prefix*/ a = 1\n}\n"},
-		{"comment only block", "b {\n # body\n\n}", "b {\n  # body\n}\n"},
-		{"inline block comment only", "b { /*body*/ }", "b { /*body*/\n}\n"},
+		{
+			name:   "leading and trailing comments",
+			source: lines("", "", "# lead", "a=1", "# end", "", ""),
+			want:   lines("# lead", "a = 1", "# end", ""),
+		},
+		{"only comments", lines("", "# one", "", "", "# two", "", ""), lines("# one", "", "# two", "")},
+		{
+			name:   "comment sections",
+			source: lines("a=1", "", "", "# section", "", "", "b=2", ""),
+			want:   lines("a = 1", "", "# section", "", "b = 2", ""),
+		},
+		{
+			name:   "same-line comment run section",
+			source: lines("a=1", "/*first*/ /*second*/ # third", "", "", "b=2"),
+			want:   lines("a = 1", "/*first*/ /*second*/ # third", "", "b = 2", ""),
+		},
+		{
+			name:   "same-line block comments section",
+			source: lines("a=1", "/*first*/ /*second*/", "", "", "b=2"),
+			want:   lines("a = 1", "/*first*/ /*second*/", "", "b = 2", ""),
+		},
+		{
+			name:   "comment prefix follows attribute group boundary",
+			source: lines("a=1", "", "/*prefix*/ b=2"),
+			want:   lines("a = 1", "", "/*prefix*/ b = 2", ""),
+		},
+		{
+			name:   "inline comment preserves attribute group boundary",
+			source: lines("a=1 # tail", "", "", "b=2"),
+			want:   lines("a = 1 # tail", "", "b = 2", ""),
+		},
+
+		// Comments around the mandatory blank line at a block.
+		{"comment before block", lines("a=1", "# block", "b {}"), lines("a = 1", "", "# block", "b {}", "")},
+		{"comment after block", lines("a {}", "# next", "b=1"), lines("a {}", "", "# next", "b = 1", "")},
+		{"inline comment before block boundary", lines("a=1 /*tail*/", "b {}"), lines("a = 1 /*tail*/", "", "b {}", "")},
+		{
+			name:   "same-line comment run after block boundary",
+			source: lines("a {}", "/*first*/ /*second*/", "b=1"),
+			want:   lines("a {}", "", "/*first*/ /*second*/", "b = 1", ""),
+		},
+		{"comment prefix after block boundary", lines("a=1", "/*prefix*/ b {}"), lines("a = 1", "", "/*prefix*/ b {}", "")},
+
+		// Comments on a nested body's opening brace line.
+		{"opener comment", lines("b { # open", " a=1", "}"), lines("b { # open", "  a = 1", "}", "")},
+		{"opener block comment before attribute", "b { /*open*/ a=1 }", lines("b { /*open*/", "  a = 1", "}", "")},
+		{
+			name:   "opener comment run before attribute",
+			source: "b { /*first*/ /*second*/ a=1 }",
+			want:   lines("b { /*first*/ /*second*/", "  a = 1", "}", ""),
+		},
+		{
+			name:   "opener multiline comment before attribute",
+			source: lines("b { /*first", "second*/ a=1 }"),
+			want:   lines("b { /*first", "second*/", "  a = 1", "}", ""),
+		},
+		{
+			name:   "body comment prefix stays adjacent",
+			source: lines("b {", " /*prefix*/ a=1", "}"),
+			want:   lines("b {", "  /*prefix*/ a = 1", "}", ""),
+		},
+		{"comment only block", lines("b {", " # body", "", "}"), lines("b {", "  # body", "}", "")},
+		{"inline block comment only", "b { /*body*/ }", lines("b { /*body*/", "}", "")},
 		{"standalone inline block comment", "/*lead*/ a=1\n", "/*lead*/ a = 1\n"},
-		{"closing standalone comment", "b { a=1 /*tail*/ }", "b {\n  a = 1 /*tail*/\n}\n"},
-		{"heredoc final newline", "a=<<E\nx\nE\n", "a = <<E\nx\nE\n"},
-		{"heredoc sibling", "a=<<E\nx\nE\nb=2\n", "a = <<E\nx\nE\nb = 2\n"},
-		{"heredoc nested", "b {\n a=<<-E\n  x\n  E\n}\n", "b {\n  a = <<-E\n  x\n  E\n}\n"},
-		{"heredoc comment", "a=<<E\nx\nE\n# next\nb=2", "a = <<E\nx\nE\n# next\nb = 2\n"},
-		{"heredoc block gap", "a=<<E\nx\nE\nb {}", "a = <<E\nx\nE\n\nb {}\n"},
-		{"CRLF", "b {\r\n a=1\r\n}\r\n", "b {\n  a = 1\n}\n"},
-		{"multiline comment literal", "b {\n /* first\r\n second */\n a=1\n}", "b {\n  /* first\n second */\n  a = 1\n}\n"},
+		{"closing standalone comment", "b { a=1 /*tail*/ }", lines("b {", "  a = 1 /*tail*/", "}", "")},
+
+		// Heredocs: the following separator owns the marker's newline.
+		{"heredoc final newline", lines("a=<<E", "x", "E", ""), lines("a = <<E", "x", "E", "")},
+		{"heredoc sibling", lines("a=<<E", "x", "E", "b=2", ""), lines("a = <<E", "x", "E", "b = 2", "")},
+		{"heredoc nested", lines("b {", " a=<<-E", "  x", "  E", "}", ""), lines("b {", "  a = <<-E", "  x", "  E", "}", "")},
+		{"heredoc comment", lines("a=<<E", "x", "E", "# next", "b=2"), lines("a = <<E", "x", "E", "# next", "b = 2", "")},
+		{"heredoc block gap", lines("a=<<E", "x", "E", "b {}"), lines("a = <<E", "x", "E", "", "b {}", "")},
+
+		// Escaped below: these cases are about the exact bytes, not layout.
+		{"CRLF", "b {\r\n a=1\r\n}\r\n", lines("b {", "  a = 1", "}", "")},
+		{
+			name:   "multiline comment literal",
+			source: "b {\n /* first\r\n second */\n a=1\n}",
+			want:   lines("b {", "  /* first", " second */", "  a = 1", "}", ""),
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			got := renderFile(t, test.source, 80)
@@ -78,7 +174,7 @@ func TestFileLayouts(t *testing.T) {
 }
 
 func TestFileRejectsInvalidInput(t *testing.T) {
-	for _, result := range []syntax.Result{syntax.Result{}, syntax.Parse([]byte("a=")), syntax.Parse([]byte("good=1\nbad="))} {
+	for _, result := range []syntax.Result{syntax.Result{}, syntax.Parse([]byte("a=")), syntax.Parse([]byte(lines("good=1", "bad=")))} {
 		doc, err := lowering.File(result)
 		if err == nil || document.Render(doc, document.Options{}) != "" {
 			t.Fatalf("expected error and empty document, got %v", err)
@@ -90,8 +186,8 @@ func TestFileRejectsLineCommentsInsideBlockHeader(t *testing.T) {
 	// An ordinary newline ends the header, including one following a line
 	// comment. File must not move comments to repair already-invalid syntax.
 	for _, source := range []string{
-		"block # type\n label {}", "block label // label\n {}",
-		"block /*first*/ label # last\n {}",
+		lines("block # type", " label {}"), lines("block label // label", " {}"),
+		lines("block /*first*/ label # last", " {}"),
 	} {
 		result := syntax.Parse([]byte(source))
 		if len(result.Diagnostics()) == 0 {
@@ -109,22 +205,83 @@ func TestBodyAlignment(t *testing.T) {
 		name, source, want string
 		width              int
 	}{
-		{"attributes", "a=1\nlong=2\nz=3", "a    = 1\nlong = 2\nz    = 3\n", 80},
-		{"blank line splits groups", "a=1\n\nlong=2", "a = 1\n\nlong = 2\n", 80},
-		{"resource attribute groups", "resource x y {\n a=1\n bb=2\n\n\n longer=3\n c=4\n}", "resource \"x\" \"y\" {\n  a  = 1\n  bb = 2\n\n  longer = 3\n  c      = 4\n}\n", 80},
-		{"blank line splits comment columns", "a=1 # first\nb=222 # second\n\nlong=3 # third\nx=4 # fourth", "a = 1   # first\nb = 222 # second\n\nlong = 3 # third\nx    = 4 # fourth\n", 80},
-		{"heredoc separates attribute groups", "a=1\nlong=<<E\nx\nE\n\n\nb=2\ncc=3", "a    = 1\nlong = <<E\nx\nE\n\nb  = 2\ncc = 3\n", 80},
-		{"comment section between attribute groups", "a=1\nlong=2\n\n# group\n\nb=3\ncc=4", "a    = 1\nlong = 2\n\n# group\n\nb  = 3\ncc = 4\n", 80},
-		{"standalone comment splits groups", "a=1\n# note\nlong=2\nz=3", "a = 1\n# note\nlong = 2\nz    = 3\n", 80},
-		{"inline comments", "a=1 # first\nlong=222 # second\nz=3", "a    = 1   # first\nlong = 222 # second\nz    = 3\n", 80},
-		{"inline prefix", "/* lead */ a=1\nlong=2", "/* lead */ a = 1\nlong         = 2\n", 80},
-		{"name comment", "a /* name */=1\nlong=2", "a /* name */ = 1\nlong         = 2\n", 80},
-		{"unicode grapheme columns", "한글=1\naaa=2\né=3", "한글  = 1\naaa = 2\né   = 3\n", 80},
-		{"heredoc stays in group", "a=1\nlong=<<E\nx\nE\nz=3", "a    = 1\nlong = <<E\nx\nE\nz    = 3\n", 80},
-		{"wrapped tuple splits groups", "a=1\nlong=[alpha,beta]\nz=2", "a = 1\nlong = [\n  alpha,\n  beta,\n]\nz = 2\n", 16},
-		{"flat tuple joins groups", "a=1\nlong=[alpha,beta]\nz=2", "a    = 1\nlong = [alpha, beta]\nz    = 2\n", 80},
-		{"operator parentheses split groups", "a=1\nlong=alpha+beta\nz=2", "a = 1\nlong = (\n  alpha\n  + beta\n)\nz = 2\n", 16},
-		{"nested scope", "b {\n a=1\n longer=2\n}\nx=3", "b {\n  a      = 1\n  longer = 2\n}\n\nx = 3\n", 80},
+
+		// Attribute rows share one assignment column.
+		{"attributes", lines("a=1", "long=2", "z=3"), lines("a    = 1", "long = 2", "z    = 3", ""), 80},
+		{"blank line splits groups", lines("a=1", "", "long=2"), lines("a = 1", "", "long = 2", ""), 80},
+		{
+			name:   "resource attribute groups",
+			source: lines("resource x y {", " a=1", " bb=2", "", "", " longer=3", " c=4", "}"),
+			want:   lines(`resource "x" "y" {`, "  a  = 1", "  bb = 2", "", "  longer = 3", "  c      = 4", "}", ""),
+			width:  80,
+		},
+		{
+			name:   "blank line splits comment columns",
+			source: lines("a=1 # first", "b=222 # second", "", "long=3 # third", "x=4 # fourth"),
+			want:   lines("a = 1   # first", "b = 222 # second", "", "long = 3 # third", "x    = 4 # fourth", ""),
+			width:  80,
+		},
+
+		// Structural values and comments split alignment groups.
+		{
+			name:   "heredoc separates attribute groups",
+			source: lines("a=1", "long=<<E", "x", "E", "", "", "b=2", "cc=3"),
+			want:   lines("a    = 1", "long = <<E", "x", "E", "", "b  = 2", "cc = 3", ""),
+			width:  80,
+		},
+		{
+			name:   "comment section between attribute groups",
+			source: lines("a=1", "long=2", "", "# group", "", "b=3", "cc=4"),
+			want:   lines("a    = 1", "long = 2", "", "# group", "", "b  = 3", "cc = 4", ""),
+			width:  80,
+		},
+		{
+			name:   "standalone comment splits groups",
+			source: lines("a=1", "# note", "long=2", "z=3"),
+			want:   lines("a = 1", "# note", "long = 2", "z    = 3", ""),
+			width:  80,
+		},
+		{
+			name:   "inline comments",
+			source: lines("a=1 # first", "long=222 # second", "z=3"),
+			want:   lines("a    = 1   # first", "long = 222 # second", "z    = 3", ""),
+			width:  80,
+		},
+		{"inline prefix", lines("/* lead */ a=1", "long=2"), lines("/* lead */ a = 1", "long         = 2", ""), 80},
+		{"name comment", lines("a /* name */=1", "long=2"), lines("a /* name */ = 1", "long         = 2", ""), 80},
+		{"unicode grapheme columns", lines("한글=1", "aaa=2", "é=3"), lines("한글  = 1", "aaa = 2", "é   = 3", ""), 80},
+		{
+			name:   "heredoc stays in group",
+			source: lines("a=1", "long=<<E", "x", "E", "z=3"),
+			want:   lines("a    = 1", "long = <<E", "x", "E", "z    = 3", ""),
+			width:  80,
+		},
+
+		// Width-driven breaks decide group membership after layout.
+		{
+			name:   "wrapped tuple splits groups",
+			source: lines("a=1", "long=[alpha,beta]", "z=2"),
+			want:   lines("a = 1", "long = [", "  alpha,", "  beta,", "]", "z = 2", ""),
+			width:  16,
+		},
+		{
+			name:   "flat tuple joins groups",
+			source: lines("a=1", "long=[alpha,beta]", "z=2"),
+			want:   lines("a    = 1", "long = [alpha, beta]", "z    = 2", ""),
+			width:  80,
+		},
+		{
+			name:   "operator parentheses split groups",
+			source: lines("a=1", "long=alpha+beta", "z=2"),
+			want:   lines("a = 1", "long = (", "  alpha", "  + beta", ")", "z = 2", ""),
+			width:  16,
+		},
+		{
+			name:   "nested scope",
+			source: lines("b {", " a=1", " longer=2", "}", "x=3"),
+			want:   lines("b {", "  a      = 1", "  longer = 2", "}", "", "x = 3", ""),
+			width:  80,
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			got := renderFile(t, test.source, test.width)
@@ -140,132 +297,48 @@ func TestBodyAlignment(t *testing.T) {
 }
 
 func TestBodyReferenceCompatibility(t *testing.T) {
-	referenceCLI(t)
+	reference.CLI(t)
 	for _, source := range []string{
-		"a=1\nlong=2\nz=3",
-		"a=1 # first\nlong=222 # second\nz=3",
-		"a=1 // first\nlong=222 // second\nz=3",
-		"a=1\n# note\nlong=2\nz=3",
-		"a /* name */=1\nlong=2",
-		"/* lead */ a=1\nlong=2",
-		"a /* multi\nline */=1\nlong_name=2",
-		"한글=1\naaa=2\né=3",
-		"a=1\nlong=<<E\nx\nE\nz=3",
-		"a=1\nlong=[alpha,beta]\nz=2",
-		"a=1\nlong=alpha+beta\nz=2",
-		"outer label {\n a=1\n inner { z=3 }\n longer=2\n}\nx=3",
-		"a=1\n# next\nb {}\n\n\n# attributes\nx=3\nyyyy=4",
-		"b { # open\n a=1 # value\n}\n",
-		"b {\n a=<<-E\n  x\n  E\n}\n",
+		lines("a=1", "long=2", "z=3"),
+		lines("a=1 # first", "long=222 # second", "z=3"),
+		lines("a=1 // first", "long=222 // second", "z=3"),
+		lines("a=1", "# note", "long=2", "z=3"),
+		lines("a /* name */=1", "long=2"),
+		lines("/* lead */ a=1", "long=2"),
+		lines("a /* multi", "line */=1", "long_name=2"),
+		lines("한글=1", "aaa=2", "é=3"),
+		lines("a=1", "long=<<E", "x", "E", "z=3"),
+		lines("a=1", "long=[alpha,beta]", "z=2"),
+		lines("a=1", "long=alpha+beta", "z=2"),
+		lines("outer label {", " a=1", " inner { z=3 }", " longer=2", "}", "x=3"),
+		lines("a=1", "# next", "b {}", "", "", "# attributes", "x=3", "yyyy=4"),
+		lines("b { # open", " a=1 # value", "}", ""),
+		lines("b {", " a=<<-E", "  x", "  E", "}", ""),
 		"b { /*body*/ }\n",
 		"b { /*open*/ a=1 }",
 		"b { /*first*/ /*second*/ a=1 }",
-		"b { /*first\nsecond*/ a=1 }",
-		"b {\n /*prefix*/ a=1\n}",
+		lines("b { /*first", "second*/ a=1 }"),
+		lines("b {", " /*prefix*/ a=1", "}"),
 		"\ufeffa=1\nlong=2\n",
 		`block /*type*/ bare /*between*/ "quoted" /*brace*/ {}`,
 		`block /*type*/ {}`,
-		"block /*type\n end*/ \"a\" {}",
+		lines("block /*type", ` end*/ "a" {}`),
 		`block /*same*/ first /*same*/ second /*same*/ {}`,
-		"# lead\nblock /*first*/ bare /*second\nline*/ \"quoted\" /*brace*/ { # open\n # body\n} // end\n",
-		"outer {\n inner /*type*/ bare /*label*/ { a=1 }\n}",
-		"a=1\n/*first*/ /*second*/ # third\n\nb=2",
-		"value={\na=1 # first\nlonger=222 # second\n}\n",
-		"a=1\nvalue={ a=1, longer=2 }\nz=3",
-		"a=1\nvalue={\nx=1\nlonger=2\n}\nz=3",
+		lines("# lead", "block /*first*/ bare /*second", `line*/ "quoted" /*brace*/ { # open`, " # body", "} // end", ""),
+		lines("outer {", " inner /*type*/ bare /*label*/ { a=1 }", "}"),
+		lines("a=1", "/*first*/ /*second*/ # third", "", "b=2"),
+		lines("value={", "a=1 # first", "longer=222 # second", "}", ""),
+		lines("a=1", "value={ a=1, longer=2 }", "z=3"),
+		lines("a=1", "value={", "x=1", "longer=2", "}", "z=3"),
 		"value=[{a=1},{longer=2}]",
-		"resource x y {\n a=1\n bb=2\n\n\n longer=3\n c=4\n}",
-		"a=1 # first\nb=222 # second\n\nlong=3 # third\nx=4 # fourth",
-		"a=1\nlong=<<E\nx\nE\n\n\nb=2\ncc=3",
-		"a=1\nlong=2\n\n# group\n\nb=3\ncc=4",
+		lines("resource x y {", " a=1", " bb=2", "", "", " longer=3", " c=4", "}"),
+		lines("a=1 # first", "b=222 # second", "", "long=3 # third", "x=4 # fourth"),
+		lines("a=1", "long=<<E", "x", "E", "", "", "b=2", "cc=3"),
+		lines("a=1", "long=2", "", "# group", "", "b=3", "cc=4"),
 	} {
 		for _, width := range []int{16, 80} {
 			output := renderFile(t, source, width)
 			assertReferenceFormat(t, output)
 		}
-	}
-}
-
-func assertReferenceFormat(t *testing.T, output string) {
-	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	command := exec.CommandContext(ctx, referenceCLI(t), "fmt", "-no-color", "-")
-	command.Stdin = strings.NewReader(output)
-	formatted, err := command.CombinedOutput()
-	if err != nil {
-		t.Fatalf("reference CLI failed: %v\n%s", err, formatted)
-	}
-	if string(formatted) != output {
-		t.Errorf("reference CLI changed canonical formatting:\n%q\n=>\n%q", output, formatted)
-	}
-}
-
-func renderFile(t testing.TB, source string, width int) string {
-	t.Helper()
-	result := syntax.Parse([]byte(source))
-	if diagnostics := result.Diagnostics(); len(diagnostics) != 0 {
-		t.Fatalf("invalid file %q: %+v", source, diagnostics)
-	}
-	doc, err := lowering.File(result)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return document.Render(doc, document.Options{PrintWidth: width})
-}
-
-func assertFileContent(t testing.TB, before, after string) {
-	t.Helper()
-	type fileContent struct{ syntax, comments []string }
-	content := func(source string) fileContent {
-		result := syntax.Parse([]byte(source))
-		if diagnostics := result.Diagnostics(); len(diagnostics) != 0 {
-			t.Fatalf("invalid output %q: %+v", source, diagnostics)
-		}
-		var parts []string
-		stack := []syntax.SyntaxElement{result.Root().Element()}
-		for len(stack) > 0 {
-			current := stack[len(stack)-1]
-			stack = stack[:len(stack)-1]
-			if node, ok := current.Node(); ok {
-				switch node.Kind() {
-				case syntax.BlockLabel:
-					text := result.Text(node.Span())
-					parts = append(parts, "label:"+strings.Trim(text, `"`))
-					continue
-				case syntax.Attribute:
-					parts = append(parts, expressionTokens(result, node)...)
-					continue
-				}
-				parts = append(parts, "node:"+node.Kind().String())
-				for i := node.ChildCount() - 1; i >= 0; i-- {
-					stack = append(stack, node.Child(i))
-				}
-			} else if token, ok := current.Token(); ok && token.Kind() != syntax.Newline && token.Kind() != syntax.Whitespace && token.Kind() != syntax.BOM {
-				if token.Kind() == syntax.LineComment || token.Kind() == syntax.BlockComment {
-					continue
-				}
-				parts = append(parts, strings.ReplaceAll(result.Text(token.Span()), "\r\n", "\n"))
-			}
-		}
-		// Header comments can cross labels, but no comment may disappear,
-		// duplicate, or move past another comment anywhere in the whole file.
-		var comments []string
-		stack = append(stack, result.Root().Element())
-		for len(stack) > 0 {
-			current := stack[len(stack)-1]
-			stack = stack[:len(stack)-1]
-			if node, ok := current.Node(); ok {
-				for i := node.ChildCount() - 1; i >= 0; i-- {
-					stack = append(stack, node.Child(i))
-				}
-			} else if token, ok := current.Token(); ok && (token.Kind() == syntax.LineComment || token.Kind() == syntax.BlockComment) {
-				comments = append(comments, strings.ReplaceAll(result.Text(token.Span()), "\r\n", "\n"))
-			}
-		}
-		return fileContent{syntax: parts, comments: comments}
-	}
-	if left, right := content(before), content(after); !reflect.DeepEqual(left, right) {
-		t.Fatalf("syntax or comment content changed:\n%q\n=>\n%q", left, right)
 	}
 }

@@ -1,6 +1,12 @@
 package lowering_test
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/gszzzzzz/terrablade/internal/lowering"
+	"github.com/gszzzzzz/terrablade/internal/reference"
+	"github.com/gszzzzzz/terrablade/internal/syntax"
+)
 
 func TestOperationLayouts(t *testing.T) {
 	for _, test := range []struct {
@@ -9,31 +15,82 @@ func TestOperationLayouts(t *testing.T) {
 		want         string
 	}{
 		{"binary spaces", "a+b*c", 80, "a + b * c"},
-		{"all binary operators", "a||b&&c==d!=e<f<=g>h>=i+j - k*l/m%n", 100, "a || b && c == d != e < f <= g > h >= i + j - k * l / m % n"},
-		{"left associative chain", "alpha + beta - gamma", 15, "(\n  alpha\n  + beta\n  -gamma\n)"},
-		{"precedence group fits independently", "alpha + beta * gamma", 17, "(\n  alpha\n  + beta * gamma\n)"},
-		{"precedence group breaks independently", "alpha + beta * gamma", 12, "(\n  alpha\n  + beta\n  * gamma\n)"},
-		{"existing parentheses share inner group", "(alpha + beta - gamma)", 15, "(\n  alpha\n  + beta\n  -gamma\n)"},
-		{"binary inside call already permits newlines", "f(alpha + beta)", 12, "f(\n  alpha\n  + beta,\n)"},
-		{"safe chain shares delimiter indent", "f(alpha + beta - gamma)", 14, "f(\n  alpha\n  + beta\n  -gamma,\n)"},
-		{"line leading minus before parentheses", "a - (b - c)", 8, "(\n  a\n  -(\n    b\n    -c\n  )\n)"},
-		{"line leading minus before comment", "(a - /*c*/ b)", 8, "(\n  a\n  -/*c*/ b\n)"},
-		{"template mandatory minus line", "\"prefix ${a # c\n - b}\"", 80, "\"prefix ${a # c\n  -b}\""},
-		{"template comment after minus", "\"prefix ${a - # c\n b}\"", 80, "\"prefix ${a - # c\n  b}\""},
-		{"binary comment stays inline", "(alpha # why\n + beta)", 80, "(\n  alpha # why\n  + beta\n)"},
-		{"binary comment after operator", "(alpha + # why\n beta)", 80, "(\n  alpha\n  + # why\n  beta\n)"},
+		{
+			name:   "all binary operators",
+			source: "a||b&&c==d!=e<f<=g>h>=i+j - k*l/m%n",
+			width:  100,
+			want:   "a || b && c == d != e < f <= g > h >= i + j - k * l / m % n",
+		},
+		{"left associative chain", "alpha + beta - gamma", 15, lines("(", "  alpha", "  + beta", "  -gamma", ")")},
+		{"precedence group fits independently", "alpha + beta * gamma", 17, lines("(", "  alpha", "  + beta * gamma", ")")},
+		{
+			name:   "precedence group breaks independently",
+			source: "alpha + beta * gamma",
+			width:  12,
+			want:   lines("(", "  alpha", "  + beta", "  * gamma", ")"),
+		},
+		{
+			name:   "existing parentheses share inner group",
+			source: "(alpha + beta - gamma)",
+			width:  15,
+			want:   lines("(", "  alpha", "  + beta", "  -gamma", ")"),
+		},
+		{"binary inside call already permits newlines", "f(alpha + beta)", 12, lines("f(", "  alpha", "  + beta,", ")")},
+		{
+			name:   "safe chain shares delimiter indent",
+			source: "f(alpha + beta - gamma)",
+			width:  14,
+			want:   lines("f(", "  alpha", "  + beta", "  -gamma,", ")"),
+		},
+		{"line leading minus before parentheses", "a - (b - c)", 8, lines("(", "  a", "  -(", "    b", "    -c", "  )", ")")},
+		{"line leading minus before comment", "(a - /*c*/ b)", 8, lines("(", "  a", "  -/*c*/ b", ")")},
+		{"template mandatory minus line", lines(`"prefix ${a # c`, ` - b}"`), 80, lines(`"prefix ${a # c`, `  -b}"`)},
+		{"template comment after minus", lines(`"prefix ${a - # c`, ` b}"`), 80, lines(`"prefix ${a - # c`, `  b}"`)},
+		{"binary comment stays inline", lines("(alpha # why", " + beta)"), 80, lines("(", "  alpha # why", "  + beta", ")")},
+		{
+			name:   "binary comment after operator",
+			source: lines("(alpha + # why", " beta)"),
+			width:  80,
+			want:   lines("(", "  alpha", "  + # why", "  beta", ")"),
+		},
 		{"binary block comment", "a/*x*/+/*y*/b", 80, "a /*x*/ + /*y*/ b"},
-		{"parenthesis boundary comments share group", "(/*lead*/alpha+beta/*tail*/)", 16, "(\n  /*lead*/ alpha\n  + beta /*tail*/\n)"},
+		{
+			name:   "parenthesis boundary comments share group",
+			source: "(/*lead*/alpha+beta/*tail*/)",
+			width:  16,
+			want:   lines("(", "  /*lead*/ alpha", "  + beta /*tail*/", ")"),
+		},
+
+		// Conditionals associate right and break arm by arm.
 		{"conditional flat", "ready?yes:no", 80, "ready ? yes : no"},
-		{"conditional broken", "ready ? first_value : second_value", 20, "(\n  ready\n  ? first_value\n  : second_value\n)"},
-		{"nested conditional associates right", "a?b:c?d:e", 13, "(\n  a\n  ? b\n  : c ? d : e\n)"},
-		{"conditional inside tuple", "[ready ? yes : no]", 12, "[\n  ready\n  ? yes\n  : no,\n]"},
+		{
+			name:   "conditional broken",
+			source: "ready ? first_value : second_value",
+			width:  20,
+			want:   lines("(", "  ready", "  ? first_value", "  : second_value", ")"),
+		},
+		{"nested conditional associates right", "a?b:c?d:e", 13, lines("(", "  a", "  ? b", "  : c ? d : e", ")")},
+		{"conditional inside tuple", "[ready ? yes : no]", 12, lines("[", "  ready", "  ? yes", "  : no,", "]")},
+
+		// Traversal steps stay attached and never break for width.
 		{"attribute traversal flat", "foo . bar . baz", 80, "foo.bar.baz"},
 		{"attribute traversal overflows", "foo.first_attribute.second_attribute", 24, "foo.first_attribute.second_attribute"},
-		{"call and traversal groups independent", "f(x,y).first_attribute.second_attribute", 30, "f(\n  x,\n  y,\n).first_attribute.second_attribute"},
-		{"unary traversal preserves precedence", "-foo.first_attribute.second_attribute", 24, "-foo.first_attribute.second_attribute"},
+		{
+			name:   "call and traversal groups independent",
+			source: "f(x,y).first_attribute.second_attribute",
+			width:  30,
+			want:   lines("f(", "  x,", "  y,", ").first_attribute.second_attribute"),
+		},
+		{
+			name:   "unary traversal preserves precedence",
+			source: "-foo.first_attribute.second_attribute",
+			width:  24,
+			want:   "-foo.first_attribute.second_attribute",
+		},
 		{"index expression", "foo[ 1 + i ].true", 80, "foo[1 + i].true"},
-		{"index expression breaks safely", "foo[alpha + beta]", 14, "foo[\n  alpha + beta\n]"},
+		{"index expression breaks safely", "foo[alpha + beta]", 14, lines("foo[", "  alpha + beta", "]")},
+
+		// Number/step boundaries: a space only where the scanner would fuse.
 		{"legacy numeric boundary", "foo.0 .0", 80, "foo[0][0]"},
 		{"legacy exponent boundary", "foo.0e1 .0", 80, "foo[0e1][0]"},
 		{"numeric root exponent attribute", "1 . e2", 80, "1 .e2"},
@@ -59,6 +116,8 @@ func TestOperationLayouts(t *testing.T) {
 		{"comment before exponent step separates number", "foo.0/*c*/.e2", 80, "foo[0] /*c*/.e2"},
 		{"comment inside exponent step separates number", "foo.0./*c*/e2", 80, "foo[0]./*c*/ e2"},
 		{"comment inside legacy index separates number", "foo.0./*c*/1", 80, "foo[0][/*c*/ 1]"},
+
+		// Splat projections keep their scope.
 		{"legacy splat scope", "foo.*.bar[0].baz", 80, "foo.*.bar[0].baz"},
 		{"full splat scope", "foo[*].bar[0].baz", 80, "foo[*].bar[0].baz"},
 		{"nested full splats", "foo[*][*].bar", 80, "foo[*][*].bar"},
@@ -66,14 +125,46 @@ func TestOperationLayouts(t *testing.T) {
 		{"full then legacy splat", "foo[*].*.bar", 80, "foo[*].*.bar"},
 		{"index between legacy splats", "foo.*.bar[0].*.baz", 80, "foo.*.bar[0].*.baz"},
 		{"legacy splat numeric boundary", "foo.*.0 .0", 80, "foo.*.0 .0"},
-		{"full splat overflows", "foo[*].first_attribute[0].second_attribute", 24, "foo[*].first_attribute[0].second_attribute"},
-		{"safe mixed traversal", "f(foo[0].first_attribute[*].second_attribute)", 24, "f(\n  foo[0].first_attribute[*].second_attribute,\n)"},
-		{"safe traversal in tuple", "[foo.first_attribute.second_attribute]", 24, "[\n  foo.first_attribute.second_attribute,\n]"},
-		{"mixed splats retain bracket attachment", "foo.*.first_attribute[0][*].second_attribute", 24, "foo.*.first_attribute[0][*].second_attribute"},
-		{"traversal comment", "(foo # base\n .bar)", 80, "(\n  foo # base\n  .bar\n)"},
+		{
+			name:   "full splat overflows",
+			source: "foo[*].first_attribute[0].second_attribute",
+			width:  24,
+			want:   "foo[*].first_attribute[0].second_attribute",
+		},
+		{
+			name:   "safe mixed traversal",
+			source: "f(foo[0].first_attribute[*].second_attribute)",
+			width:  24,
+			want:   lines("f(", "  foo[0].first_attribute[*].second_attribute,", ")"),
+		},
+		{
+			name:   "safe traversal in tuple",
+			source: "[foo.first_attribute.second_attribute]",
+			width:  24,
+			want:   lines("[", "  foo.first_attribute.second_attribute,", "]"),
+		},
+		{
+			name:   "mixed splats retain bracket attachment",
+			source: "foo.*.first_attribute[0][*].second_attribute",
+			width:  24,
+			want:   "foo.*.first_attribute[0][*].second_attribute",
+		},
+
+		// Comments inside traversals supply their own boundary.
+		{"traversal comment", lines("(foo # base", " .bar)"), 80, lines("(", "  foo # base", "  .bar", ")")},
 		{"attribute internal comment", "foo./*step*/bar", 80, "foo./*step*/ bar"},
-		{"manual traversal lines collapse", "(foo\n .first_attribute\n .second_attribute)", 80, "(foo.first_attribute.second_attribute)"},
-		{"mandatory traversal line shares call indent", "f(foo # base\n .bar)", 80, "f(\n  foo # base\n  .bar,\n)"},
+		{
+			name:   "manual traversal lines collapse",
+			source: lines("(foo", " .first_attribute", " .second_attribute)"),
+			width:  80,
+			want:   "(foo.first_attribute.second_attribute)",
+		},
+		{
+			name:   "mandatory traversal line shares call indent",
+			source: lines("f(foo # base", " .bar)"),
+			width:  80,
+			want:   lines("f(", "  foo # base", "  .bar,", ")"),
+		},
 		{"splat comment", "foo[/*splat*/ *].bar", 80, "foo[/*splat*/ *].bar"},
 		{"splat closing comment", "foo[* /*splat*/].bar", 80, "foo[* /*splat*/].bar"},
 		{"index comment", "foo[/*index*/ 0 /*tail*/]", 80, "foo[/*index*/ 0 /*tail*/]"},
@@ -81,27 +172,27 @@ func TestOperationLayouts(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			got := render(t, test.source, test.width)
 			if got != test.want {
-				t.Fatalf("rendered:\n%q\nwant:\n%q", got, test.want)
+				t.Fatalf(lines("rendered:", "%q", "want:", "%q"), got, test.want)
 			}
 			if again := render(t, got, test.width); again != got {
-				t.Fatalf("not idempotent:\n%q\nthen:\n%q", got, again)
+				t.Fatalf(lines("not idempotent:", "%q", "then:", "%q"), got, again)
 			}
 		})
 	}
 }
 
 func TestOperationReferenceCompatibility(t *testing.T) {
-	referenceCLI(t)
+	reference.CLI(t)
 	for _, source := range []string{
 		"foo.first_attribute.second_attribute", "f(x,y).first_attribute.second_attribute",
 		"-foo.first_attribute.second_attribute", "foo[index_value].attribute_name",
 		"foo[alpha+beta].attribute_name", "foo[*].first_attribute[0].second_attribute",
 		"foo.*.first_attribute[0][*].second_attribute", "foo[/*index*/0/*tail*/].bar",
 		"aws_instance.foo.0.id", "foo.1e1.id", "foo./*step*/bar",
-		"(foo\n .first_attribute\n .second_attribute)",
+		lines("(foo", " .first_attribute", " .second_attribute)"),
 		"f(foo[0].first_attribute[*].second_attribute)", "[foo.first_attribute.second_attribute]",
-		"f(foo # base\n .bar)", "[foo # base\n .bar]", "(foo # base\n .bar)",
-		"(foo /*base*/\n .bar)", "(foo.\n/*step*/bar)", "foo[* /*splat*/].bar",
+		lines("f(foo # base", " .bar)"), lines("[foo # base", " .bar]"), lines("(foo # base", " .bar)"),
+		lines("(foo /*base*/", " .bar)"), lines("(foo.", "/*step*/bar)"), "foo[* /*splat*/].bar",
 		"f(alpha + beta)", "[ready ? yes : no]", "alpha + beta * gamma",
 		"alpha + beta - gamma", "a - (b - c)", "(a - /*c*/ b)",
 		"[for x in ready ? first : second : x]", "{for x in xs:long_key=>long_value}",
@@ -113,5 +204,206 @@ func TestOperationReferenceCompatibility(t *testing.T) {
 				t.Fatalf("not idempotent: %q => %q", output, again)
 			}
 		}
+	}
+}
+
+// binaryOperators lists every binary operator with the token kind lowering's
+// ladder maps it through. The spellings drive the parser probes below.
+var binaryOperators = []struct {
+	text string
+	kind syntax.TokenKind
+}{
+	{"||", syntax.Or}, {"&&", syntax.And},
+	{"==", syntax.EqualEqual}, {"!=", syntax.NotEqual},
+	{"<", syntax.Less}, {"<=", syntax.LessEqual},
+	{">", syntax.Greater}, {">=", syntax.GreaterEqual},
+	{"+", syntax.Plus}, {"-", syntax.Minus},
+	{"*", syntax.Star}, {"/", syntax.Slash}, {"%", syntax.Percent},
+}
+
+// TestBindingPowersMatchParserPrecedence checks lowering's binding-power
+// ladder against the parser's precedence. The parser's own table is
+// unexported and lives in another package, so the only honest comparison runs
+// through the public parser: each probe parses an expression whose tree shape
+// is decided purely by precedence, and the shape is then read back as an
+// ordering. If the parser's precedence ever changes, normalization would
+// start adding or dropping parentheses without this test, since needsGrouping
+// and expressionPower decide that from the ladder alone.
+func TestBindingPowersMatchParserPrecedence(t *testing.T) {
+	t.Run("binary pairs", func(t *testing.T) {
+		for _, first := range binaryOperators {
+			for _, second := range binaryOperators {
+				name := first.text + " vs " + second.text
+				t.Run(name, func(t *testing.T) {
+					want := compare(lowering.BinaryPower(first.kind), lowering.BinaryPower(second.kind))
+					if got := parserBinaryOrder(t, first.text, second.text); got != want {
+						t.Fatalf("parser orders %s as %d, ladder says %d", name, got, want)
+					}
+				})
+			}
+		}
+	})
+
+	t.Run("unary binds tighter than binary", func(t *testing.T) {
+		for _, operator := range binaryOperators {
+			// -a op b parses as (-a) op b exactly when unary binds tighter;
+			// a looser unary would take the whole binary as its operand.
+			root := parseExpression(t, "-a "+operator.text+" b")
+			if root.Kind() != syntax.BinaryExpression {
+				t.Fatalf("-a %s b parsed as %s, so unary binds no tighter", operator.text, root.Kind())
+			}
+			if operand := nodeChildren(t, root)[0]; operand.Kind() != syntax.UnaryExpression {
+				t.Fatalf("-a %s b has %s on the left, want UnaryExpression", operator.text, operand.Kind())
+			}
+			if lowering.UnaryPower <= lowering.BinaryPower(operator.kind) {
+				t.Fatalf("ladder puts unary at or below %s", operator.text)
+			}
+		}
+	})
+
+	t.Run("traversal binds tighter than unary and binary", func(t *testing.T) {
+		for _, operator := range binaryOperators {
+			// a op b.c keeps the step on b alone; a looser traversal would
+			// take the binary expression as its root.
+			root := parseExpression(t, "a "+operator.text+" b.c")
+			if root.Kind() != syntax.BinaryExpression {
+				t.Fatalf("a %s b.c parsed as %s, so traversal binds no tighter", operator.text, root.Kind())
+			}
+			if operand := nodeChildren(t, root)[1]; operand.Kind() != syntax.TraversalExpression {
+				t.Fatalf("a %s b.c has %s on the right, want TraversalExpression", operator.text, operand.Kind())
+			}
+			if lowering.TraversalPower <= lowering.BinaryPower(operator.kind) {
+				t.Fatalf("ladder puts traversal at or below %s", operator.text)
+			}
+		}
+		root := parseExpression(t, "-a.b")
+		if root.Kind() != syntax.UnaryExpression || nodeChildren(t, root)[0].Kind() != syntax.TraversalExpression {
+			t.Fatalf("-a.b parsed as %s, want a unary expression over a traversal", root.Kind())
+		}
+		if lowering.TraversalPower <= lowering.UnaryPower {
+			t.Fatal("ladder puts traversal at or below unary")
+		}
+	})
+
+	t.Run("conditional binds loosest", func(t *testing.T) {
+		for _, operator := range binaryOperators {
+			// Both arms and the condition swallow a whole binary expression,
+			// which is what "the conditional binds loosest" means.
+			for _, source := range []string{
+				"a " + operator.text + " b ? c : d",
+				"a ? b " + operator.text + " c : d",
+				"a ? b : c " + operator.text + " d",
+			} {
+				root := parseExpression(t, source)
+				if root.Kind() != syntax.ConditionalExpression {
+					t.Fatalf("%q parsed as %s, want ConditionalExpression", source, root.Kind())
+				}
+			}
+			if lowering.ConditionalPower >= lowering.BinaryPower(operator.kind) {
+				t.Fatalf("ladder puts conditional at or above %s", operator.text)
+			}
+		}
+		if root := parseExpression(t, "-a ? b : c"); root.Kind() != syntax.ConditionalExpression {
+			t.Fatalf("-a ? b : c parsed as %s, want ConditionalExpression", root.Kind())
+		}
+		if lowering.ConditionalPower >= lowering.UnaryPower {
+			t.Fatal("ladder puts conditional at or above unary")
+		}
+	})
+
+	t.Run("delimited forms are atomic", func(t *testing.T) {
+		// A parenthesized operation is an operand of the step that follows
+		// it, so nothing binds tighter than a delimited form.
+		root := parseExpression(t, "(a + b).c")
+		if root.Kind() != syntax.TraversalExpression || nodeChildren(t, root)[0].Kind() != syntax.ParenthesizedExpression {
+			t.Fatalf("(a + b).c parsed as %s, want a traversal rooted at a parenthesized expression", root.Kind())
+		}
+		if lowering.AtomicPower <= lowering.TraversalPower {
+			t.Fatal("ladder puts atomic forms at or below traversal")
+		}
+	})
+}
+
+// parserBinaryOrder reports how the parser orders two binary operators: -1
+// when first binds more loosely than second, 0 when they share a level, and
+// +1 when first binds more tightly.
+//
+// One probe cannot tell equal from looser, because HCL's binary operators are
+// left associative: both "a first b second c" shapes group the left pair. Two
+// probes with the operators swapped separate the three cases, since each says
+// only "the outer operator binds no more tightly than the inner one".
+func parserBinaryOrder(t *testing.T, first, second string) int {
+	t.Helper()
+	firstAtLeastSecond := groupsLeft(t, "a "+first+" b "+second+" c")
+	secondAtLeastFirst := groupsLeft(t, "a "+second+" b "+first+" c")
+	switch {
+	case firstAtLeastSecond && secondAtLeastFirst:
+		return 0
+	case firstAtLeastSecond:
+		return 1
+	case secondAtLeastFirst:
+		return -1
+	default:
+		t.Fatalf("neither %q nor %q groups on the left", first, second)
+		return 0
+	}
+}
+
+// groupsLeft reports whether source parsed as (a op b) op c rather than
+// a op (b op c), which is how the parser records that the first operator
+// bound at least as tightly as the second.
+func groupsLeft(t *testing.T, source string) bool {
+	t.Helper()
+	root := parseExpression(t, source)
+	if root.Kind() != syntax.BinaryExpression {
+		t.Fatalf("%q parsed as %s, want BinaryExpression", source, root.Kind())
+	}
+	operands := nodeChildren(t, root)
+	if len(operands) != 2 {
+		t.Fatalf("%q has %d operands, want 2", source, len(operands))
+	}
+	switch {
+	case operands[0].Kind() == syntax.BinaryExpression:
+		return true
+	case operands[1].Kind() == syntax.BinaryExpression:
+		return false
+	default:
+		t.Fatalf("%q nests no binary operand", source)
+		return false
+	}
+}
+
+// parseExpression parses one expression through the public parser and returns
+// its root node.
+func parseExpression(t *testing.T, source string) syntax.SyntaxNode {
+	t.Helper()
+	_, node := parse(t, source)
+	return node
+}
+
+// nodeChildren returns a node's child nodes in source order, skipping tokens.
+func nodeChildren(t *testing.T, node syntax.SyntaxNode) []syntax.SyntaxNode {
+	t.Helper()
+	var children []syntax.SyntaxNode
+	for i := range node.ChildCount() {
+		if child, ok := node.Child(i).Node(); ok {
+			children = append(children, child)
+		}
+	}
+	if len(children) == 0 {
+		t.Fatalf("%s has no child nodes", node.Kind())
+	}
+	return children
+}
+
+// compare returns the sign of left - right.
+func compare(left, right int) int {
+	switch {
+	case left < right:
+		return -1
+	case left > right:
+		return 1
+	default:
+		return 0
 	}
 }

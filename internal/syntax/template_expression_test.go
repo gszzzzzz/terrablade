@@ -41,6 +41,7 @@ func TestTemplateExpressionShapes(t *testing.T) {
 			`"${{"key"=v}.key}"`,
 			`File(Template("\"", Interpolation("${", Traversal(Object("{", Item(Template("\"", "key", "\""), "=", Variable("v")), "}"), AttrAccess(".", "key")), "}"), "\""))`,
 		},
+
 		{
 			"empty heredoc",
 			"<<END\nEND\n",
@@ -61,6 +62,7 @@ func TestTemplateExpressionShapes(t *testing.T) {
 			"f(<<END\na\nEND\n, 1)",
 			`File(Call("f", "(", Template("<<", "END", "a\n", "END"), ",", Literal("1"), ")"))`,
 		},
+
 		{
 			"literal is still an ordinary expression term",
 			`["x"][0] == "x"`,
@@ -127,6 +129,7 @@ func TestTemplateExpressionDiagnostics(t *testing.T) {
 			},
 			`File(Template("\"", Interpolation("${", Tuple("[", Variable("a")), "}"), "\""))`,
 		},
+
 		{
 			"unterminated quote is diagnosed by lexer",
 			`"hello`,
@@ -160,6 +163,7 @@ func TestTemplateExpressionDiagnostics(t *testing.T) {
 			},
 			`File(Template("<<-", "END", "  a\n"))`,
 		},
+
 		{
 			"invalid escape stays in literal token",
 			`"\q"`,

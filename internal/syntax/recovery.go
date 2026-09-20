@@ -4,7 +4,7 @@ package syntax
 // chosen by its caller. Leading trivia stays on the parent; trailing trivia is
 // left uncommitted for the next production. If already at a boundary, even the
 // leading trivia must stay untouched, especially at EOF or a template closer.
-func (p *parser) recoverUntil(parent *nodeBuilder, context expressionContext, stops tokenSet) {
+func (p *parser) recoverUntil(parent *nodeBuilder, context newlineContext, stops tokenSet) {
 	if stops.has(p.peek(context)) {
 		return
 	}
@@ -39,8 +39,8 @@ func (p *parser) skipConstruct(b *nodeBuilder) {
 	end := p.pos
 	for i := p.pos; p.tokens[i].kind != EOF; i++ {
 		kind := p.tokens[i].kind
-		if close := closing(kind); close != Invalid {
-			ends = append(ends, close)
+		if closer := closing(kind); closer != Invalid {
+			ends = append(ends, closer)
 		} else if len(ends) > 0 && ends[len(ends)-1] == kind {
 			ends = ends[:len(ends)-1]
 		} else if closingDelimiters.has(kind) {

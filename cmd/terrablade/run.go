@@ -57,8 +57,8 @@ type invocation struct {
 func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	command, err := parseArguments(args)
 	if errors.Is(err, flag.ErrHelp) {
-		if err := writeText(stdout, usage); err != nil {
-			reportError(stderr, "stdout", err)
+		if writeErr := writeText(stdout, usage); writeErr != nil {
+			reportError(stderr, "stdout", writeErr)
 			return exitError
 		}
 		return exitOK
@@ -181,8 +181,8 @@ func (c invocation) process(path string, stdin io.Reader, stdout, stderr io.Writ
 	case c.write:
 		// Invalid and unchanged inputs must never be opened for writing.
 		if changed {
-			if err := writeFile(path, formatted); err != nil {
-				reportError(stderr, label, err)
+			if writeErr := writeFile(path, formatted); writeErr != nil {
+				reportError(stderr, label, writeErr)
 				return exitError, false
 			}
 			err = writeText(stdout, pathLabel(label)+"\n")
@@ -237,6 +237,9 @@ func pathLabel(path string) string {
 }
 
 // writeText writes text to writer, reporting only whether it succeeded.
+// io.Copy rather than io.WriteString: Copy turns a short write that reports no
+// error into io.ErrShortWrite, so a truncated stdout still fails the command
+// instead of silently dropping output (TestRunStreamFailures covers this).
 func writeText(writer io.Writer, text string) error {
 	_, err := io.Copy(writer, strings.NewReader(text))
 	return err
