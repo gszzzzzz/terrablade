@@ -2,101 +2,37 @@ package main
 
 import (
 	"errors"
-	"fmt"
-	"io"
 	"os"
-	"path/filepath"
 )
 
-func readFile(path string) ([]byte, os.FileInfo, error) {
+func readFile(path string) ([]byte, error) {
 	info, err := os.Stat(path)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	// In particular, reject a FIFO before opening it could block for a writer.
 	if !info.Mode().IsRegular() {
-		return nil, nil, errors.New("input is not a regular file")
+		return nil, errors.New("input is not a regular file")
 	}
-	file, err := os.Open(path)
-	if err != nil {
-		return nil, nil, err
-	}
-	defer file.Close()
-	info, err = file.Stat()
-	if err != nil {
-		return nil, nil, err
-	}
-	if !info.Mode().IsRegular() {
-		return nil, nil, errors.New("input is not a regular file")
-	}
-	source, err := io.ReadAll(file)
-	if err != nil {
-		return nil, nil, err
-	}
-	if err := file.Close(); err != nil {
-		return nil, nil, err
-	}
-	return source, info, nil
+	return os.ReadFile(path)
 }
 
-// replaceFile commits one changed file. Until Rename succeeds the original is
-// untouched. A sibling temporary file keeps the replacement on one filesystem.
-// There is no batch transaction or power-loss durability guarantee: we sync the
-// file, not its directory. Concurrent editing is unsupported; the snapshot check
-// detects observable edits but cannot close the final check/rename race.
-func replaceFile(path string, formatted []byte, original os.FileInfo) (err error) {
-	if err := checkReplacement(path, original); err != nil {
-		return err
-	}
-	temp, err := os.CreateTemp(filepath.Dir(path), ".terrablade-*")
+// writeFile updates an existing file in place, following symbolic links and
+// preserving the shared inode of hard links. Call only after successful parsing
+// and a byte comparison: opening truncates immediately, and a later failure can
+// leave partial content. A path removed since reading is not recreated.
+func writeFile(path string, formatted []byte) error {
+	file, err := os.OpenFile(path, os.O_WRONLY|os.O_TRUNC, 0)
 	if err != nil {
 		return err
 	}
-	committed := false
-	defer func() {
-		temp.Close()
-		if committed {
-			return
-		}
-		if cleanupErr := os.Remove(temp.Name()); cleanupErr != nil && !errors.Is(cleanupErr, os.ErrNotExist) {
-			err = errors.Join(err, fmt.Errorf("remove temporary file: %w", cleanupErr))
-		}
-	}()
-	if _, err := temp.Write(formatted); err != nil {
-		return err
+	_, writeErr := file.Write(formatted)
+	closeErr := file.Close()
+	if writeErr != nil && closeErr != nil {
+		return errors.Join(writeErr, closeErr)
 	}
-	// Apply metadata after writing because writes/chown can clear set-ID bits.
-	if err := preserveMetadata(temp, original); err != nil {
-		return err
+	if writeErr != nil {
+		return writeErr
 	}
-	if err := temp.Sync(); err != nil {
-		return err
-	}
-	if err := temp.Close(); err != nil {
-		return err
-	}
-	if err := checkReplacement(path, original); err != nil {
-		return err
-	}
-	if err := os.Rename(temp.Name(), path); err != nil {
-		return err
-	}
-	committed = true
-	return nil
-}
-
-func checkReplacement(path string, original os.FileInfo) error {
-	current, err := os.Lstat(path)
-	if err != nil {
-		return err
-	}
-	if current.Mode()&os.ModeSymlink != 0 {
-		return errors.New("refusing to replace a symbolic link")
-	}
-	if !current.Mode().IsRegular() || !os.SameFile(original, current) ||
-		original.Size() != current.Size() || !original.ModTime().Equal(current.ModTime()) ||
-		original.Mode() != current.Mode() {
-		return errors.New("file changed while formatting")
-	}
-	return checkWriteMetadata(original, current)
+	return closeErr
 }

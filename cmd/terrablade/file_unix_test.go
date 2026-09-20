@@ -11,8 +11,8 @@ import (
 	"testing"
 )
 
-func TestWritePreservesMetadata(t *testing.T) {
-	for _, mode := range []os.FileMode{0400, 0600, 0640, 0755, 0700 | os.ModeSetuid, 0750 | os.ModeSetgid} {
+func TestWritePreservesOwnership(t *testing.T) {
+	for _, mode := range []os.FileMode{0600, 0640, 0755} {
 		t.Run(mode.String(), func(t *testing.T) {
 			dir := t.TempDir()
 			path := putFile(t, dir, "main.tf", "a=1")
@@ -28,11 +28,10 @@ func TestWritePreservesMetadata(t *testing.T) {
 				t.Fatalf("metadata changed: mode %s -> %s, uid/gid %d/%d -> %d/%d",
 					before.Mode(), after.Mode(), oldStat.Uid, oldStat.Gid, newStat.Uid, newStat.Gid)
 			}
-			if os.SameFile(before, after) {
-				t.Fatal("changed file was modified in place instead of replaced")
+			if !os.SameFile(before, after) {
+				t.Fatal("changed file inode was replaced")
 			}
 			assertContents(t, path, "a = 1\n")
-			assertNoTemps(t, dir)
 		})
 	}
 }
@@ -80,9 +79,6 @@ func TestWritePreservesDifferentGroup(t *testing.T) {
 }
 
 func TestWriteUnwritableDirectory(t *testing.T) {
-	if os.Geteuid() == 0 {
-		t.Skip("root can write permission-denied fixtures")
-	}
 	dir := t.TempDir()
 	path := putFile(t, dir, "main.tf", "a=1")
 	canonical := putFile(t, dir, "fixed.tf", "b = 2\n")
@@ -90,15 +86,32 @@ func TestWriteUnwritableDirectory(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { os.Chmod(dir, 0700) })
-	var stdout, stderr bytes.Buffer
-	status := run([]string{"--write", path}, forbiddenReader{t}, &stdout, &stderr)
-	if status != 2 || stdout.Len() != 0 || !strings.Contains(stderr.String(), "permission denied") {
-		t.Fatalf("status=%d stdout=%q stderr=%q", status, stdout.String(), stderr.String())
-	}
-	assertContents(t, path, "a=1")
-	assertNoTemps(t, dir)
-	// No-op writes must not require write permission in the parent directory.
+	// Updating an existing writable file needs no writable parent directory.
+	assertRun(t, []string{"--write", path}, "", 0, path+"\n", "")
+	assertContents(t, path, "a = 1\n")
 	assertRun(t, []string{"--write", canonical}, "", 0, "", "")
+}
+
+func TestWriteReadOnlyFiles(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root can write permission-denied fixtures")
+	}
+	dir := t.TempDir()
+	changed := putFile(t, dir, "changed.tf", "a=1")
+	canonical := putFile(t, dir, "fixed.tf", "b = 2\n")
+	invalid := putFile(t, dir, "invalid.tf", "c=")
+	for _, path := range []string{changed, canonical, invalid} {
+		if err := os.Chmod(path, 0400); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { os.Chmod(path, 0600) })
+	}
+	assertRun(t, []string{"--write", changed}, "", 2, "", "terrablade: "+changed+": open: permission denied\n")
+	assertContents(t, changed, "a=1")
+	// These must finish before a writable open, even when writing would fail.
+	assertRun(t, []string{"--write", canonical}, "", 0, "", "")
+	assertRun(t, []string{"--write", invalid}, "", 2, "", invalid+":1:3: ExpectedExpression: Expected an expression.\n")
+	assertContents(t, invalid, "c=")
 }
 
 func TestRunRejectsFIFOWithoutOpening(t *testing.T) {

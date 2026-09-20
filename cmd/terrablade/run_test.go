@@ -157,16 +157,11 @@ func TestLabelsEscapeControlCharacters(t *testing.T) {
 		t.Fatalf("escaped OS error = %q, want %q", got, want)
 	}
 	stderr.Reset()
-	reportError(&stderr, "bad\tname.tf", &os.LinkError{Op: "rename", Old: "tmp\nfile", New: "bad\tname.tf", Err: os.ErrPermission})
-	if got, want := stderr.String(), "terrablade: \"bad\\tname.tf\": rename: permission denied\n"; got != want {
-		t.Fatalf("escaped rename error = %q, want %q", got, want)
-	}
-	stderr.Reset()
 	reportError(&stderr, "file.tf", errors.Join(
-		&os.PathError{Op: "write", Path: "temporary.tf", Err: os.ErrPermission},
-		errors.New("remove temporary file: cleanup failed")))
-	if got := stderr.String(); !strings.Contains(got, "write temporary.tf: permission denied") ||
-		!strings.Contains(got, "remove temporary file: cleanup failed") || strings.Count(got, "\n") != 1 {
+		&os.PathError{Op: "write", Path: "file.tf", Err: os.ErrPermission},
+		&os.PathError{Op: "close", Path: "file.tf", Err: errors.New("close failed")}))
+	if got := stderr.String(); !strings.Contains(got, "write file.tf: permission denied") ||
+		!strings.Contains(got, "close file.tf: close failed") || strings.Count(got, "\n") != 1 {
 		t.Fatalf("joined failure lost information or injected a line: %q", got)
 	}
 }

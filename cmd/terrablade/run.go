@@ -29,7 +29,7 @@ use -- before a filename beginning with a dash.
 
 Options:
   --check             List inputs that would change; do not write formatted text
-  --write             Replace changed files in place (macOS and Linux)
+  --write             Write changed files in place
   --print-width int   Preferred display width (default 80; 0 selects default)
   --indent-width int  Spaces per indentation level (default 2; range 0..16)
   --tab-width int     Distance between tab stops (default 8; range 0..16)
@@ -88,22 +88,16 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, err)
 		return exitError
 	}
-	if write && !writeSupported {
-		reportError(stderr, "", errors.New("--write is only supported on macOS and Linux"))
-		return exitError
-	}
-
 	status := exitOK
 	for _, path := range paths {
 		label := path
 		var source []byte
-		var info os.FileInfo
 		var err error
 		if path == "-" {
 			label = "<stdin>"
 			source, err = io.ReadAll(stdin)
 		} else {
-			source, info, err = readFile(path)
+			source, err = readFile(path)
 		}
 		if err != nil {
 			reportError(stderr, label, err)
@@ -124,9 +118,9 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 				err = writeText(stdout, pathLabel(label)+"\n")
 			}
 		case write:
-			// Even linked files are a true no-op when already canonical.
+			// Invalid and unchanged inputs must never be opened for writing.
 			if changed {
-				err = replaceFile(path, formatted, info)
+				err = writeFile(path, formatted)
 				if err != nil {
 					reportError(stderr, label, err)
 					status = exitError
@@ -159,12 +153,9 @@ func reportError(stderr io.Writer, label string, err error) {
 	}
 	// OS error strings may contain raw filenames. Keep paths in our escaped
 	// label and retain the operation and underlying cause without duplicating it.
-	// Only shorten a direct OS error. A joined error also describes cleanup
-	// failure, which must not disappear just because one child is a PathError.
-	switch detail := err.(type) {
-	case *os.PathError:
-		err = fmt.Errorf("%s: %v", detail.Op, detail.Err)
-	case *os.LinkError:
+	// Only shorten a direct OS error. A joined error can describe both write
+	// and close failures; neither should disappear behind one child PathError.
+	if detail, ok := err.(*os.PathError); ok {
 		err = fmt.Errorf("%s: %v", detail.Op, detail.Err)
 	}
 	if label == "" {

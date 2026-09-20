@@ -4,34 +4,51 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
+
+	"terrablade"
 )
 
 func TestRunWrite(t *testing.T) {
-	if !writeSupported {
-		t.Skip("write policy is not implemented on this platform")
-	}
 	dir := t.TempDir()
 	first := putFile(t, dir, "z.tf", "z=1")
 	second := putFile(t, dir, "a.tf", "a=2")
 	invalid := putFile(t, dir, "bad.tf", "x=")
 	canonical := putFile(t, dir, "fixed.tf", "b = 3\n")
+	beforeInvalid := statFile(t, invalid)
 	assertRun(t, []string{"--write", first, canonical, invalid, second}, "", 2, first+"\n"+second+"\n",
 		invalid+":1:3: ExpectedExpression: Expected an expression.\n")
 	assertContents(t, first, "z = 1\n")
 	assertContents(t, second, "a = 2\n")
 	assertContents(t, invalid, "x=")
+	if after := statFile(t, invalid); !os.SameFile(beforeInvalid, after) || !beforeInvalid.ModTime().Equal(after.ModTime()) {
+		t.Fatal("invalid file was touched")
+	}
 	assertRun(t, []string{"--write", first, second}, "", 0, "", "")
 	assertRun(t, []string{"--check", first, second}, "", 0, "", "")
-	assertNoTemps(t, dir)
+}
+
+func TestWritePreservesInodeAndMode(t *testing.T) {
+	for _, test := range []struct{ source, want string }{
+		{"a=1", "a = 1\n"}, {"a    =   1   \n\n\n", "a = 1\n"}, {" \n\t", ""},
+	} {
+		dir := t.TempDir()
+		path := putFile(t, dir, "main.tf", test.source)
+		if err := os.Chmod(path, 0640); err != nil {
+			t.Fatal(err)
+		}
+		before := statFile(t, path)
+		assertRun(t, []string{"--write", path}, "", 0, path+"\n", "")
+		after := statFile(t, path)
+		if !os.SameFile(before, after) || before.Mode() != after.Mode() {
+			t.Fatalf("write replaced inode or mode: before=%+v after=%+v", before, after)
+		}
+		assertContents(t, path, test.want)
+	}
 }
 
 func TestWriteUnchangedIsNoOp(t *testing.T) {
-	if !writeSupported {
-		t.Skip("write policy is not implemented on this platform")
-	}
 	dir := t.TempDir()
 	for _, source := range []string{"a = 1\n", ""} {
 		path := putFile(t, dir, "fixed.tf", source)
@@ -43,17 +60,13 @@ func TestWriteUnchangedIsNoOp(t *testing.T) {
 		assertRun(t, []string{"--write", path}, "", 0, "", "")
 		after := statFile(t, path)
 		if !os.SameFile(before, after) || !before.ModTime().Equal(after.ModTime()) || before.Mode() != after.Mode() {
-			t.Fatalf("unchanged file was replaced: before=%+v after=%+v", before, after)
+			t.Fatalf("unchanged file was touched: before=%+v after=%+v", before, after)
 		}
 		assertContents(t, path, source)
 	}
-	assertNoTemps(t, dir)
 }
 
 func TestWriteOutputFailureStopsLaterFiles(t *testing.T) {
-	if !writeSupported {
-		t.Skip("write policy is not implemented on this platform")
-	}
 	dir := t.TempDir()
 	first := putFile(t, dir, "first.tf", "a=1")
 	second := putFile(t, dir, "second.tf", "b=2")
@@ -62,142 +75,101 @@ func TestWriteOutputFailureStopsLaterFiles(t *testing.T) {
 	if status != 2 || stderr.String() != "terrablade: stdout: test write failure\n" {
 		t.Fatalf("status=%d stderr=%q", status, stderr.String())
 	}
-	// The first file was committed before its report failed. Do not claim it
-	// rolled back, and do not keep mutating files after the output stream fails.
+	// The first file was written before its report failed. Do not keep
+	// modifying later files after the output stream fails.
 	assertContents(t, first, "a = 1\n")
 	assertContents(t, second, "b=2")
-	assertNoTemps(t, dir)
 }
 
 func TestWriteLinks(t *testing.T) {
-	if !writeSupported {
-		t.Skip("write policy is not implemented on this platform")
-	}
 	for _, kind := range []string{"symbolic", "hard"} {
 		t.Run(kind, func(t *testing.T) {
 			dir := t.TempDir()
 			target := putFile(t, dir, "target.tf", "a=1")
 			link := filepath.Join(dir, "link.tf")
 			var err error
-			var refusal string
 			if kind == "symbolic" {
 				err = os.Symlink("target.tf", link)
-				refusal = "refusing to replace a symbolic link"
 			} else {
 				err = os.Link(target, link)
-				refusal = "refusing to replace a file with multiple hard links"
 			}
 			if err != nil {
-				t.Fatal(err)
+				t.Skipf("filesystem cannot create %s link: %v", kind, err)
 			}
 			before, err := os.Lstat(link)
 			if err != nil {
 				t.Fatal(err)
 			}
+			beforeTarget := statFile(t, target)
 			assertRun(t, []string{link}, "", 0, "a = 1\n", "")
 			assertRun(t, []string{"--check", link}, "", 1, link+"\n", "")
-			assertRun(t, []string{"--write", link}, "", 2, "", "terrablade: "+link+": "+refusal+"\n")
-			assertContents(t, target, "a=1")
-			assertContents(t, link, "a=1")
-			// Making the target canonical allows --write without any replacement,
-			// including when the pathname is itself a symbolic or hard link.
-			if err := os.WriteFile(target, []byte("a = 1\n"), 0600); err != nil {
-				t.Fatal(err)
-			}
-			canonical := statFile(t, target)
-			assertRun(t, []string{"--write", link}, "", 0, "", "")
+			assertRun(t, []string{"--write", link, target}, "", 0, link+"\n", "")
+			assertContents(t, target, "a = 1\n")
+			assertContents(t, link, "a = 1\n")
 			after, err := os.Lstat(link)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if !os.SameFile(before, after) || !os.SameFile(canonical, statFile(t, target)) {
-				t.Fatal("link or target was replaced")
+			if !os.SameFile(before, after) || !os.SameFile(beforeTarget, statFile(t, target)) {
+				t.Fatal("link or target inode was replaced")
 			}
 			if kind == "symbolic" {
 				if value, err := os.Readlink(link); err != nil || value != "target.tf" {
 					t.Fatalf("symlink changed: %q, %v", value, err)
 				}
 			}
-			assertNoTemps(t, dir)
+			canonical := statFile(t, target)
+			assertRun(t, []string{"--write", link}, "", 0, "", "")
+			if after := statFile(t, target); !canonical.ModTime().Equal(after.ModTime()) {
+				t.Fatal("canonical linked file was touched")
+			}
 		})
 	}
 }
 
-func TestWriteThroughSymlinkedDirectory(t *testing.T) {
-	if !writeSupported {
-		t.Skip("write policy is not implemented on this platform")
+func TestWriteFileDoesNotCreateMissingPath(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "missing.tf")
+	if err := writeFile(path, []byte("a = 1\n")); !os.IsNotExist(err) {
+		t.Fatalf("missing path: got %v, want not-exist error", err)
 	}
-	dir := t.TempDir()
-	targetDir := filepath.Join(dir, "target")
-	if err := os.Mkdir(targetDir, 0700); err != nil {
-		t.Fatal(err)
-	}
-	target := putFile(t, targetDir, "main.tf", "a=1")
-	link := filepath.Join(dir, "linked-dir")
-	if err := os.Symlink(targetDir, link); err != nil {
-		t.Fatal(err)
-	}
-	path := filepath.Join(link, "main.tf")
-	assertRun(t, []string{"--write", path}, "", 0, path+"\n", "")
-	assertContents(t, target, "a = 1\n")
-	assertNoTemps(t, targetDir)
-}
-
-func TestWriteRejectsStaleSnapshot(t *testing.T) {
-	if !writeSupported {
-		t.Skip("write policy is not implemented on this platform")
-	}
-	for _, change := range []string{"size", "mtime", "identity", "mode", "deleted"} {
-		t.Run(change, func(t *testing.T) {
-			dir := t.TempDir()
-			path := putFile(t, dir, "main.tf", "a=1")
-			_, snapshot, err := readFile(path)
-			if err != nil {
-				t.Fatal(err)
-			}
-			want := "a=1"
-			switch change {
-			case "size":
-				want = "a=123"
-				putFile(t, dir, "main.tf", want)
-			case "mtime":
-				later := snapshot.ModTime().Add(time.Hour)
-				err = os.Chtimes(path, later, later)
-			case "identity":
-				other := putFile(t, dir, "other.tf", want)
-				err = os.Rename(other, path)
-			case "mode":
-				err = os.Chmod(path, 0644)
-			case "deleted":
-				err = os.Remove(path)
-			}
-			if err != nil {
-				t.Fatal(err)
-			}
-			if err := replaceFile(path, []byte("a = 1\n"), snapshot); err == nil {
-				t.Fatal("stale snapshot was overwritten")
-			}
-			if change == "deleted" {
-				if _, err := os.Stat(path); !os.IsNotExist(err) {
-					t.Fatalf("deleted path was recreated: %v", err)
-				}
-			} else {
-				assertContents(t, path, want)
-			}
-			assertNoTemps(t, dir)
-		})
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("missing path was created: %v", err)
 	}
 }
 
-func TestWriteUnsupportedPlatform(t *testing.T) {
-	if writeSupported {
-		t.Skip("write is supported on this platform")
+func FuzzRunWrite(f *testing.F) {
+	for _, source := range []string{"", " \n\t", "a=1", "a = 1\n", "a=", "#\r", "a=\xff", `a="${foo.0}"`} {
+		f.Add(source)
 	}
-	dir := t.TempDir()
-	path := putFile(t, dir, "main.tf", "a=1")
-	assertRun(t, []string{"--write", path}, "", 2, "", "terrablade: --write is only supported on macOS and Linux\n")
-	assertContents(t, path, "a=1")
-	assertNoTemps(t, dir)
+	f.Fuzz(func(t *testing.T, source string) {
+		path := putFile(t, t.TempDir(), "main.tf", source)
+		before := statFile(t, path)
+		want, err := terrablade.Format([]byte(source), terrablade.Options{})
+		var stdout, stderr bytes.Buffer
+		status := run([]string{"--write", path}, forbiddenReader{t}, &stdout, &stderr)
+		if err != nil {
+			if status != 2 || stdout.Len() != 0 || stderr.Len() == 0 {
+				t.Fatalf("invalid input: status=%d stdout=%q stderr=%q", status, stdout.String(), stderr.String())
+			}
+			assertContents(t, path, source)
+		} else {
+			label := ""
+			if string(want) != source {
+				label = path + "\n"
+			}
+			if status != 0 || stdout.String() != label || stderr.Len() != 0 {
+				t.Fatalf("valid input: status=%d stdout=%q stderr=%q", status, stdout.String(), stderr.String())
+			}
+			assertContents(t, path, string(want))
+		}
+		after := statFile(t, path)
+		if !os.SameFile(before, after) {
+			t.Fatal("input inode was replaced")
+		}
+		if (err != nil || string(want) == source) && !before.ModTime().Equal(after.ModTime()) {
+			t.Fatal("invalid or unchanged file was touched")
+		}
+	})
 }
 
 func statFile(t testing.TB, path string) os.FileInfo {
@@ -207,17 +179,4 @@ func statFile(t testing.TB, path string) os.FileInfo {
 		t.Fatal(err)
 	}
 	return info
-}
-
-func assertNoTemps(t testing.TB, dir string) {
-	t.Helper()
-	files, err := os.ReadDir(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, file := range files {
-		if strings.HasPrefix(file.Name(), ".terrablade-") {
-			t.Errorf("temporary file leaked: %s", file.Name())
-		}
-	}
 }

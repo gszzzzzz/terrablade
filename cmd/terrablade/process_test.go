@@ -49,19 +49,13 @@ func TestCLIProcess(t *testing.T) {
 		assertProcess(t, binary, dir, []string{"z.tf"}, "", 0, "z = 1\n", "")
 		assertProcess(t, binary, dir, []string{"--check", "z.tf", "a.tf"}, "", 1, "z.tf\na.tf\n", "")
 		assertContents(t, filepath.Join(dir, "z.tf"), "z=1")
-		if writeSupported {
-			assertProcess(t, binary, dir, []string{"--write", "z.tf", "bad.tf", "a.tf"}, "", 2, "z.tf\na.tf\n",
-				"bad.tf:1:3: ExpectedExpression: Expected an expression.\n")
-			assertContents(t, filepath.Join(dir, "z.tf"), "z = 1\n")
-			assertContents(t, filepath.Join(dir, "a.tf"), "a = 2\n")
-			assertContents(t, filepath.Join(dir, "bad.tf"), "b=")
-			assertProcess(t, binary, dir, []string{"--write", "z.tf", "a.tf"}, "", 0, "", "")
-			assertProcess(t, binary, dir, []string{"--check", "z.tf", "a.tf"}, "", 0, "", "")
-		} else {
-			assertProcess(t, binary, dir, []string{"--write", "z.tf"}, "", 2, "", "terrablade: --write is only supported on macOS and Linux\n")
-			assertContents(t, filepath.Join(dir, "z.tf"), "z=1")
-		}
-		assertNoTemps(t, dir)
+		assertProcess(t, binary, dir, []string{"--write", "z.tf", "bad.tf", "a.tf"}, "", 2, "z.tf\na.tf\n",
+			"bad.tf:1:3: ExpectedExpression: Expected an expression.\n")
+		assertContents(t, filepath.Join(dir, "z.tf"), "z = 1\n")
+		assertContents(t, filepath.Join(dir, "a.tf"), "a = 2\n")
+		assertContents(t, filepath.Join(dir, "bad.tf"), "b=")
+		assertProcess(t, binary, dir, []string{"--write", "z.tf", "a.tf"}, "", 0, "", "")
+		assertProcess(t, binary, dir, []string{"--check", "z.tf", "a.tf"}, "", 0, "", "")
 	})
 	t.Run("broken stdout", func(t *testing.T) {
 		reader, writer, err := os.Pipe()
