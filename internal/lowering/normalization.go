@@ -58,83 +58,89 @@ func delimiter(kind syntax.TokenKind, text string) expressionElement {
 // normalizeExpression rewrites the expression rooted at root into a view that
 // spells quoted interpolation-only wrappers as their inner expression and
 // legacy numeric indices as bracket indices (doc.go: Quoted wrappers, Numeric
-// indices). It visits each source element once in the post-order walk
-// described at File. An alias carries its removed wrapper's grammar role to
-// the immediate parent, which can then protect precedence without rescanning
-// a deep expression chain: rewrite.unwrapped tells the parent that the child
-// lost the "${ }" delimiters that made it an atom.
+// indices). It visits each source element once, children first. An alias
+// carries its removed wrapper's grammar role to the immediate parent, which
+// can then protect precedence without rescanning a deep expression chain.
 func normalizeExpression(result syntax.Result, root syntax.SyntaxNode) *expressionView {
-	type rewrite struct {
-		node      *expressionView
-		unwrapped bool
-	}
-	type frame struct {
-		node syntax.SyntaxNode
-		next int
-		// attributeProjection marks a direct child of an attribute splat:
-		// a step in the projection, where brackets would change meaning.
-		attributeProjection bool
-	}
-	stack := []frame{{node: root}}
-	views := make(map[syntax.SyntaxNode]rewrite)
+	return protectExpressionLines(postOrder(normalizationWalker{result}, root, false).node)
+}
 
-	for len(stack) != 0 {
-		current := &stack[len(stack)-1]
-		if current.next < current.node.ChildCount() {
-			element := current.node.Child(current.next)
-			current.next++
-			if child, ok := element.Node(); ok {
-				stack = append(stack, frame{node: child, attributeProjection: current.node.Kind() == syntax.AttributeSplat})
-			}
+// normalizationWalker rewrites source nodes into views. Its context marks a
+// direct child of an attribute splat: a step in the projection, where
+// brackets would change meaning.
+type normalizationWalker struct{ result syntax.Result }
+
+func (normalizationWalker) expand(node syntax.SyntaxNode, _ bool, children []visit[syntax.SyntaxNode, bool]) []visit[syntax.SyntaxNode, bool] {
+	for i := range node.ChildCount() {
+		if child, ok := node.Child(i).Node(); ok {
+			children = append(children, visit[syntax.SyntaxNode, bool]{child, node.Kind() == syntax.AttributeSplat})
+		}
+	}
+	return children
+}
+
+func (w normalizationWalker) lower(node syntax.SyntaxNode, attributeProjection bool, children []rewrite) rewrite {
+	return rewriteView(normalizedView(w.result, node, children), attributeProjection)
+}
+
+// rewrite is one normalized node. unwrapped tells the parent that the node
+// lost the "${ }" delimiters that made it an atom.
+type rewrite struct {
+	node      *expressionView
+	unwrapped bool
+}
+
+// normalizedView copies node into a view over its already normalized
+// children, protecting an unwrapped child's precedence and an object item's
+// exposed lines where the parent needs it.
+func normalizedView(result syntax.Result, node syntax.SyntaxNode, children []rewrite) *expressionView {
+	view := &expressionView{kind: node.Kind(), children: make([]expressionElement, 0, node.ChildCount())}
+	position := 0
+	for i := range node.ChildCount() {
+		if token, ok := node.Child(i).Token(); ok {
+			view.children = append(view.children, expressionElement{token: expressionToken{source: token, kind: token.Kind()}})
 			continue
 		}
-
-		node := current.node
-		view := &expressionView{kind: node.Kind(), children: make([]expressionElement, 0, node.ChildCount())}
-		position := 0
-		for i := range node.ChildCount() {
-			if child, ok := node.Child(i).Node(); ok {
-				rewritten := views[child]
-				if rewritten.unwrapped && needsGrouping(result, node, position, rewritten.node) {
-					rewritten.node = permanentParentheses(rewritten.node, nil, nil)
-				}
-				if node.Kind() == syntax.ObjectItem {
-					rewritten.node = protectExpressionLines(rewritten.node)
-				}
-				view.children = append(view.children, expressionElement{node: rewritten.node})
-				position++
-			} else if token, ok := node.Child(i).Token(); ok {
-				view.children = append(view.children, expressionElement{token: expressionToken{source: token, kind: token.Kind()}})
-			}
+		child := children[position]
+		if child.unwrapped && needsGrouping(result, node, position, child.node) {
+			child.node = permanentParentheses(child.node, nil, nil)
 		}
-		view.needsNewlineContext = exposedExpressionLines(view)
-		view.endsHeredoc = expressionEndsHeredoc(view)
-
-		rewritten := rewrite{node: view}
-		if inner, before, after := quotedWrapper(view); inner != nil {
-			rewritten = rewrite{node: inner, unwrapped: true}
-			if hasComments(before) || hasComments(after) {
-				// Delimiter comments need a stable home after both template
-				// edges disappear. Parentheses also make every line comment
-				// newline legal.
-				rewritten = rewrite{node: permanentParentheses(inner, before, after)}
-			}
-		} else if node.Kind() == syntax.LegacyIndexAccess && !current.attributeProjection {
-			// Brackets inside .* would index the projected tuple instead of
-			// each element. Keep those dot steps until splats can be
-			// modernized together.
-			view.kind = syntax.IndexAccess
-			view.children[0] = delimiter(syntax.OpenBracket, "[")
-			last := len(view.children) - 1
-			view.children[last] = expressionElement{node: &expressionView{kind: syntax.LiteralExpression, children: []expressionElement{view.children[last]}}}
-			view.children = append(view.children, delimiter(syntax.CloseBracket, "]"))
-			// The brackets now delimit the index, so nothing is exposed.
-			view.needsNewlineContext = false
+		if node.Kind() == syntax.ObjectItem {
+			child.node = protectExpressionLines(child.node)
 		}
-		views[node] = rewritten
-		stack = stack[:len(stack)-1]
+		view.children = append(view.children, expressionElement{node: child.node})
+		position++
 	}
-	return protectExpressionLines(views[root].node)
+	view.needsNewlineContext = exposedExpressionLines(view)
+	view.endsHeredoc = expressionEndsHeredoc(view)
+	return view
+}
+
+// rewriteView removes a quoted interpolation-only wrapper or converts a legacy
+// index step to brackets. Other views are returned unchanged.
+func rewriteView(view *expressionView, attributeProjection bool) rewrite {
+	if inner, before, after := quotedWrapper(view); inner != nil {
+		if hasComments(before) || hasComments(after) {
+			// Delimiter comments need a stable home after both template
+			// edges disappear. Parentheses also make every line comment
+			// newline legal.
+			return rewrite{node: permanentParentheses(inner, before, after)}
+		}
+		return rewrite{node: inner, unwrapped: true}
+	}
+	if view.kind == syntax.LegacyIndexAccess && !attributeProjection {
+		// Brackets inside .* would index the projected tuple instead of
+		// each element. Keep those dot steps until splats can be
+		// modernized together.
+		view.kind = syntax.IndexAccess
+		view.children[0] = delimiter(syntax.OpenBracket, "[")
+		last := len(view.children) - 1
+		view.children[last] = expressionElement{node: &expressionView{kind: syntax.LiteralExpression, children: []expressionElement{view.children[last]}}}
+		view.children = append(view.children, delimiter(syntax.CloseBracket, "]"))
+		// The brackets now delimit the index, so nothing is exposed.
+		view.needsNewlineContext = false
+	}
+	return rewrite{node: view}
 }
 
 // protectExpressionLines wraps a unary or traversal node that exposes a

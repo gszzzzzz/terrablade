@@ -11,7 +11,7 @@ import (
 // chunks alternate with already-lowered sequences. Quoted templates,
 // heredocs, and directive bodies share this composition, and no synthesized
 // whitespace escapes a sequence into literal text (doc.go: Templates).
-func templateParts(result syntax.Result, node *expressionView, layouts map[*expressionView]layout) layout {
+func templateParts(result syntax.Result, node *expressionView, children []layout) layout {
 	parts := make([]document.Doc, 0, node.ChildCount())
 	heredoc := false
 	for i := 0; i < node.ChildCount(); i++ {
@@ -29,8 +29,8 @@ func templateParts(result syntax.Result, node *expressionView, layouts map[*expr
 				parts = append(parts, document.Text("\r"))
 			}
 		} else {
-			nested, _ := child.Node()
-			parts = append(parts, layouts[nested].doc)
+			parts = append(parts, children[0].doc)
+			children = children[1:]
 		}
 	}
 

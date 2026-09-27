@@ -10,10 +10,6 @@ import (
 // File lowers a complete native HCL file, including body comments and its final
 // newline. A zero Result or any parse diagnostic returns an error and an empty
 // Doc. Layout width and indentation are selected later by document.Render.
-//
-// The traversal is iterative so deeply nested bodies do not grow the Go call
-// stack. A node is lowered after its children, whose results are kept for the
-// parent.
 func File(result syntax.Result) (document.Doc, error) {
 	if len(result.Diagnostics()) != 0 {
 		return document.Doc{}, errors.New("lowering: cannot format a result with diagnostics")
@@ -22,62 +18,53 @@ func File(result syntax.Result) (document.Doc, error) {
 		return document.Doc{}, errors.New("lowering: expected a parsed file")
 	}
 
-	type frame struct {
-		node       syntax.SyntaxNode
-		next       int
-		nestedBody bool
-	}
-	stack := []frame{{node: result.Root()}}
-	layouts := make(map[syntax.SyntaxNode]bodyLayout)
-
-	for len(stack) != 0 {
-		current := &stack[len(stack)-1]
-		// Attributes are lowered whole by lowerAttribute, which walks the
-		// expression itself; descending into them would lower the value twice.
-		if current.node.Kind() != syntax.Attribute && current.next < current.node.ChildCount() {
-			element := current.node.Child(current.next)
-			current.next++
-			if child, ok := element.Node(); ok {
-				stack = append(stack, frame{node: child, nestedBody: current.node.Kind() == syntax.Block && child.Kind() == syntax.Body})
-			}
-			continue
-		}
-
-		var lowered bodyLayout
-		switch current.node.Kind() {
-		case syntax.File:
-			var parts []document.Doc
-			for i := range current.node.ChildCount() {
-				element := current.node.Child(i)
-				if body, ok := element.Node(); ok {
-					parts = append(parts, layouts[body].doc, layouts[body].end)
-				}
-			}
-			lowered.doc = document.Concat(parts...)
-		case syntax.Body:
-			lowered = lowerBody(result, current.node, current.nestedBody, layouts)
-		case syntax.Block:
-			lowered.doc = lowerBlock(result, current.node, layouts)
-		case syntax.BlockLabel:
-			text := result.Text(current.node.Span())
-			if token, _ := current.node.Child(0).Token(); token.Kind() == syntax.Identifier {
-				// Identifier labels cannot contain quote or template
-				// punctuation, so quoting the spelling verbatim yields a
-				// valid string label.
-				text = `"` + text + `"`
-			}
-			lowered.doc = document.Text(text)
-		case syntax.Attribute:
-			lowered = lowerAttribute(result, current.node)
-		}
-		layouts[current.node] = lowered
-		stack = stack[:len(stack)-1]
-	}
-	return layouts[result.Root()].doc, nil
+	return postOrder(fileWalker{result}, result.Root(), false).doc, nil
 }
 
-// bodyLayout is the lowered form of one body-level node, kept in File's map
-// while the node's ancestors are still being lowered.
+// fileWalker lowers body-level nodes for File. Its context reports whether a
+// Body belongs to a block rather than the file.
+type fileWalker struct{ result syntax.Result }
+
+func (fileWalker) expand(node syntax.SyntaxNode, _ bool, children []visit[syntax.SyntaxNode, bool]) []visit[syntax.SyntaxNode, bool] {
+	// lowerAttribute walks the value expression itself.
+	if node.Kind() == syntax.Attribute {
+		return children
+	}
+	for i := range node.ChildCount() {
+		if child, ok := node.Child(i).Node(); ok {
+			children = append(children, visit[syntax.SyntaxNode, bool]{child, node.Kind() == syntax.Block})
+		}
+	}
+	return children
+}
+
+func (w fileWalker) lower(node syntax.SyntaxNode, nested bool, children []bodyLayout) bodyLayout {
+	switch node.Kind() {
+	case syntax.File:
+		var parts []document.Doc
+		for _, body := range children {
+			parts = append(parts, body.doc, body.end)
+		}
+		return bodyLayout{doc: document.Concat(parts...)}
+	case syntax.Body:
+		return lowerBody(w.result, node, nested, children)
+	case syntax.Block:
+		return bodyLayout{doc: lowerBlock(w.result, node, children)}
+	case syntax.BlockLabel:
+		text := w.result.Text(node.Span())
+		if token, _ := node.Child(0).Token(); token.Kind() == syntax.Identifier {
+			// Identifier labels cannot contain quote or template
+			// punctuation, so quoting the spelling verbatim yields a
+			// valid string label.
+			text = `"` + text + `"`
+		}
+		return bodyLayout{doc: document.Text(text)}
+	default: // Attribute, the only other body-level kind
+		return lowerAttribute(w.result, node)
+	}
+}
+
+// bodyLayout is the lowered form of one body-level node.
 type bodyLayout struct {
 	// doc is the node's rendered content, set for every node kind. For a
 	// Body it excludes the closing line, which belongs outside the enclosing
@@ -121,20 +108,22 @@ func lowerAttribute(result syntax.Result, node syntax.SyntaxNode) bodyLayout {
 // lowerBlock lowers a block header and its already-lowered body. Header
 // comments are gathered into the trivia before the opening brace, and the
 // body's closing brace stays outside the Indent (doc.go: Blocks).
-func lowerBlock(result syntax.Result, node syntax.SyntaxNode, layouts map[syntax.SyntaxNode]bodyLayout) document.Doc {
+func lowerBlock(result syntax.Result, node syntax.SyntaxNode, children []bodyLayout) document.Doc {
 	var header []piece
 	var trivia []syntax.SyntaxToken
 	var contents bodyLayout
 	for i := range node.ChildCount() {
 		element := node.Child(i)
 		if child, ok := element.Node(); ok {
+			lowered := children[0]
+			children = children[1:]
 			if child.Kind() == syntax.Body {
-				contents = layouts[child]
+				contents = lowered
 				break
 			}
 			// Upstream drops comments before labels when rebuilding the header.
 			// Carry them past all labels to the brace's stable trivia position.
-			header = append(header, piece{doc: layouts[child].doc})
+			header = append(header, piece{doc: lowered.doc})
 			continue
 		} else if token, ok := element.Token(); ok {
 			if token.Kind().IsTrivia() {
@@ -153,7 +142,7 @@ func lowerBlock(result syntax.Result, node syntax.SyntaxNode, layouts map[syntax
 // by the gap that owns the trivia before it; the trailing gap after the last
 // item owns any closing comments. nested distinguishes a block body, whose
 // first gap starts on the opening brace line, from the file body.
-func lowerBody(result syntax.Result, node syntax.SyntaxNode, nested bool, layouts map[syntax.SyntaxNode]bodyLayout) bodyLayout {
+func lowerBody(result syntax.Result, node syntax.SyntaxNode, nested bool, children []bodyLayout) bodyLayout {
 	var parts []document.Doc
 	var trivia []syntax.SyntaxToken
 	previous := syntax.InvalidNode
@@ -167,10 +156,12 @@ func lowerBody(result syntax.Result, node syntax.SyntaxNode, nested bool, layout
 		}
 
 		child, _ := element.Node()
-		parts = append(parts, bodyGap(result, trivia, previous, child.Kind(), nested, endsHeredoc), layouts[child].doc)
+		lowered := children[0]
+		children = children[1:]
+		parts = append(parts, bodyGap(result, trivia, previous, child.Kind(), nested, endsHeredoc), lowered.doc)
 		trivia = nil
 		previous = child.Kind()
-		endsHeredoc = layouts[child].endsHeredoc
+		endsHeredoc = lowered.endsHeredoc
 		nonempty = true
 	}
 

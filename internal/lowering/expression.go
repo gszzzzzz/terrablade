@@ -35,55 +35,47 @@ func Expression(result syntax.Result, node syntax.SyntaxNode) (document.Doc, err
 // check diagnostics: Expression checks them for one node and File once for the
 // whole file, and Result.Diagnostics clones its slice on every call, so this
 // shared path must not repeat the check per attribute.
-//
-// The walk is the explicit post-order stack described at File, because deep
-// unary and operator chains must not recurse. Each frame also records the
-// grammar context its children inherit: safe, whether the surrounding grammar
-// permits expression newlines; and inSequence, whether a template sequence
-// encloses the node and therefore flattens source-only layout choices.
 func lowerExpression(result syntax.Result, source syntax.SyntaxNode) layout {
-	node := normalizeExpression(result, source)
+	return postOrder(expressionWalker{result}, normalizeExpression(result, source), grammarContext{})
+}
 
-	type frame struct {
-		node       *expressionView
-		next       int
-		safe       bool // The surrounding grammar permits expression newlines.
-		inSequence bool // Templates flatten source-only object layout choices.
+// expressionWalker lowers a normalized expression view.
+type expressionWalker struct{ result syntax.Result }
+
+func (expressionWalker) expand(node *expressionView, context grammarContext, children []visit[*expressionView, grammarContext]) []visit[*expressionView, grammarContext] {
+	switch node.Kind() {
+	case syntax.ObjectItem:
+		context.safe = false // Object keys and values are newline-sensitive.
+	case syntax.TemplateInterpolation, syntax.TemplateDirective:
+		// ${ } and %{ } delimit their contents, and templates flatten what
+		// they enclose (doc.go: Templates).
+		context = grammarContext{safe: true, inSequence: true}
+	case syntax.ParenthesizedExpression, syntax.FunctionCallExpression,
+		syntax.TupleExpression, syntax.IndexAccess, syntax.ForExpression,
+		syntax.BinaryExpression, syntax.ConditionalExpression, syntax.TraversalExpression:
+		// Operations enclose themselves when their caller is not safe; their
+		// descendants can share that pair of parentheses.
+		context.safe = true
 	}
-	stack := []frame{{node: node}}
-	layouts := make(map[*expressionView]layout)
-
-	for len(stack) != 0 {
-		current := &stack[len(stack)-1]
-		if current.next < current.node.ChildCount() {
-			element := current.node.Child(current.next)
-			current.next++
-			if child, ok := element.Node(); ok {
-				safe, inSequence := current.safe, current.inSequence
-				switch current.node.Kind() {
-				case syntax.ObjectItem:
-					safe = false // Object keys and values are newline-sensitive.
-				case syntax.TemplateInterpolation, syntax.TemplateDirective:
-					// ${ } and %{ } delimit their contents, and templates
-					// flatten what they enclose (doc.go: Templates).
-					safe, inSequence = true, true
-				case syntax.ParenthesizedExpression, syntax.FunctionCallExpression,
-					syntax.TupleExpression, syntax.IndexAccess, syntax.ForExpression,
-					syntax.BinaryExpression, syntax.ConditionalExpression, syntax.TraversalExpression:
-					// Operations enclose themselves when their caller is not
-					// safe; their descendants can share that pair of
-					// parentheses.
-					safe = true
-				}
-				stack = append(stack, frame{node: child, safe: safe, inSequence: inSequence})
-			}
-			continue
+	for _, element := range node.children {
+		if element.node != nil {
+			children = append(children, visit[*expressionView, grammarContext]{element.node, context})
 		}
-
-		layouts[current.node] = lowerNode(result, current.node, current.safe, current.inSequence, layouts)
-		stack = stack[:len(stack)-1]
 	}
-	return layouts[node]
+	return children
+}
+
+func (w expressionWalker) lower(node *expressionView, context grammarContext, children []layout) layout {
+	return lowerNode(w.result, node, context, children)
+}
+
+// grammarContext is what an expression node inherits from its ancestors.
+type grammarContext struct {
+	// safe reports that the surrounding grammar permits expression newlines.
+	safe bool
+	// inSequence reports an enclosing template sequence, which flattens
+	// source-only layout choices.
+	inSequence bool
 }
 
 // isExpressionKind reports whether kind is a complete expression that the
@@ -196,15 +188,14 @@ type layout struct {
 	startsBrace, endsBrace bool
 }
 
-// lowerNode lowers one view node whose children are already in layouts. safe
-// and inSequence are the grammar context recorded by lowerExpression's frame.
+// lowerNode lowers one view node given its child nodes' layouts in order.
 // Templates compose literal chunks and are handled apart; every other form
 // is split into pieces, given its boundary flags, and then laid out by the
 // helper that owns its delimiter and separator policy.
-func lowerNode(result syntax.Result, node *expressionView, safe, inSequence bool, layouts map[*expressionView]layout) layout {
+func lowerNode(result syntax.Result, node *expressionView, context grammarContext, children []layout) layout {
 	switch node.Kind() {
 	case syntax.TemplateExpression, syntax.TemplateIf, syntax.TemplateFor:
-		return templateParts(result, node, layouts)
+		return templateParts(result, node, children)
 	}
 	if !lowerableKind(node.Kind()) {
 		// Unreachable: lowerableKind covers every non-template form a
@@ -215,16 +206,16 @@ func lowerNode(result syntax.Result, node *expressionView, safe, inSequence bool
 		panic(fmt.Sprintf("lowering: internal invariant: unsupported expression form %s", node.Kind()))
 	}
 
-	pieces := collectPieces(result, node, layouts)
+	pieces := collectPieces(result, node, children)
 	lowered := boundaryFlags(pieces)
 	switch node.Kind() {
 	case syntax.BinaryExpression, syntax.ConditionalExpression, syntax.TraversalExpression:
-		lowered = lowerOperation(result, node.Kind(), pieces, lowered, safe)
+		lowered = lowerOperation(result, node.Kind(), pieces, lowered, context.safe)
 	case syntax.AttributeAccess, syntax.LegacyIndexAccess:
 		lowered.doc = sequence(result, pieces)
 		lowered.fusesNumber = stepFusesNumber(result, node, pieces)
 	default:
-		lowered.doc = formDoc(result, node, pieces, inSequence)
+		lowered.doc = formDoc(result, node, pieces, context.inSequence)
 	}
 	return lowered
 }
@@ -250,7 +241,7 @@ func lowerableKind(kind syntax.NodeKind) bool {
 // collectPieces splits a node's children into significant pieces, each
 // carrying the trivia that preceded it. Token pieces keep their spelling,
 // synthesized or from source; node pieces carry the child's layout.
-func collectPieces(result syntax.Result, node *expressionView, layouts map[*expressionView]layout) []piece {
+func collectPieces(result syntax.Result, node *expressionView, children []layout) []piece {
 	pieces := make([]piece, 0, node.ChildCount())
 	var trivia []syntax.SyntaxToken
 	for i := 0; i < node.ChildCount(); i++ {
@@ -262,8 +253,8 @@ func collectPieces(result syntax.Result, node *expressionView, layouts map[*expr
 			}
 			pieces = append(pieces, piece{doc: document.Text(token.spelling(result)), token: true, kind: token.Kind(), before: trivia})
 		} else {
-			child, _ := element.Node()
-			pieces = append(pieces, piece{doc: layouts[child].doc, child: layouts[child], before: trivia})
+			pieces = append(pieces, piece{doc: children[0].doc, child: children[0], before: trivia})
+			children = children[1:]
 		}
 		trivia = nil
 	}
