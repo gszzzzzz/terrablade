@@ -1,9 +1,6 @@
 package syntax
 
-import (
-	"math/big"
-	"strings"
-)
+import "strings"
 
 // Binding powers order the operators from weakest to strongest for the Pratt
 // loop in expression. A production asks operand for a minimum power and
@@ -184,9 +181,7 @@ func (p *parser) number(b *nodeBuilder, context newlineContext, legacy bool) {
 	text := p.source[span.Start:span.End]
 	if legacy && strings.Contains(text, ".") {
 		p.report(InvalidLegacyIndex, span)
-	} else if _, _, err := big.ParseFloat(text, 10, 512, big.ToNearestEven); err != nil {
-		// This is the same representability check as upstream cty.ParseNumberVal,
-		// using the standard library and retaining no evaluated value in the CST.
+	} else if !numberRepresentable(text) {
 		p.report(InvalidNumber, span)
 	}
 	p.consumeLookahead(b, context)
