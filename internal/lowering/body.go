@@ -195,9 +195,46 @@ func lowerBody(result syntax.Result, node syntax.SyntaxNode, nested bool, childr
 // the new before side, so a later decision never rescans earlier comments.
 // afterHeredoc reports that previous ends in a heredoc marker.
 func bodyGap(result syntax.Result, trivia []syntax.SyntaxToken, previous, next syntax.NodeKind, nested, afterHeredoc bool) document.Doc {
+	gap := newBodyGap(previous, next, nested)
+
+	// A comment is standalone only if a newline follows it before the next
+	// item; the last newline's position decides that for every comment.
+	lastNewline := -1
+	for i, token := range trivia {
+		if token.Kind() == syntax.Newline {
+			lastNewline = i
+		}
+	}
+
 	var parts []document.Doc
-	// A gap owes no separation until the switch below finds an item boundary.
-	gap := bodyGapClass{
+	for i, token := range trivia {
+		switch {
+		case token.Kind() == syntax.Newline:
+			gap.lines = min(gap.lines+1, 2)
+		case token.Kind().IsComment():
+			if afterHeredoc {
+				// Unwrapping a template can expose a heredoc before an inline
+				// attribute comment. Its end marker must occupy its own line.
+				gap.lines = max(gap.lines, 1)
+				afterHeredoc = false
+			}
+			ownsLine := next == syntax.InvalidNode || i < lastNewline
+			parts = append(parts, gap.comment(result, token, ownsLine))
+		}
+	}
+
+	if next != syntax.InvalidNode {
+		gap.after = bodyGapSide{kind: bodyItem}
+		parts = append(parts, gap.separator().doc())
+	}
+	return document.Concat(parts...)
+}
+
+// newBodyGap classifies the boundary between previous and next, either of
+// which is InvalidNode at a body edge. A gap owes no separation until an item
+// boundary is found.
+func newBodyGap(previous, next syntax.NodeKind, nested bool) bodyGapState {
+	gap := bodyGapState{
 		before:   bodyGapSide{kind: bodyItem},
 		boundary: bodyOuterBoundary,
 		onOpener: nested && previous == syntax.InvalidNode,
@@ -214,66 +251,40 @@ func bodyGap(result syntax.Result, trivia []syntax.SyntaxToken, previous, next s
 	default:
 		gap.boundary = bodyAttributeBoundary
 	}
+	return gap
+}
 
-	// A comment is standalone only if a newline follows it before the next
-	// item; the last newline's position decides that for every comment.
-	lastNewline := -1
-	for i, token := range trivia {
-		if token.Kind() == syntax.Newline {
-			lastNewline = i
-		}
+// comment places one comment after the gap's before side and makes it the new
+// before side. ownsLine reports that a newline follows the comment before the
+// next item. A run can contain several block comments on the same line; they
+// share their section status, but a prefix sharing the next item's line is
+// not an independent comment section.
+func (gap *bodyGapState) comment(result syntax.Result, token syntax.SyntaxToken, ownsLine bool) document.Doc {
+	gap.after = bodyGapSide{
+		kind:       bodyBlockComment,
+		standalone: ownsLine && (gap.lines > 0 || gap.before.kind == bodyFileStart || gap.before.standalone),
+	}
+	if token.Kind() == syntax.LineComment {
+		gap.after.kind = bodyLineComment
 	}
 
-	for i, token := range trivia {
-		if token.Kind() == syntax.Newline {
-			gap.lines = min(gap.lines+1, 2)
-			continue
-		}
-		if token.Kind() != syntax.LineComment && token.Kind() != syntax.BlockComment {
-			continue
-		}
-
-		if afterHeredoc {
-			// Unwrapping a template can expose a heredoc before an inline
-			// attribute comment. Its end marker must occupy its own line.
-			gap.lines = max(gap.lines, 1)
-			afterHeredoc = false
-		}
-		// A run can contain several block comments on the same line. They
-		// share their section status, but a prefix sharing the next item's
-		// line is not an independent comment section.
-		gap.after = bodyGapSide{
-			kind:       bodyBlockComment,
-			standalone: (gap.lines > 0 || gap.before.kind == bodyFileStart || gap.before.standalone) && (next == syntax.InvalidNode || i < lastNewline),
-		}
-		if token.Kind() == syntax.LineComment {
-			gap.after.kind = bodyLineComment
-		}
-
-		separator := gap.separator()
-		if separator == bodyLine || separator == bodyBlank {
-			gap.onOpener = false
-		}
-		if separator == bodyBlank && gap.boundary == bodyBlockBoundary {
-			// A block boundary inserts one blank line across the whole gap,
-			// not another one after every intervening comment.
-			gap.boundary = bodyBoundarySatisfied
-		}
-		comment := document.Concat(separator.doc(), commentLiteral(result, token))
-		if !gap.after.standalone && token.Kind() == syntax.LineComment {
-			comment = document.Cell(trailingCommentColumn, comment)
-		}
-		parts = append(parts, comment)
-
-		gap.before = gap.after
-		gap.lines = 0
+	separator := gap.separator()
+	if separator == bodyLine || separator == bodyBlank {
+		gap.onOpener = false
+	}
+	if separator == bodyBlank && gap.boundary == bodyBlockBoundary {
+		// A block boundary inserts one blank line across the whole gap,
+		// not another one after every intervening comment.
+		gap.boundary = bodyBoundarySatisfied
+	}
+	comment := document.Concat(separator.doc(), commentLiteral(result, token))
+	if !gap.after.standalone && token.Kind() == syntax.LineComment {
+		comment = document.Cell(trailingCommentColumn, comment)
 	}
 
-	if next != syntax.InvalidNode {
-		gap.after = bodyGapSide{kind: bodyItem}
-		parts = append(parts, gap.separator().doc())
-	}
-	return document.Concat(parts...)
+	gap.before = gap.after
+	gap.lines = 0
+	return comment
 }
 
 // bodyBoundary classifies the items a gap separates, which fixes the minimum
@@ -290,11 +301,8 @@ const (
 	// bodyBlockBoundary separates items of which at least one is a block.
 	// Exactly one blank line is inserted (doc.go: Item boundaries).
 	bodyBlockBoundary
-	// bodyBoundarySatisfied is a block boundary whose blank line bodyGap has
-	// already emitted, so the rest of the gap has nothing left to insert. It
-	// is distinct from bodyOuterBoundary only in name: separator asks only
-	// whether a boundary is one of the two that still owe a separation, so
-	// every boundary outside that pair behaves identically.
+	// bodyBoundarySatisfied is a block boundary whose blank line has already
+	// been emitted, so the rest of the gap has nothing left to insert.
 	bodyBoundarySatisfied
 )
 
@@ -320,9 +328,9 @@ type bodyGapSide struct {
 	standalone bool
 }
 
-// bodyGapClass is the state bodyGap carries across one gap. It advances after
+// bodyGapState is the state bodyGap carries across one gap. It advances after
 // every comment so that each separator decision sees only its two sides.
-type bodyGapClass struct {
+type bodyGapState struct {
 	// lines is a capped source newline count since the before side: zero
 	// means inline, one means adjacent lines, and two means a source blank
 	// line. Literal comment newlines stay opaque.
@@ -340,7 +348,7 @@ type bodyGapClass struct {
 // body edges first, then the mandatory blank line around blocks, then source
 // blank lines that attribute groups and comment sections preserve, and last
 // the line breaks that source newlines and line comments force.
-func (gap bodyGapClass) separator() bodySeparator {
+func (gap *bodyGapState) separator() bodySeparator {
 	switch {
 	case gap.before.kind == bodyFileStart:
 		return bodyTight // Outer padding is removed (doc.go: File boundaries).
