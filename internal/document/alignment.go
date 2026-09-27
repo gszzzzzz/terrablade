@@ -6,34 +6,22 @@ import (
 	"github.com/clipperhouse/uax29/v2/graphemes"
 )
 
-// renderedCell is one Cell as it appeared in the rendered output, before
-// alignment padding is inserted.
+// renderedCell is a Cell's place in the unaligned output.
 type renderedCell struct {
-	// column is the alignment column the cell was declared with.
 	column uint8
-	// position is the byte offset in the output where the cell's content
-	// starts; padding is inserted there. rowStart is the byte offset of the
-	// row the cell starts on, so output[rowStart:position] is its prefix.
+	// position is the output offset of the cell's content, where padding is
+	// inserted; output[rowStart:position] is its prefix.
 	position, rowStart int
-	// firstRow and lastRow are the structural rows the cell's content spans.
-	// They differ only when the cell contains an ordinary line break.
+	// firstRow and lastRow differ only if the content has an ordinary line break.
 	firstRow, lastRow int
-	// pendingIndent is the indentation still owed to the row at the cell's
-	// start. The renderer has not written it, so the prefix omits it.
+	// pendingIndent is indentation owed at the cell's start, not yet in output.
 	pendingIndent int
-	// padding is the number of spaces alignment inserts at position.
-	padding int
+	padding       int
 }
 
-// alignCells inserts alignment padding into output. Layout runs only once:
-// inserting alignment spaces cannot change an earlier line-break decision or
-// oscillate between two different alignment chains. Each column scans its
-// own cells, and prefix measurement scans each rendered row once per
-// populated column. The finite column range bounds that work.
-//
-// Columns are processed in ascending order. A cell's prefix width includes
-// the padding that lower columns add on the same row, so every lower column
-// must be fully padded before a higher column is measured.
+// alignCells inserts alignment padding into output after layout, so padding
+// never changes a line-break decision. Columns are padded in ascending order
+// because a cell's prefix includes padding from lower columns on its row.
 func alignCells(output string, cells []renderedCell) string {
 	if len(cells) == 0 {
 		return output
@@ -48,22 +36,11 @@ func alignCells(output string, cells []renderedCell) string {
 	return spliceCells(output, cells)
 }
 
-// bucketCells groups cell indices by column, in output order. Indexing by the
-// uint8 column value covers every possible column and yields them in
-// ascending order, which alignCells relies on.
-//
-// Only the first cell in each column on a row participates, as Cell documents:
-// a nested cell of the same column on the same row is dropped, so a row has at
-// most one padding point per column. Later nested cells still participate on
-// their own starting rows. cells is in output order, so the last bucketed
-// index is always the previous cell of that column.
+// bucketCells returns cell indices by column, in output order, keeping only a
+// row's first cell of each column. It panics if columns decrease within a row,
+// because prefix widths assume lower columns come first.
 func bucketCells(cells []renderedCell) [256][]int {
 	var columns [256][]int
-	// Cells arrive in output order, so a row's cells are contiguous here and
-	// their columns must not decrease. Padding a lower column after a higher
-	// one on the same row would shift the higher column's already-measured
-	// prefix, so enforce the precondition Cell documents instead of emitting
-	// silently misaligned output.
 	row, highest := -1, uint8(0)
 	for i, cell := range cells {
 		switch {
@@ -84,12 +61,9 @@ func bucketCells(cells []renderedCell) [256][]int {
 	return columns
 }
 
-// padChains sets padding for one column's cells. A chain is a run of cells on
-// consecutive rows; each chain is padded to its own widest prefix. A cell that
-// spans rows is ineligible, as Cell documents: it ends the chain before it,
-// receives no padding itself, and the next chain starts after it. rowPadding
-// accumulates, per row, the padding chosen by every column so far; it is read
-// here for lower columns and updated for this one.
+// padChains pads one column's cells. A chain is a run of cells on consecutive
+// rows, padded to its widest prefix; a cell spanning rows gets no padding and
+// splits the chain. rowPadding accumulates the padding added to each row.
 func padChains(output string, cells []renderedCell, indices []int, rowPadding map[int]int) {
 	if len(indices) == 0 {
 		return
@@ -124,10 +98,8 @@ func padChains(output string, cells []renderedCell, indices []int, rowPadding ma
 	closeChain(len(indices))
 }
 
-// cellWidth measures a cell's prefix in grapheme clusters. The rendered prefix
-// alone would undercount: padding chosen by lower columns on this row has not
-// been spliced in yet, and indentation owed at the cell's start has not been
-// written. Both occupy one cluster per space.
+// cellWidth counts the grapheme clusters in a cell's prefix, including
+// lower-column padding and owed indentation that are not yet in output.
 func cellWidth(output string, cell renderedCell, rowPadding map[int]int) int {
 	width := addWidth(rowPadding[cell.firstRow], cell.pendingIndent)
 

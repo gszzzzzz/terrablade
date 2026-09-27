@@ -9,30 +9,26 @@ import (
 	"github.com/gszzzzzz/terrablade/internal/syntax"
 )
 
-// Options controls formatting. Each zero field selects its default.
-// Out-of-range fields cause Format to return an *OptionsError before parsing.
+// Options controls formatting. A zero field selects its default; negative
+// values are invalid.
 type Options struct {
-	// PrintWidth is the preferred terminal display width, default 80.
-	// Unbreakable text, traversals, template sequences, and alignment may exceed it.
+	// PrintWidth is the preferred line width in terminal display columns,
+	// default 80. Unbreakable text and alignment may exceed it.
 	PrintWidth int
-	// IndentWidth is the number of spaces per indentation level, default 2.
-	// Values from 1 through 16 are accepted; zero selects the default.
+	// IndentWidth is the number of spaces per indentation level, at most 16,
+	// default 2.
 	IndentWidth int
-	// TabWidth is the distance between tab stops, default 8. Literal tabs are
-	// preserved; generated indentation always uses spaces.
-	// Values from 1 through 16 are accepted; zero selects the default.
+	// TabWidth is the distance between tab stops, at most 16, default 8.
+	// Literal tabs are preserved; indentation always uses spaces.
 	TabWidth int
 }
 
-// Spacing units multiply nesting depth or tab count. Bound that amplification
-// and arithmetic while allowing common 2/4/8/16-space layouts. PrintWidth only
-// selects breaks and does not need this cap. Deep bodies retain their inherent
-// output-size cost, as described in doc.go.
+// maxSpacingWidth caps IndentWidth and TabWidth, which are multiplied by
+// nesting depth or tab count. PrintWidth only selects breaks and needs no cap.
 const maxSpacingWidth = 16
 
-// OptionsError identifies an out-of-range layout option. Option is its Go field
-// name, and Min and Max bound the accepted values inclusively; Max is
-// math.MaxInt for an option without an upper limit.
+// OptionsError reports an out-of-range Options field. Option is the field name
+// and [Min, Max] the accepted range; Max is math.MaxInt if there is no limit.
 type OptionsError struct {
 	Option   string
 	Value    int
@@ -50,21 +46,14 @@ func (e *OptionsError) Error() string {
 	}
 }
 
-// Format formats a complete native HCL configuration. It parses, normalizes
-// expressions, and lays out the complete file without evaluating expressions or
-// validating application-specific schemas. HCL JSON is not supported.
+// Format returns the formatted form of source, a complete native HCL file.
 //
-// Format neither modifies source nor retains it after returning. The caller may
-// reuse source after the call; returned bytes have independent storage.
-// Concurrent calls are safe when their input buffers are not being modified.
-// Formatting identical input with identical options is deterministic and
-// idempotent. Every successful result ends in LF, including an empty input file.
+// Format neither modifies nor retains source, and the result does not share its
+// storage. It performs no I/O and is safe for concurrent use while source is not
+// modified. Output is deterministic, idempotent, and ends in LF.
 //
-// Invalid options return an *OptionsError. Lexical, syntax, and parser nesting
-// limit errors return a *ParseError with original-source diagnostics. Every error
-// is one of these two types and returns nil output; recovered partial input is
-// never formatted. Filenames and diagnostic presentation belong to callers.
-// Format performs no I/O.
+// Format returns nil and an *OptionsError for invalid options, or nil and a
+// *ParseError for invalid source. It returns no other errors.
 func Format(source []byte, options Options) ([]byte, error) {
 	if err := options.Validate(); err != nil {
 		return nil, err
@@ -80,7 +69,7 @@ func Format(source []byte, options Options) ([]byte, error) {
 	})), nil
 }
 
-// Validate returns an *OptionsError for the first out-of-range field in
+// Validate returns an *OptionsError for the first out-of-range field, in
 // declaration order, or nil. Format performs the same check.
 func (o Options) Validate() error {
 	for _, option := range []struct {

@@ -20,10 +20,8 @@ const EnvVar = "TERRABLADE_REFERENCE_CLI"
 // that must decide before they have a testing.TB to skip with.
 func Enabled() bool { return os.Getenv(EnvVar) != "" }
 
-// CLI returns the resolved path of the reference executable. An unset variable
-// skips: the reference tools are optional for local development. A name that
-// cannot be found fails instead, because a misspelled or missing executable
-// must not quietly look like "compatibility testing was not requested".
+// CLI returns the resolved path of the reference executable. It skips t if
+// EnvVar is unset and fails t if the named executable cannot be found.
 func CLI(t testing.TB) string {
 	t.Helper()
 	name := os.Getenv(EnvVar)

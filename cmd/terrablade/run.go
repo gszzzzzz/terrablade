@@ -52,9 +52,8 @@ type invocation struct {
 	paths        []string
 }
 
-// run owns command policy and presentation. Tests use the same arguments and
-// streams as main; filesystem behavior is exercised with real temporary files.
-// It processes files in argument order and keeps going after file-local errors.
+// run executes the command and returns its exit code. It processes inputs in
+// argument order and continues after errors that concern a single input.
 func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	inv, err := parseArguments(args)
 	if errors.Is(err, flag.ErrHelp) {
@@ -224,8 +223,8 @@ func reportGlobalError(stderr io.Writer, err error) {
 	fmt.Fprintf(stderr, "terrablade: %s\n", pathLabel(err.Error()))
 }
 
-// reportError always identifies its input or output stream. An empty filename
-// is an actual argument, not a sentinel for a global command error.
+// reportError reports err for the input or stream named by label, which may be
+// an empty filename.
 func reportError(stderr io.Writer, label string, err error) {
 	var parsed *terrablade.ParseError
 	if errors.As(err, &parsed) {
@@ -260,10 +259,8 @@ func pathLabel(path string) string {
 	return path
 }
 
-// writeText writes text to writer, reporting only whether it succeeded.
-// io.Copy rather than io.WriteString: Copy turns a short write that reports no
-// error into io.ErrShortWrite, so a truncated stdout still fails the command
-// instead of silently dropping output.
+// writeText writes text to writer. It uses io.Copy, which reports a short
+// write as io.ErrShortWrite, so truncated output fails the command.
 func writeText(writer io.Writer, text string) error {
 	_, err := io.Copy(writer, strings.NewReader(text))
 	return err
