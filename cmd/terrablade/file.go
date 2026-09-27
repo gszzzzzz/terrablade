@@ -6,15 +6,20 @@ import (
 	"os"
 )
 
-// readFile rejects paths that do not identify a regular file when inspected.
+// readFile reads one input. Directories are rejected, and so is any other
+// non-regular file that would be rewritten: only a regular file can be updated
+// in place. Pipes and devices are read like stdin, as with /dev/stdin or <(cmd).
 // It does not protect against the path changing between Stat and ReadFile.
-func readFile(path string) ([]byte, error) {
+func readFile(path string, rewrite bool) ([]byte, error) {
 	info, err := os.Stat(path)
 	if err != nil {
 		return nil, err
 	}
-	if !info.Mode().IsRegular() {
-		return nil, errors.New("input is not a regular file")
+	if info.IsDir() {
+		return nil, errors.New("input is a directory")
+	}
+	if rewrite && !info.Mode().IsRegular() {
+		return nil, errors.New("--write requires a regular file")
 	}
 	return os.ReadFile(path)
 }

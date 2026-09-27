@@ -114,12 +114,22 @@ func TestWriteReadOnlyFiles(t *testing.T) {
 	assertContents(t, invalid, "c=")
 }
 
-func TestRunRejectsFIFOWithoutOpening(t *testing.T) {
+func TestRunFIFO(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "pipe.tf")
 	if err := syscall.Mkfifo(path, 0600); err != nil {
 		t.Fatal(err)
 	}
-	assertRun(t, []string{path}, "", 2, "", "terrablade: "+path+": input is not a regular file\n")
+	// --write rejects the pipe before opening it, so no writer is needed.
+	assertRun(t, []string{"--write", path}, "", 2, "", "terrablade: "+path+": --write requires a regular file\n")
+
+	written := make(chan error, 1)
+	go func() {
+		written <- os.WriteFile(path, []byte("a=1"), 0)
+	}()
+	assertRun(t, []string{path}, "", 0, "a = 1\n", "")
+	if err := <-written; err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestControlCharacterFilenames(t *testing.T) {
@@ -130,4 +140,25 @@ func TestControlCharacterFilenames(t *testing.T) {
 	assertContents(t, path, "a = 1\n")
 	invalid := putFile(t, dir, "b\t.tf", "a=")
 	assertRun(t, []string{invalid}, "", 2, "", pathLabel(invalid)+":1:3: ExpectedExpression: Expected an expression.\n")
+}
+
+type brokenPipeWriter struct{}
+
+func (brokenPipeWriter) Write([]byte) (int, error) {
+	return 0, &os.PathError{Op: "write", Path: "/dev/stdout", Err: syscall.EPIPE}
+}
+
+func TestBrokenPipeIsQuiet(t *testing.T) {
+	dir := t.TempDir()
+	first := putFile(t, dir, "first.tf", "a=1")
+	second := putFile(t, dir, "second.tf", "b=2")
+	for _, args := range [][]string{{first}, {"--help"}, {"--write", first, second}} {
+		var stderr bytes.Buffer
+		status := run(args, forbiddenReader{t}, brokenPipeWriter{}, &stderr)
+		if status != 2 || stderr.Len() != 0 {
+			t.Errorf("%q: status=%d stderr=%q", args, status, stderr.String())
+		}
+	}
+	// A closed pipe still stops the run before later files change.
+	assertContents(t, second, "b=2")
 }

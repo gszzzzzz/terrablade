@@ -39,7 +39,8 @@ Options:
   --help              Show this help
 
 --check and --write are mutually exclusive. Stdin must be the only input
-and cannot be used with --write. Directories are not supported.
+and cannot be used with --write, which also requires regular files.
+Directories are not supported.
 Exit codes: 0 success, 1 --check found changes, 2 usage, parse, or I/O error.
 `
 
@@ -58,7 +59,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	command, err := parseArguments(args)
 	if errors.Is(err, flag.ErrHelp) {
 		if writeErr := writeText(stdout, usage); writeErr != nil {
-			reportError(stderr, "stdout", writeErr)
+			reportOutputError(stderr, writeErr)
 			return exitError
 		}
 		return exitOK
@@ -68,8 +69,13 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return exitError
 	}
 
-	// Check options before reading any input or changing any file.
+	// Check options before reading any input or changing any file, naming
+	// each by the flag that set it.
 	if err := command.options.Validate(); err != nil {
+		var optionsErr *terrablade.OptionsError
+		if errors.As(err, &optionsErr) {
+			optionsErr.Option = optionFlags[optionsErr.Option]
+		}
 		fmt.Fprintln(stderr, err)
 		return exitError
 	}
@@ -83,6 +89,13 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		}
 	}
 	return status
+}
+
+// optionFlags maps terrablade.Options fields to the flags that set them.
+var optionFlags = map[string]string{
+	"PrintWidth":  "--print-width",
+	"IndentWidth": "--indent-width",
+	"TabWidth":    "--tab-width",
 }
 
 // parseArguments validates the whole command line before any input is read,
@@ -156,7 +169,7 @@ func (c invocation) process(path string, stdin io.Reader, stdout, stderr io.Writ
 		label = "<stdin>"
 		source, err = io.ReadAll(stdin)
 	} else {
-		source, err = readFile(path)
+		source, err = readFile(path, c.write)
 	}
 	if err != nil {
 		reportError(stderr, label, err)
@@ -190,10 +203,19 @@ func (c invocation) process(path string, stdin io.Reader, stdout, stderr io.Writ
 		_, err = io.Copy(stdout, bytes.NewReader(formatted))
 	}
 	if err != nil {
-		reportError(stderr, "stdout", err)
+		reportOutputError(stderr, err)
 		return exitError, true
 	}
 	return status, false
+}
+
+// reportOutputError reports a failed stdout write. A closed pipe means the
+// reader stopped on purpose, as in terrablade file.tf | head, so it is not
+// reported, although the run still stops.
+func reportOutputError(stderr io.Writer, err error) {
+	if !isBrokenPipe(err) {
+		reportError(stderr, "stdout", err)
+	}
 }
 
 // reportGlobalError reports a command-level error that concerns no particular

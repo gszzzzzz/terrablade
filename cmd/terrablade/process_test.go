@@ -42,7 +42,7 @@ func TestCLIProcess(t *testing.T) {
 		{name: "check change", args: []string{"--check"}, input: "a=1", stdout: "<stdin>\n", status: 1},
 		{name: "check fixed", args: []string{"--check"}, input: "a = 1\n"},
 		{name: "parse error", input: "a=", stderr: "<stdin>:1:3: ExpectedExpression: Expected an expression.\n", status: 2},
-		{name: "bad option", args: []string{"--tab-width=17"}, input: "a=1", stderr: "terrablade: TabWidth must not exceed 16 (got 17)\n", status: 2},
+		{name: "bad option", args: []string{"--tab-width=17"}, input: "a=1", stderr: "terrablade: --tab-width must not exceed 16 (got 17)\n", status: 2},
 		{name: "help", args: []string{"--help"}, stdout: usage},
 		{name: "trailing option", args: []string{"x.tf", "--check"}, status: 2,
 			stderr: "terrablade: options must precede files: \"--check\" (use -- for a dash-prefixed filename)\n"},
@@ -93,8 +93,12 @@ func TestCLIProcess(t *testing.T) {
 		command.Stderr = &stderr
 		err = command.Run()
 		var exited *exec.ExitError
-		if !errors.As(err, &exited) || exited.ExitCode() != 2 || !strings.HasPrefix(stderr.String(), "terrablade: stdout: ") {
-			t.Fatalf("broken stdout: error=%v stderr=%q; want exit 2 and I/O diagnostic", err, stderr.String())
+		// Unix recognizes the closed pipe and stops quietly; elsewhere the
+		// write error is reported.
+		quiet := runtime.GOOS != "windows"
+		if !errors.As(err, &exited) || exited.ExitCode() != 2 || quiet != (stderr.Len() == 0) ||
+			(!quiet && !strings.HasPrefix(stderr.String(), "terrablade: stdout: ")) {
+			t.Fatalf("broken stdout: error=%v stderr=%q; want exit 2, quiet=%v", err, stderr.String(), quiet)
 		}
 	})
 }
