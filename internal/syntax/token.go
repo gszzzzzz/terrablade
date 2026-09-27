@@ -1,5 +1,7 @@
 package syntax
 
+//go:generate go run golang.org/x/tools/cmd/stringer@v0.42.0 -type=TokenKind,NodeKind,DiagnosticKind -output=kind_string.go
+
 // TokenKind identifies a lexical element. Its numeric value is not a stable format.
 type TokenKind uint8
 
