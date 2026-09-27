@@ -19,17 +19,17 @@ type expressionWalker struct{ result syntax.Result }
 func (expressionWalker) expand(node *expressionView, context grammarContext, children []visit[*expressionView, grammarContext]) []visit[*expressionView, grammarContext] {
 	switch node.Kind() {
 	case syntax.ObjectItem:
-		context.safe = false // Object keys and values are newline-sensitive.
+		context.newlinesAllowed = false // Object keys and values are newline-sensitive.
 	case syntax.TemplateInterpolation, syntax.TemplateDirective:
 		// ${ } and %{ } delimit their contents, and templates flatten what
 		// they enclose (doc.go: Templates).
-		context = grammarContext{safe: true, inSequence: true}
+		context = grammarContext{newlinesAllowed: true, inSequence: true}
 	case syntax.ParenthesizedExpression, syntax.FunctionCallExpression,
 		syntax.TupleExpression, syntax.IndexAccess, syntax.ForExpression,
 		syntax.BinaryExpression, syntax.ConditionalExpression, syntax.TraversalExpression:
-		// Operations enclose themselves when their caller is not safe; their
-		// descendants can share that pair of parentheses.
-		context.safe = true
+		// Operations enclose themselves when their caller forbids newlines;
+		// their descendants can share that pair of parentheses.
+		context.newlinesAllowed = true
 	}
 	for _, element := range node.children {
 		if element.node != nil {
@@ -45,8 +45,8 @@ func (w expressionWalker) lower(node *expressionView, context grammarContext, ch
 
 // grammarContext is what an expression node inherits from its ancestors.
 type grammarContext struct {
-	// safe reports that the surrounding grammar permits expression newlines.
-	safe bool
+	// newlinesAllowed reports that the surrounding grammar permits expression newlines.
+	newlinesAllowed bool
 	// inSequence reports an enclosing template sequence, which flattens
 	// source-only layout choices.
 	inSequence bool
@@ -78,21 +78,21 @@ type piece struct {
 // pieceList names children selected by their grammatical position.
 type pieceList []piece
 
-func (pieces pieceList) opener() piece { return pieces[0] }
+func (p pieceList) opener() piece { return p[0] }
 
-func (pieces pieceList) closer() piece { return pieces[len(pieces)-1] }
+func (p pieceList) closer() piece { return p[len(p)-1] }
 
 // inner is the piece directly after the opening delimiter: the sole content
 // of a parenthesized expression or an index, or the first entry of an object.
 // An empty form has none, so inner is then the closer itself, whose leading
 // trivia is exactly the trivia the caller wants to inspect.
-func (pieces pieceList) inner() piece { return pieces[1] }
+func (p pieceList) inner() piece { return p[1] }
 
 // beforeCloser is the last piece inside the delimiters. Its heredoc marker,
 // if any, decides whether the closer's gap owes a newline.
-func (pieces pieceList) beforeCloser() piece { return pieces[len(pieces)-2] }
+func (p pieceList) beforeCloser() piece { return p[len(p)-2] }
 
-func (pieces pieceList) contents(open int) pieceList { return pieces[open+1 : len(pieces)-1] }
+func (p pieceList) contents(open int) pieceList { return p[open+1 : len(p)-1] }
 
 // detachLeading copies pieces and clears the first copy's leading trivia,
 // returning that trivia. Clause and sequence helpers call it when they lay
@@ -168,12 +168,12 @@ func lowerNode(result syntax.Result, node *expressionView, context grammarContex
 	lowered := boundaryFlags(pieces)
 	switch node.Kind() {
 	case syntax.BinaryExpression, syntax.ConditionalExpression, syntax.TraversalExpression:
-		lowered = lowerOperation(result, node.Kind(), pieces, lowered, context.safe)
+		lowered = lowerOperation(result, node.Kind(), pieces, lowered, context.newlinesAllowed)
 	case syntax.AttributeAccess, syntax.LegacyIndexAccess:
 		lowered.doc = sequence(result, pieces)
 		lowered.fusesNumber = stepFusesNumber(result, node, pieces)
 	default:
-		lowered.doc = formDoc(result, node, pieces, context.inSequence)
+		lowered.doc = lowerForm(result, node, pieces, context.inSequence)
 	}
 	return lowered
 }
@@ -233,9 +233,9 @@ func boundaryFlags(pieces []piece) layout {
 	}
 }
 
-// formDoc builds the doc for every non-operation, non-step form by delegating
+// lowerForm builds the doc for every non-operation, non-step form by delegating
 // to the helper that owns that form's delimiter and separator policy.
-func formDoc(result syntax.Result, node *expressionView, pieces pieceList, inSequence bool) document.Doc {
+func lowerForm(result syntax.Result, node *expressionView, pieces pieceList, inSequence bool) document.Doc {
 	switch node.Kind() {
 	case syntax.LiteralExpression, syntax.VariableExpression, syntax.UnaryExpression:
 		return sequence(result, pieces)
@@ -283,7 +283,7 @@ func formDoc(result syntax.Result, node *expressionView, pieces pieceList, inSeq
 // forbids expression newlines, a broken binary or conditional operation adds
 // break parentheses. Traversals never do: width alone never breaks their
 // steps, and their calls and indices carry their own delimiters.
-func lowerOperation(result syntax.Result, kind syntax.NodeKind, pieces []piece, lowered layout, safe bool) layout {
+func lowerOperation(result syntax.Result, kind syntax.NodeKind, pieces []piece, lowered layout, newlinesAllowed bool) layout {
 	head := pieces[0]
 	lowered.operation = true
 	lowered.head = head.doc
@@ -306,7 +306,7 @@ func lowerOperation(result syntax.Result, kind syntax.NodeKind, pieces []piece, 
 
 	lowered.body = document.Concat(lowered.head, lowered.continuation)
 	lowered.doc = document.Group(lowered.body)
-	if !safe && kind != syntax.TraversalExpression {
+	if !newlinesAllowed && kind != syntax.TraversalExpression {
 		lowered.doc = breakParentheses(lowered.body)
 		// A heredoc marker forces the group to break, so the node now ends in
 		// its closing parenthesis and the following gap owes no newline.

@@ -10,11 +10,11 @@ import "github.com/gszzzzzz/terrablade/internal/syntax"
 type expressionView struct {
 	kind     syntax.NodeKind
 	children []expressionElement
-	// needsNewlineContext reports that this node exposes a mandatory line
-	// break without a delimiter of its own (exposedExpressionLines). A parent
+	// exposedLine reports that this node exposes a mandatory line
+	// break without a delimiter of its own (hasExposedLine). A parent
 	// object item or the root then wraps unary and traversal nodes in
-	// parentheses (protectExpressionLines).
-	needsNewlineContext bool
+	// parentheses (protectExposedLine).
+	exposedLine bool
 	// endsHeredoc reports that the node's last significant token is a
 	// heredoc marker (expressionEndsHeredoc).
 	endsHeredoc bool
@@ -62,7 +62,7 @@ func delimiter(kind syntax.TokenKind, text string) expressionElement {
 // carries its removed wrapper's grammar role to the immediate parent, which
 // can then protect precedence without rescanning a deep expression chain.
 func normalizeExpression(result syntax.Result, root syntax.Node) *expressionView {
-	return protectExpressionLines(postOrder(normalizationWalker{result}, root, false).node)
+	return protectExposedLine(postOrder(normalizationWalker{result}, root, false).node)
 }
 
 // normalizationWalker rewrites source nodes into views. Its context marks a
@@ -106,12 +106,12 @@ func normalizedView(result syntax.Result, node syntax.Node, children []rewrite) 
 			child.node = permanentParentheses(child.node, nil, nil)
 		}
 		if node.Kind() == syntax.ObjectItem {
-			child.node = protectExpressionLines(child.node)
+			child.node = protectExposedLine(child.node)
 		}
 		view.children = append(view.children, expressionElement{node: child.node})
 		position++
 	}
-	view.needsNewlineContext = exposedExpressionLines(view)
+	view.exposedLine = hasExposedLine(view)
 	view.endsHeredoc = expressionEndsHeredoc(view)
 	return view
 }
@@ -138,25 +138,25 @@ func rewriteView(view *expressionView, attributeProjection bool) rewrite {
 		view.children[last] = expressionElement{node: &expressionView{kind: syntax.LiteralExpression, children: []expressionElement{view.children[last]}}}
 		view.children = append(view.children, delimiter(syntax.CloseBracket, "]"))
 		// The brackets now delimit the index, so nothing is exposed.
-		view.needsNewlineContext = false
+		view.exposedLine = false
 	}
 	return rewrite{node: view}
 }
 
-// protectExpressionLines wraps a unary or traversal node that exposes a
+// protectExposedLine wraps a unary or traversal node that exposes a
 // mandatory line break in permanent parentheses. Removing an interpolation
 // also removes its newline-safe grammar context. Binary and conditional
 // layouts already enclose mandatory continuation lines; unary and traversal
 // expressions need a permanent delimiter when exposed at an attribute value
 // or object key/value. Delimited descendants own their lines.
-func protectExpressionLines(node *expressionView) *expressionView {
-	if node.needsNewlineContext && (node.kind == syntax.UnaryExpression || node.kind == syntax.TraversalExpression) {
+func protectExposedLine(node *expressionView) *expressionView {
+	if node.exposedLine && (node.kind == syntax.UnaryExpression || node.kind == syntax.TraversalExpression) {
 		return permanentParentheses(node, nil, nil)
 	}
 	return node
 }
 
-// exposedExpressionLines answers whether node contains a mandatory line
+// hasExposedLine answers whether node contains a mandatory line
 // break that none of its own tokens delimit: a line comment, a block comment
 // followed by a source newline, a heredoc marker followed by more of the
 // node, or a child that already exposes one. Only undelimited forms can
@@ -168,7 +168,7 @@ func protectExpressionLines(node *expressionView) *expressionView {
 // ends where the grammar forbids an unparenthesized newline (doc.go:
 // Expression context). Binary and conditional layouts add break parentheses
 // when they break, but unary and traversal layouts have no group of their
-// own, so protectExpressionLines gives them permanent parentheses when this
+// own, so protectExposedLine gives them permanent parentheses when this
 // reports true.
 //
 // comment and newline describe the trivia run since the last significant
@@ -176,7 +176,7 @@ func protectExpressionLines(node *expressionView) *expressionView {
 // bare newline is canonicalized away. heredoc records that the previous child
 // ended in a marker, whose newline becomes exposed as soon as anything but
 // trivia follows within this node.
-func exposedExpressionLines(node *expressionView) bool {
+func hasExposedLine(node *expressionView) bool {
 	switch node.kind {
 	case syntax.UnaryExpression, syntax.BinaryExpression, syntax.ConditionalExpression,
 		syntax.TraversalExpression, syntax.AttributeAccess, syntax.LegacyIndexAccess,
@@ -188,7 +188,7 @@ func exposedExpressionLines(node *expressionView) bool {
 	comment, newline, heredoc := false, false, false
 	for _, element := range node.children {
 		if element.node != nil {
-			if heredoc || element.node.needsNewlineContext {
+			if heredoc || element.node.exposedLine {
 				return true
 			}
 			heredoc = element.node.endsHeredoc

@@ -12,13 +12,13 @@ import (
 	"time"
 )
 
-// Variable names the environment variable that selects the executable. CI sets
+// EnvVar names the environment variable that selects the executable. CI sets
 // it per compatibility job; an unset value means the tests are skipped.
-const Variable = "TERRABLADE_REFERENCE_CLI"
+const EnvVar = "TERRABLADE_REFERENCE_CLI"
 
 // Enabled reports whether a reference executable was requested, for callers
 // that must decide before they have a testing.TB to skip with.
-func Enabled() bool { return os.Getenv(Variable) != "" }
+func Enabled() bool { return os.Getenv(EnvVar) != "" }
 
 // CLI returns the resolved path of the reference executable. An unset variable
 // skips: the reference tools are optional for local development. A name that
@@ -26,9 +26,9 @@ func Enabled() bool { return os.Getenv(Variable) != "" }
 // must not quietly look like "compatibility testing was not requested".
 func CLI(t testing.TB) string {
 	t.Helper()
-	name := os.Getenv(Variable)
+	name := os.Getenv(EnvVar)
 	if name == "" {
-		t.Skip("set " + Variable + " to terraform or tofu to run compatibility tests")
+		t.Skip("set " + EnvVar + " to terraform or tofu to run compatibility tests")
 	}
 	path, err := exec.LookPath(name)
 	if err != nil {

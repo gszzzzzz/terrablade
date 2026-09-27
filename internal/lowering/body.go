@@ -382,8 +382,8 @@ const (
 	bodyBlank // One blank line: two hard line breaks.
 )
 
-func (separator bodySeparator) doc() document.Doc {
-	switch separator {
+func (s bodySeparator) doc() document.Doc {
+	switch s {
 	case bodySpace:
 		return document.Text(" ")
 	case bodyLine:

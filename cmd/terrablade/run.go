@@ -56,7 +56,7 @@ type invocation struct {
 // streams as main; filesystem behavior is exercised with real temporary files.
 // It processes files in argument order and keeps going after file-local errors.
 func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
-	command, err := parseArguments(args)
+	inv, err := parseArguments(args)
 	if errors.Is(err, flag.ErrHelp) {
 		if writeErr := writeText(stdout, usage); writeErr != nil {
 			reportOutputError(stderr, writeErr)
@@ -71,7 +71,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 
 	// Check options before reading any input or changing any file, naming
 	// each by the flag that set it.
-	if err := command.options.Validate(); err != nil {
+	if err := inv.options.Validate(); err != nil {
 		var optionsErr *terrablade.OptionsError
 		if errors.As(err, &optionsErr) {
 			optionsErr.Option = optionFlags[optionsErr.Option]
@@ -81,8 +81,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	}
 
 	status := exitOK
-	for _, path := range command.paths {
-		code, fatal := command.process(path, stdin, stdout, stderr)
+	for _, path := range inv.paths {
+		code, fatal := inv.process(path, stdin, stdout, stderr)
 		status = max(status, code)
 		if fatal {
 			return status
@@ -102,16 +102,16 @@ var optionFlags = map[string]string{
 // so a usage error can never follow a partially written file. It returns
 // flag.ErrHelp when help was requested.
 func parseArguments(args []string) (invocation, error) {
-	var command invocation
+	var inv invocation
 	flags := flag.NewFlagSet("terrablade", flag.ContinueOnError)
 	// run prints the usage text itself, on stdout and only for --help; the flag
 	// package would otherwise print its own version to stderr on every error.
 	flags.SetOutput(io.Discard)
-	flags.BoolVar(&command.check, "check", false, "")
-	flags.BoolVar(&command.write, "write", false, "")
-	flags.IntVar(&command.options.PrintWidth, "print-width", 0, "")
-	flags.IntVar(&command.options.IndentWidth, "indent-width", 0, "")
-	flags.IntVar(&command.options.TabWidth, "tab-width", 0, "")
+	flags.BoolVar(&inv.check, "check", false, "")
+	flags.BoolVar(&inv.write, "write", false, "")
+	flags.IntVar(&inv.options.PrintWidth, "print-width", 0, "")
+	flags.IntVar(&inv.options.IndentWidth, "indent-width", 0, "")
+	flags.IntVar(&inv.options.TabWidth, "tab-width", 0, "")
 	if err := flags.Parse(args); err != nil {
 		return invocation{}, err
 	}
@@ -135,7 +135,7 @@ func parseArguments(args []string) (invocation, error) {
 
 	// The modes are exclusive because each defines what stdout means: a list of
 	// changed inputs, a list of rewritten files, or one formatted document.
-	if command.check && command.write {
+	if inv.check && inv.write {
 		return invocation{}, errors.New("--check and --write are mutually exclusive")
 	}
 	if len(paths) == 0 {
@@ -144,18 +144,18 @@ func parseArguments(args []string) (invocation, error) {
 	// Stdin has no file to rewrite in place, and as an unnamed input it cannot
 	// be listed alongside files.
 	for _, path := range paths {
-		if path == "-" && (command.write || len(paths) != 1) {
+		if path == "-" && (inv.write || len(paths) != 1) {
 			return invocation{}, errors.New("stdin must be the only input and cannot be used with --write")
 		}
 	}
 	// Plain output is one formatted document; several inputs would run
 	// together on stdout with no boundary between them.
-	if len(paths) > 1 && !command.check && !command.write {
+	if len(paths) > 1 && !inv.check && !inv.write {
 		return invocation{}, errors.New("multiple files require --check or --write")
 	}
 
-	command.paths = paths
-	return command, nil
+	inv.paths = paths
+	return inv, nil
 }
 
 // process formats one input and returns its exit code. The second result is
