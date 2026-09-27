@@ -181,7 +181,7 @@ func (c invocation) process(path string, stdin io.Reader, stdout, stderr io.Writ
 	case c.write:
 		// Invalid and unchanged inputs must never be opened for writing.
 		if changed {
-			if writeErr := writeFile(path, formatted); writeErr != nil {
+			if writeErr := writeFile(path, source, formatted); writeErr != nil {
 				reportError(stderr, label, writeErr)
 				return exitError, false
 			}
@@ -216,14 +216,17 @@ func reportError(stderr io.Writer, label string, err error) {
 		return
 	}
 
-	// OS error strings may contain raw filenames. Keep paths in our escaped
-	// label and retain the operation and underlying cause without duplicating it.
-	// Only shorten a direct OS error. A joined error can describe both write
-	// and close failures; neither should disappear behind one child PathError.
+	fmt.Fprintf(stderr, "terrablade: %s: %s\n", pathLabel(label), pathLabel(withoutPath(err).Error()))
+}
+
+// withoutPath shortens a direct OS error to its operation and cause. OS error
+// strings contain raw filenames, and callers print the escaped label instead.
+// A wrapped or joined error is left alone so none of its parts disappear.
+func withoutPath(err error) error {
 	if detail, ok := err.(*os.PathError); ok {
-		err = fmt.Errorf("%s: %v", detail.Op, detail.Err)
+		return fmt.Errorf("%s: %w", detail.Op, detail.Err)
 	}
-	fmt.Fprintf(stderr, "terrablade: %s: %s\n", pathLabel(label), pathLabel(err.Error()))
+	return err
 }
 
 // pathLabel makes a path safe to print on one line. Filenames may contain
