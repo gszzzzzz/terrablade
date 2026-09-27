@@ -100,6 +100,30 @@ func lowerAttribute(result syntax.Result, node syntax.Node) bodyLayout {
 	return bodyLayout{doc: lowerAssignment(result, parts, false), endsHeredoc: parts[len(parts)-1].child.endsHeredoc}
 }
 
+// lowerAssignment lays out key = value for a body attribute or an object
+// item from its three pieces. The separator and value form one alignment
+// cell so that consecutive rows pad their equals signs to a shared column
+// (doc.go: Alignment). objectItem makes the cell conditional on the object
+// breaking: a flat object shares its enclosing expression's row and must not
+// align with its neighbors.
+func lowerAssignment(result syntax.Result, pieces pieceList, objectItem bool) document.Doc {
+	// An assignment is exactly three pieces, in this order.
+	name, equals, value := pieces[0], pieces[1], pieces[2]
+	afterName, beforeEquals := commentGap(result, equals.before, spacedGap(space))
+	afterEquals, beforeValue := commentGap(result, value.before, spacedGap(space))
+	tail := document.Concat(beforeEquals, equals.doc, afterEquals, beforeValue, value.doc)
+
+	aligned := document.Cell(assignmentColumn, tail)
+	if objectItem {
+		// A flat object shares its enclosing expression's row. Only entries
+		// in a broken object establish assignment columns of their own.
+		aligned = document.IfBreak(aligned, tail)
+	}
+	// Comments between the name and the separator stay outside the cell, so
+	// they cannot pad the shared assignment column.
+	return document.Concat(name.doc, afterName, aligned)
+}
+
 // lowerBlock lowers a block header and its already-lowered body. Header
 // comments are gathered into the trivia before the opening brace, and the
 // body's closing brace stays outside the Indent (doc.go: Blocks).

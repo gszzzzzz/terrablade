@@ -61,9 +61,8 @@ const (
 	DuplicateAttribute           DiagnosticKind = "DuplicateAttribute"
 )
 
-// Keep the external vocabulary explicit. An internal kind must be deliberately
-// mapped here before it can appear in a public diagnostic, even when its name
-// happens to match. The internal count makes additions visible to our tests.
+// The public vocabulary is explicit: an internal kind appears in a public
+// diagnostic only once it is mapped here, even when the names match.
 var publicDiagnosticKinds = [syntax.DiagnosticKindCount]DiagnosticKind{
 	syntax.InvalidUTF8:                  InvalidUTF8,
 	syntax.InvalidCharacter:             InvalidCharacter,

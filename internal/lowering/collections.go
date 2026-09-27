@@ -39,53 +39,6 @@ func lowerObject(result syntax.Result, pieces pieceList, inSequence bool) docume
 	return delimited(result, withCommas, 0, true, edge)
 }
 
-// lowerAssignment lays out key = value for a body attribute or an object
-// item from its three pieces. The separator and value form one alignment
-// cell so that consecutive rows pad their equals signs to a shared column
-// (doc.go: Alignment). objectItem makes the cell conditional on the object
-// breaking: a flat object shares its enclosing expression's row and must not
-// align with its neighbors.
-func lowerAssignment(result syntax.Result, pieces pieceList, objectItem bool) document.Doc {
-	// An assignment is exactly three pieces, in this order.
-	name, equals, value := pieces[0], pieces[1], pieces[2]
-	afterName, beforeEquals := commentGap(result, equals.before, spacedGap(space))
-	afterEquals, beforeValue := commentGap(result, value.before, spacedGap(space))
-	tail := document.Concat(beforeEquals, equals.doc, afterEquals, beforeValue, value.doc)
-
-	aligned := document.Cell(assignmentColumn, tail)
-	if objectItem {
-		// A flat object shares its enclosing expression's row. Only entries
-		// in a broken object establish assignment columns of their own.
-		aligned = document.IfBreak(aligned, tail)
-	}
-	// Comments between the name and the separator stay outside the cell, so
-	// they cannot pad the shared assignment column.
-	return document.Concat(name.doc, afterName, aligned)
-}
-
-// spacedSequence joins pieces with single spaces, as in a block header or a
-// for clause. Commas and ellipses attach to the piece before them, and their
-// leading trivia moves after them first so a comment never separates a value
-// from its comma.
-func spacedSequence(result syntax.Result, pieces []piece) document.Doc {
-	moveCommaTrivia(pieces)
-	parts := make([]document.Doc, 0, len(pieces)*3)
-	for i, part := range pieces {
-		style := spacedGap(tight)
-		style.requiredLine = i > 0 && pieces[i-1].child.endsHeredoc
-		if i > 0 {
-			style.empty = space
-		}
-		if part.token && (part.kind == syntax.Comma || part.kind == syntax.Ellipsis) {
-			style.empty, style.afterComment = tight, tight
-		}
-
-		gap, end := commentGap(result, part.before, style)
-		parts = append(parts, gap, end, part.doc)
-	}
-	return document.Concat(parts...)
-}
-
 // lowerForExpression lays out a tuple or object for expression. The header (for
 // bindings in collection :), the projection, and the optional if clause each
 // start a continuation line once the group breaks (doc.go: For expressions).

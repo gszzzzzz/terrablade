@@ -169,7 +169,7 @@ func FuzzBody(f *testing.F) {
 		if !bytes.Equal(input, source) {
 			t.Fatal("body parser mutated input")
 		}
-		for _, diagnostic := range lex(source).Diagnostics {
+		for _, diagnostic := range lex(source).diagnostics {
 			if !slices.Contains(file.diagnostics, diagnostic) {
 				t.Fatalf("lost lexical diagnostic: %+v", diagnostic)
 			}

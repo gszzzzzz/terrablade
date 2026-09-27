@@ -15,7 +15,7 @@ func lex(source []byte) lexResult {
 	for l.offset < len(source) {
 		start := l.offset
 		kind := l.scan()
-		l.result.Tokens = append(l.result.Tokens, Token{kind: kind, span: Span{start, l.offset}})
+		l.result.tokens = append(l.result.tokens, Token{kind: kind, span: Span{start, l.offset}})
 	}
 
 	// Diagnose every still-open template frame at its opener, without inventing
@@ -31,10 +31,10 @@ func lex(source []byte) lexResult {
 		l.report(kind, frame.start, frame.start+width)
 	}
 
-	l.result.Tokens = append(l.result.Tokens, Token{kind: EOF, span: Span{len(source), len(source)}})
+	l.result.tokens = append(l.result.tokens, Token{kind: EOF, span: Span{len(source), len(source)}})
 	// An unterminated block comment is reported after the encoding errors found
 	// inside it, yet its span starts before theirs, so the order needs fixing.
-	sortDiagnostics(l.result.Diagnostics)
+	sortDiagnostics(l.result.diagnostics)
 	return l.result
 }
 
@@ -295,5 +295,5 @@ func (l *lexer) advanceRune() {
 func isEncodingError(r rune, width int) bool { return r == utf8.RuneError && width == 1 }
 
 func (l *lexer) report(kind DiagnosticKind, start, end int) {
-	l.result.Diagnostics = append(l.result.Diagnostics, Diagnostic{Kind: kind, Span: Span{start, end}})
+	l.result.diagnostics = append(l.result.diagnostics, Diagnostic{Kind: kind, Span: Span{start, end}})
 }

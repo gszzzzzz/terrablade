@@ -77,9 +77,9 @@ func newParser(source []byte) *parser {
 	lexed := lex(source)
 	return &parser{
 		source:      string(source),
-		tokens:      lexed.Tokens,
-		arena:       &arena{tokens: lexed.Tokens},
-		diagnostics: lexed.Diagnostics,
+		tokens:      lexed.tokens,
+		arena:       &arena{tokens: lexed.tokens},
+		diagnostics: lexed.diagnostics,
 	}
 }
 

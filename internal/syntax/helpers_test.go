@@ -70,8 +70,8 @@ func assertDiagnosticOrder(t *testing.T, source []byte, diagnostics []Diagnostic
 // assertLexInvariants checks a lexer result, which has no tree around it yet.
 func assertLexInvariants(t *testing.T, source []byte, result lexResult) {
 	t.Helper()
-	assertTokenPartition(t, source, result.Tokens)
-	assertDiagnosticOrder(t, source, result.Diagnostics)
+	assertTokenPartition(t, source, result.tokens)
+	assertDiagnosticOrder(t, source, result.diagnostics)
 }
 
 // assertTreeInvariants is the one internal walker over a parsed tree. It
@@ -142,7 +142,7 @@ func assertTreeInvariants(t *testing.T, source []byte, file Result) {
 	}
 
 	assertTokenPartition(t, source, leaves)
-	if want := lex(source).Tokens; !reflect.DeepEqual(leaves, want) {
+	if want := lex(source).tokens; !reflect.DeepEqual(leaves, want) {
 		t.Fatalf("tree leaves differ from lexer tokens:\n%+v\nwant:\n%+v", leaves, want)
 	}
 	if errors > 0 && len(file.diagnostics) == 0 {
@@ -158,11 +158,11 @@ func assertTokens(t *testing.T, text string, want []tokenText) {
 	source := []byte(text)
 	result := lex(source)
 	assertLexInvariants(t, source, result)
-	if len(result.Diagnostics) != 0 {
-		t.Fatalf("unexpected diagnostics: %+v", result.Diagnostics)
+	if len(result.diagnostics) != 0 {
+		t.Fatalf("unexpected diagnostics: %+v", result.diagnostics)
 	}
 	var got []tokenText
-	for _, token := range result.Tokens[:len(result.Tokens)-1] {
+	for _, token := range result.tokens[:len(result.tokens)-1] {
 		got = append(got, tokenText{token.Kind(), string(source[token.Span().Start:token.Span().End])})
 	}
 	if !reflect.DeepEqual(got, want) {

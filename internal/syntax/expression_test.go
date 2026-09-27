@@ -336,7 +336,7 @@ func TestExpressionPreservesLexicalDiagnostics(t *testing.T) {
 	source := []byte("a + /*\xff")
 	file := parseExpressionSource(source)
 	assertTreeInvariants(t, source, file)
-	for _, diagnostic := range lex(source).Diagnostics {
+	for _, diagnostic := range lex(source).diagnostics {
 		if !slices.Contains(file.diagnostics, diagnostic) {
 			t.Fatalf("lost lexical diagnostic %+v", diagnostic)
 		}

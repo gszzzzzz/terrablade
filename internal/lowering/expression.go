@@ -357,6 +357,29 @@ func sequence(result syntax.Result, pieces []piece) document.Doc {
 	return document.Concat(parts...)
 }
 
+// spacedSequence joins pieces with single spaces, as in a block header or a
+// for clause. Commas and ellipses attach to the piece before them, and their
+// leading trivia moves after them first so a comment never separates a value
+// from its comma.
+func spacedSequence(result syntax.Result, pieces []piece) document.Doc {
+	moveCommaTrivia(pieces)
+	parts := make([]document.Doc, 0, len(pieces)*3)
+	for i, part := range pieces {
+		style := spacedGap(tight)
+		style.requiredLine = i > 0 && pieces[i-1].child.endsHeredoc
+		if i > 0 {
+			style.empty = space
+		}
+		if part.token && (part.kind == syntax.Comma || part.kind == syntax.Ellipsis) {
+			style.empty, style.afterComment = tight, tight
+		}
+
+		gap, end := commentGap(result, part.before, style)
+		parts = append(parts, gap, end, part.doc)
+	}
+	return document.Concat(parts...)
+}
+
 // parenthesized lays out explicit parentheses. They introduce no width-driven
 // break of their own (doc.go: Parentheses): an enclosed operation supplies
 // the group, and any other content simply carries its comments.

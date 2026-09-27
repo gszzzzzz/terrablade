@@ -201,11 +201,11 @@ func TestQuotedTemplateErrors(t *testing.T) {
 			result := lex([]byte(test.source))
 			assertLexInvariants(t, []byte(test.source), result)
 			var kinds []DiagnosticKind
-			for _, diagnostic := range result.Diagnostics {
+			for _, diagnostic := range result.diagnostics {
 				kinds = append(kinds, diagnostic.Kind)
 			}
 			if !reflect.DeepEqual(kinds, test.kinds) {
-				t.Errorf("diagnostics = %+v, want kinds %v", result.Diagnostics, test.kinds)
+				t.Errorf("diagnostics = %+v, want kinds %v", result.diagnostics, test.kinds)
 			}
 		})
 	}
@@ -216,11 +216,11 @@ func TestDeepTemplateNesting(t *testing.T) {
 	source := []byte(strings.Repeat(`"${`, depth) + `1` + strings.Repeat(`}"`, depth))
 	result := lex(source)
 	assertLexInvariants(t, source, result)
-	if len(result.Diagnostics) != 0 {
-		t.Fatalf("unexpected diagnostics: %+v", result.Diagnostics)
+	if len(result.diagnostics) != 0 {
+		t.Fatalf("unexpected diagnostics: %+v", result.diagnostics)
 	}
-	if len(result.Tokens) != depth*4+2 {
-		t.Fatalf("unexpected token count: %d", len(result.Tokens))
+	if len(result.tokens) != depth*4+2 {
+		t.Fatalf("unexpected token count: %d", len(result.tokens))
 	}
 }
 
@@ -265,11 +265,11 @@ func TestTemplateDiagnosticSpansAndRecovery(t *testing.T) {
 		t.Run(test.source, func(t *testing.T) {
 			result := lex([]byte(test.source))
 			assertLexInvariants(t, []byte(test.source), result)
-			if !reflect.DeepEqual(result.Diagnostics, test.want) {
-				t.Errorf("diagnostics = %+v, want %+v", result.Diagnostics, test.want)
+			if !reflect.DeepEqual(result.diagnostics, test.want) {
+				t.Errorf("diagnostics = %+v, want %+v", result.diagnostics, test.want)
 			}
 			if strings.HasSuffix(test.source, "x") {
-				last := result.Tokens[len(result.Tokens)-2]
+				last := result.tokens[len(result.tokens)-2]
 				if last.Kind() != Identifier || last.Span() != (Span{len(test.source) - 1, len(test.source)}) {
 					t.Errorf("failed to resume config mode: %+v", last)
 				}
