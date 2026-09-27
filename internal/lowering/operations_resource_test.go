@@ -11,7 +11,8 @@ import (
 )
 
 func TestDeepOperationChains(t *testing.T) {
-	const count = 20000
+	limitStack(t)
+	const count = 5000
 	for _, source := range []string{
 		strings.Repeat("a + ", count) + "a",
 		"root" + strings.Repeat(".attribute", count),

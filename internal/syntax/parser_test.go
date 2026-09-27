@@ -155,8 +155,8 @@ func TestExpressionTriviaPlacement(t *testing.T) {
 				t.Fatalf("unexpected diagnostics: %+v", file.diagnostics)
 			}
 			containers := make(map[string]NodeKind)
-			var visit func(SyntaxNode)
-			visit = func(node SyntaxNode) {
+			var visit func(Node)
+			visit = func(node Node) {
 				for i := range node.ChildCount() {
 					element := node.Child(i)
 					if child, ok := element.Node(); ok {

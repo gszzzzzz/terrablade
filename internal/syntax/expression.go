@@ -1,15 +1,8 @@
 package syntax
 
-import (
-	"math/big"
-	"strings"
-)
+import "strings"
 
-// Binding powers order the operators from weakest to strongest for the Pratt
-// loop in expression. A production asks operand for a minimum power and
-// receives everything that binds at least that tightly. lowestPower accepts
-// any expression; binaryPower also returns it for tokens that are not binary
-// operators, and since every operator is stronger, that ends the loop.
+// Binding powers, from weakest to strongest.
 const (
 	lowestPower = iota
 	orPower
@@ -21,9 +14,8 @@ const (
 	unaryPower
 )
 
-// operand commits only trivia that precedes an actual expression. A missing
-// operand gets an empty ErrorNode at the cursor; no synthetic token is emitted
-// and trailing trivia remains available to the enclosing structure.
+// operand parses an expression binding at least as tightly as minimum into b,
+// or reports a missing one and appends an empty ErrorNode, leaving the trivia.
 func (p *parser) operand(b *nodeBuilder, minimum int, context newlineContext) {
 	i := p.look(context)
 	if operandTerminators.has(p.tokens[i].kind) {
@@ -35,17 +27,13 @@ func (p *parser) operand(b *nodeBuilder, minimum int, context newlineContext) {
 	b.node(p.expression(minimum, context))
 }
 
-// expression parses one expression whose operators bind at least as tightly
-// as minimum. Conditionals bind at lowestPower and associate right; binary
-// operators bind from orPower to multiplicativePower and associate left;
-// unary operators bind at unaryPower; postfix traversal binds tightest and is
-// handled inside prefix.
-func (p *parser) expression(minimum int, context newlineContext) SyntaxNode {
+// expression parses an expression whose operators bind at least as tightly
+// as minimum. Binary operators associate left and conditionals right.
+func (p *parser) expression(minimum int, context newlineContext) Node {
 	if p.depth == maxRecursiveExpressionDepth {
 		span := p.current().span
 		b := p.begin()
-		// Retain the offending token in a non-empty ErrorNode before freezing the
-		// cursor: this boundary makes progress, while File recovers the remainder.
+		// Consume the offending token so the ErrorNode is not empty.
 		p.consumeLookahead(&b, context)
 		p.haltAtLimit(span)
 		return b.finish(ErrorNode)
@@ -56,9 +44,7 @@ func (p *parser) expression(minimum int, context newlineContext) SyntaxNode {
 	left := p.prefix(context)
 	for {
 		kind := p.peek(context)
-		// Only the weakest binding level may consume '?'. Parsing both arms at
-		// lowestPower lets the false arm absorb another conditional, associating
-		// right.
+		// Both arms are parsed at lowestPower, so conditionals associate right.
 		if kind == Question && minimum == lowestPower {
 			b := p.beginAt(left.Span().Start)
 			b.node(left)
@@ -72,25 +58,32 @@ func (p *parser) expression(minimum int, context newlineContext) SyntaxNode {
 		}
 
 		power := binaryPower(kind)
-		// Weaker operators belong to the caller; lowestPower also leaves
-		// delimiters and EOF untouched so the enclosing production can finish
-		// or recover.
 		if power == lowestPower || power < minimum {
 			break
 		}
 		b := p.beginAt(left.Span().Start)
 		b.node(left)
 		p.consumeLookahead(&b, context)
-		// A same-precedence operator cannot enter the RHS. This loop consumes it
-		// next, wrapping the previous result on the left rather than the right.
+		// power+1 leaves an operator of equal power to this loop, so binary
+		// operators associate left.
 		p.operand(&b, power+1, context)
 		left = b.finish(BinaryExpression)
 	}
 	return left
 }
 
-// binaryPower returns the binding power of a binary operator token, or
-// lowestPower for any other token.
+// Operator precedence levels. Higher binds tighter.
+const (
+	// ConditionalPrecedence is the level of a ? b : c, the loosest.
+	ConditionalPrecedence = lowestPower
+	// UnaryPrecedence binds tighter than every binary operator.
+	UnaryPrecedence = unaryPower
+)
+
+// BinaryPrecedence returns the binding power of a binary operator token, or
+// ConditionalPrecedence for any other token.
+func BinaryPrecedence(kind TokenKind) int { return binaryPower(kind) }
+
 func binaryPower(kind TokenKind) int {
 	switch kind {
 	case Or:
@@ -109,12 +102,9 @@ func binaryPower(kind TokenKind) int {
 	return lowestPower
 }
 
-// prefix parses the operand that begins an expression: a literal, variable,
-// parenthesized expression, unary operation, collection, for expression, or
-// template, followed by any traversal steps. kind starts as ErrorNode so that
-// only the fallback arm, which reports the missing expression and retains the
-// offending token, leaves it unchanged; every grammatical arm sets its own.
-func (p *parser) prefix(context newlineContext) SyntaxNode {
+// prefix parses a primary or unary expression and any traversal steps after
+// it.
+func (p *parser) prefix(context newlineContext) Node {
 	b := p.begin()
 	token := p.current()
 	kind := ErrorNode
@@ -139,7 +129,7 @@ func (p *parser) prefix(context newlineContext) SyntaxNode {
 	case OpenParen:
 		p.consumeLookahead(&b, context)
 		p.operand(&b, lowestPower, newlineTransparent)
-		p.expect(&b, CloseParen, ExpectedClosingParen, newlineTransparent)
+		p.expectCloser(&b, CloseParen, ExpectedClosingParen)
 		kind = ParenthesizedExpression
 	case Minus, Bang:
 		p.consumeLookahead(&b, context)
@@ -166,8 +156,6 @@ func (p *parser) prefix(context newlineContext) SyntaxNode {
 	}
 	left := b.finish(kind)
 
-	// Traversal steps bind tighter than every operator, so they attach here
-	// before expression sees the first operator.
 	if p.peek(context) == Dot || p.peek(context) == OpenBracket {
 		b = p.beginAt(left.Span().Start)
 		b.node(left)
@@ -177,25 +165,21 @@ func (p *parser) prefix(context newlineContext) SyntaxNode {
 	return left
 }
 
-// number validates the lexer's numeric candidate without evaluating the
-// expression. Legacy dot-index syntax additionally rejects any decimal point.
+// number consumes and validates a numeric literal. A legacy index, as in
+// a.0, must not contain a decimal point.
 func (p *parser) number(b *nodeBuilder, context newlineContext, legacy bool) {
 	span := p.tokens[p.look(context)].span
 	text := p.source[span.Start:span.End]
 	if legacy && strings.Contains(text, ".") {
 		p.report(InvalidLegacyIndex, span)
-	} else if _, _, err := big.ParseFloat(text, 10, 512, big.ToNearestEven); err != nil {
-		// This is the same representability check as upstream cty.ParseNumberVal,
-		// using the standard library and retaining no evaluated value in the CST.
+	} else if !numberRepresentable(text) {
 		p.report(InvalidNumber, span)
 	}
 	p.consumeLookahead(b, context)
 }
 
-// expect consumes the next grammatical token when it has the given kind and
-// otherwise reports diagnostic at it. A mismatch leaves the token for the
-// enclosing production. Consuming it here could steal that production's closer
-// or attach trailing trivia to this node.
+// expect consumes the next token if it has the given kind, and otherwise
+// reports diagnostic at it and leaves it for the enclosing production.
 func (p *parser) expect(b *nodeBuilder, kind TokenKind, diagnostic DiagnosticKind, context newlineContext) bool {
 	if p.peek(context) == kind {
 		p.consumeLookahead(b, context)
@@ -205,10 +189,20 @@ func (p *parser) expect(b *nodeBuilder, kind TokenKind, diagnostic DiagnosticKin
 	return false
 }
 
-// call parses the rest of a function call after its first name: optional
-// "::"-separated namespace parts, then the parenthesized argument list. The
-// arguments are expressions separated by commas; a trailing comma is allowed,
-// and a final "..." expands the last argument, after which only ')' may follow.
+// expectCloser is expect for a closer in newline-transparent contents. On a
+// mismatch it recovers to the closer and consumes it if found.
+func (p *parser) expectCloser(b *nodeBuilder, closer TokenKind, diagnostic DiagnosticKind) {
+	if p.expect(b, closer, diagnostic, newlineTransparent) {
+		return
+	}
+	p.recoverUntil(b, newlineTransparent, expressionBoundaries)
+	if p.peek(newlineTransparent) == closer {
+		p.consumeLookahead(b, newlineTransparent)
+	}
+}
+
+// call parses the rest of a function call after its first name: any
+// "::"-separated parts, then the arguments.
 func (p *parser) call(b *nodeBuilder, context newlineContext) {
 	for p.peek(context) == DoubleColon {
 		p.consumeLookahead(b, context)
@@ -220,9 +214,9 @@ func (p *parser) call(b *nodeBuilder, context newlineContext) {
 		return
 	}
 
-	// Only the arguments ignore newlines; namespace/name and '(' use the outer
-	// context. Testing ')' before an operand permits empty lists and trailing ','.
 	for {
+		// Newlines are trivia among the arguments. Checking for ')' first allows
+		// an empty list and a trailing comma.
 		if p.peek(newlineTransparent) == CloseParen {
 			p.consumeLookahead(b, newlineTransparent)
 			return
@@ -235,16 +229,14 @@ func (p *parser) call(b *nodeBuilder, context newlineContext) {
 			p.expect(b, CloseParen, ExpectedClosingParen, newlineTransparent)
 			return
 		case kind == Ellipsis:
-			// Expansion is final: a following comma must not reopen the argument loop.
+			// Only ')' may follow an expanded argument.
 			p.consumeLookahead(b, newlineTransparent)
-			p.expect(b, CloseParen, ExpectedClosingParen, newlineTransparent)
+			p.expectCloser(b, CloseParen, ExpectedClosingParen)
 			return
 		case kind == Comma:
 			p.consumeLookahead(b, newlineTransparent)
 		default:
-			// Report the missing comma once, then keep the material up to the
-			// next comma or closer as one ErrorNode so the arguments after it
-			// still parse. Anything but a comma there ends the call.
+			// Recover to the next comma; anything else ends the call.
 			p.report(ExpectedArgumentSeparator, p.tokens[p.look(newlineTransparent)].span)
 			p.recoverUntil(b, newlineTransparent, itemBoundaries)
 			if p.peek(newlineTransparent) != Comma {

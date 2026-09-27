@@ -2,58 +2,40 @@ package syntax
 
 import "unicode/utf8"
 
-// Template sequence openers. Both are two bytes long, which
-// scanTemplateExpression relies on to find a strip marker directly after the
-// opener without knowing which one started the frame.
+// Template sequence openers. scanTemplateExpression relies on their having
+// the same length.
 const (
 	interpolationOpener = "${"
 	directiveOpener     = "%{"
 )
 
-// mode identifies the sub-language the lexer is scanning. Configuration mode
-// has no frame; each template construct pushes a frame until its closer.
+// mode identifies the template construct the lexer is inside.
 type mode uint8
 
 const (
-	// modeQuoted is inside "...": literal text until the closing quote.
-	modeQuoted mode = iota
-	// modeExpression is inside ${...} or %{...}: configuration tokens until
-	// the brace that balances the opener.
-	modeExpression
-	// modeHeredoc is inside a heredoc: literal text until the marker line.
+	modeQuoted     mode = iota // "..."
+	modeExpression             // ${...} or %{...}
 	modeHeredoc
 )
 
-// modeFrame records one open template construct. Each nested expression owns
-// its brace depth. A slice, rather than recursive scanning, keeps deeply nested
-// templates from exhausting the Go call stack.
+// modeFrame records one open template construct.
 type modeFrame struct {
-	mode mode
-	// start is the offset of the opener, where an unterminated construct is
-	// diagnosed once the source ends.
-	start int
-	// braces counts unclosed '{' inside a modeExpression frame so that an
-	// object constructor's brace does not end the sequence. Other modes leave
-	// it zero.
-	braces int
-	// marker is the heredoc delimiter's span. scanHeredoc compares the cursor
-	// with it to tell which header token is due. Other modes leave it empty.
-	marker Span
+	mode   mode
+	start  int  // offset of the opener
+	braces int  // unclosed '{' in a modeExpression frame
+	marker Span // heredoc delimiter
 }
 
 func (l *lexer) popMode() { l.modes = l.modes[:len(l.modes)-1] }
 
-// scanTemplateExpression scans one token inside ${...} or %{...}. Only the
-// strip marker and the brace that closes the sequence differ from
-// configuration mode; everything else is delegated to scanConfig so the parser
-// sees the ordinary expression grammar.
+// scanTemplateExpression scans one token inside ${...} or %{...}. Only strip
+// markers and the closing brace differ from configuration mode.
 func (l *lexer) scanTemplateExpression() TokenKind {
 	frame := &l.modes[len(l.modes)-1]
 	switch l.source[l.offset] {
 	case '~':
-		// A '~' is a strip marker only at the sequence's edges: directly after
-		// the opener, or directly before the closing brace at depth zero. Any
-		// other '~' falls through to scanConfig, which reports InvalidCharacter.
+		// A '~' is a strip marker only directly after the opener or before
+		// the closing brace; elsewhere it is an invalid character.
 		if l.offset == frame.start+len(interpolationOpener) || (frame.braces == 0 && l.hasPrefix("~}")) {
 			l.offset++
 			return StripMarker
@@ -69,16 +51,11 @@ func (l *lexer) scanTemplateExpression() TokenKind {
 		frame.braces++
 	}
 
-	// Newlines inside an interpolation are ordinary Newline tokens. The parser
-	// uses newlineTransparent rules here, just like inside parentheses or
-	// brackets.
 	return l.scanConfig()
 }
 
-// scanQuoted scans one token inside a quoted template. A literal run stops at
-// the closing quote and at template openers, which the next call handles, so
-// the text between them is one TemplateText token with its escapes left
-// encoded.
+// scanQuoted scans one token inside a quoted template. Literal text, escapes
+// included, is one TemplateText token up to the closing quote or an opener.
 func (l *lexer) scanQuoted() TokenKind {
 	if l.source[l.offset] == '"' {
 		l.offset++
@@ -101,9 +78,8 @@ func (l *lexer) scanQuoted() TokenKind {
 			continue
 		}
 		if l.source[l.offset] == '\n' || l.source[l.offset] == '\r' {
-			// A literal newline is an error, but the template still runs on to
-			// its closing quote: ending the run here would leave that quote to
-			// open a new template and the next line to be lexed inside it.
+			// A literal newline is an error, but the text runs on to the
+			// closing quote, which would otherwise open a new template.
 			start := l.offset
 			if l.hasPrefix("\r\n") {
 				l.offset++
@@ -117,8 +93,7 @@ func (l *lexer) scanQuoted() TokenKind {
 	return TemplateText
 }
 
-// templateOpen enters expression mode at a "${" or "%{" opener and reports
-// which one it consumed. It is shared by quoted templates and heredocs.
+// templateOpen consumes a "${" or "%{" opener and enters expression mode.
 func (l *lexer) templateOpen() (TokenKind, bool) {
 	kind := InterpolationOpen
 	if l.hasPrefix(directiveOpener) {
@@ -131,9 +106,7 @@ func (l *lexer) templateOpen() (TokenKind, bool) {
 	return kind, true
 }
 
-// escapedIntroducer skips "$${" or "%%{", the escaped spellings of the template
-// openers. They remain literal text; decoding them, "$${" to "${" and "%%{" to
-// "%{", is a consumer's job.
+// escapedIntroducer consumes an escaped opener, "$${" or "%%{", as literal text.
 func (l *lexer) escapedIntroducer() bool {
 	if l.hasPrefix("$${") || l.hasPrefix("%%{") {
 		l.offset += 3
@@ -142,11 +115,8 @@ func (l *lexer) escapedIntroducer() bool {
 	return false
 }
 
-// quotedEscape validates one backslash escape and leaves it encoded inside the
-// TemplateText token: the tree must reproduce the original spelling, so
-// decoding and normalizing belong to consumers. A malformed escape ends where
-// validation stopped, which leaves a following quote or template opener for
-// the next scan iteration instead of swallowing it into the bad escape.
+// quotedEscape consumes and validates one backslash escape. A malformed escape
+// ends where validation failed, so a following quote is not swallowed.
 func (l *lexer) quotedEscape() {
 	start := l.offset
 	l.offset++
@@ -180,8 +150,7 @@ func (l *lexer) quotedEscape() {
 			value = value*16 + digit
 			l.offset++
 		}
-		// Surrogate code points and values past the Unicode range have no
-		// UTF-8 encoding, so no consumer could decode them.
+		// Surrogates and values past the Unicode range have no encoding.
 		if value > utf8.MaxRune || (value >= 0xD800 && value <= 0xDFFF) {
 			l.report(InvalidEscape, start, l.offset)
 		}

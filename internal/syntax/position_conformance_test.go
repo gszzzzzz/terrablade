@@ -48,7 +48,7 @@ func TestPositionUnicode17Conformance(t *testing.T) {
 				for offset := start; offset < end; offset++ {
 					want.Offset = offset
 					offsets++
-					if got := result.Position(offset); got != want {
+					if got := position(result, offset); got != want {
 						t.Fatalf("Position(%d) = %+v, want %+v for %q", offset, got, want, text)
 					}
 				}
@@ -61,7 +61,7 @@ func TestPositionUnicode17Conformance(t *testing.T) {
 			}
 			want.Offset = len(text)
 			offsets++
-			if got := result.Position(len(text)); got != want {
+			if got := position(result, len(text)); got != want {
 				t.Fatalf("Position(EOF) = %+v, want %+v for %q", got, want, text)
 			}
 		})

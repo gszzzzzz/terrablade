@@ -262,8 +262,20 @@ func TestExpressionDiagnostics(t *testing.T) {
 		{
 			"expanded argument must be final",
 			"f(a..., b)",
-			[]Diagnostic{{ExpectedClosingParen, Span{6, 7}}, {UnexpectedToken, Span{6, 7}}},
-			`File(Call("f", "(", Variable("a"), "..."), Error(",", "b", ")"))`,
+			[]Diagnostic{{ExpectedClosingParen, Span{6, 7}}},
+			`File(Call("f", "(", Variable("a"), "...", Error(",", "b"), ")"))`,
+		},
+		{
+			"missing closing paren recovers to the closer",
+			"(1 2)",
+			[]Diagnostic{{ExpectedClosingParen, Span{3, 4}}},
+			`File(Paren("(", Literal("1"), Error("2"), ")"))`,
+		},
+		{
+			"missing closing bracket recovers to the closer",
+			"x[1 2]",
+			[]Diagnostic{{ExpectedClosingBracket, Span{4, 5}}},
+			`File(Traversal(Variable("x"), Index("[", Literal("1"), Error("2"), "]")))`,
 		},
 
 		{
@@ -305,7 +317,7 @@ func TestUnterminatedExpressionLeavesTrailingTrivia(t *testing.T) {
 			// must follow it at File level, exactly as after a parenthesized error.
 			node, _ := file.root.Child(0).Node()
 			last, _ := node.Child(node.ChildCount() - 1).Token()
-			if isTrivia(last.Kind()) || file.root.ChildCount() < 3 {
+			if last.Kind().IsTrivia() || file.root.ChildCount() < 3 {
 				t.Fatalf("trailing trivia absorbed: %v ends with %v, file has %d children", node.Kind(), last.Kind(), file.root.ChildCount())
 			}
 		})
@@ -324,7 +336,7 @@ func TestExpressionPreservesLexicalDiagnostics(t *testing.T) {
 	source := []byte("a + /*\xff")
 	file := parseExpressionSource(source)
 	assertTreeInvariants(t, source, file)
-	for _, diagnostic := range lex(source).Diagnostics {
+	for _, diagnostic := range lex(source).diagnostics {
 		if !slices.Contains(file.diagnostics, diagnostic) {
 			t.Fatalf("lost lexical diagnostic %+v", diagnostic)
 		}

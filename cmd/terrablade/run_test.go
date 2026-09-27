@@ -64,12 +64,12 @@ func TestRunUsageErrorsBeforeReading(t *testing.T) {
 		{[]string{"--print-width"}, "flag needs an argument: -print-width"},
 		{[]string{"--print-width=abc"}, `invalid value "abc" for flag -print-width: parse error`},
 		{[]string{"--check=invalid"}, `invalid boolean value "invalid" for -check: parse error`},
-		{[]string{"--print-width=-1"}, "PrintWidth must not be negative (got -1)"},
-		{[]string{"--indent-width=-1"}, "IndentWidth must not be negative (got -1)"},
-		{[]string{"--tab-width=-1"}, "TabWidth must not be negative (got -1)"},
-		{[]string{"--indent-width=17"}, "IndentWidth must not exceed 16 (got 17)"},
-		{[]string{"--tab-width=17"}, "TabWidth must not exceed 16 (got 17)"},
-		{[]string{"--indent-width=" + strconv.Itoa(int(^uint(0)>>1))}, "IndentWidth must not exceed 16 (got " + strconv.Itoa(int(^uint(0)>>1)) + ")"},
+		{[]string{"--print-width=-1"}, "--print-width must not be negative (got -1)"},
+		{[]string{"--indent-width=-1"}, "--indent-width must not be negative (got -1)"},
+		{[]string{"--tab-width=-1"}, "--tab-width must not be negative (got -1)"},
+		{[]string{"--indent-width=17"}, "--indent-width must not exceed 16 (got 17)"},
+		{[]string{"--tab-width=17"}, "--tab-width must not exceed 16 (got 17)"},
+		{[]string{"--indent-width=" + strconv.Itoa(int(^uint(0)>>1))}, "--indent-width must not exceed 16 (got " + strconv.Itoa(int(^uint(0)>>1)) + ")"},
 	} {
 		t.Run(strings.Join(test.args, " "), func(t *testing.T) {
 			var stdout, stderr bytes.Buffer
@@ -98,7 +98,7 @@ func TestRunFiles(t *testing.T) {
 			invalid+":1:3: ExpectedExpression: Expected an expression.\n")
 	}
 	assertRun(t, []string{"--check", first, first}, "", 1, first+"\n"+first+"\n", "")
-	assertRun(t, []string{dir}, "", 2, "", "terrablade: "+dir+": input is not a regular file\n")
+	assertRun(t, []string{dir}, "", 2, "", "terrablade: "+dir+": input is a directory\n")
 	assertContents(t, first, "z=1")
 	assertContents(t, second, "a=2")
 	assertContents(t, invalid, "x=")

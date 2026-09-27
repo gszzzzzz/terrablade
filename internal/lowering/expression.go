@@ -1,237 +1,140 @@
 package lowering
 
 import (
-	"errors"
 	"fmt"
 
 	"github.com/gszzzzzz/terrablade/internal/document"
 	"github.com/gszzzzzz/terrablade/internal/syntax"
 )
 
-// Expression lowers node from result to a layout. The caller must supply a node
-// from this same Result, just as with Result.Text. Any diagnostics anywhere in
-// result or a zero/non-expression node returns an error and an empty Doc. It
-// never formats a recovered partial expression.
-// Quoted interpolation-only wrappers and legacy numeric indices are normalized
-// without changing result. Indices inside attribute splats retain their syntax
-// because bracket indexing would change the projection's scope.
-// Layout width and indentation are selected later by document.Render.
-//
-// File is the entry the formatter uses; Expression exists as a seam for tests,
-// which lower and render one expression in isolation without a surrounding
-// body. It stays exported so those tests can fuzz expressions directly.
-func Expression(result syntax.Result, node syntax.SyntaxNode) (document.Doc, error) {
-	if len(result.Diagnostics()) != 0 {
-		return document.Doc{}, errors.New("lowering: cannot format a result with diagnostics")
-	}
-	if !isExpressionKind(node.Kind()) {
-		return document.Doc{}, errors.New("lowering: expected an expression node")
-	}
-
-	return lowerExpression(result, node).doc, nil
+// lowerExpression normalizes source and lowers the resulting view.
+func lowerExpression(result syntax.Result, source syntax.Node) layout {
+	return postOrder(expressionWalker{result}, normalizeExpression(result, source), grammarContext{})
 }
 
-// lowerExpression normalizes source and lowers the resulting view. It does not
-// check diagnostics: Expression checks them for one node and File once for the
-// whole file, and Result.Diagnostics clones its slice on every call, so this
-// shared path must not repeat the check per attribute.
-//
-// The walk is the explicit post-order stack described at File, because deep
-// unary and operator chains must not recurse. Each frame also records the
-// grammar context its children inherit: safe, whether the surrounding grammar
-// permits expression newlines; and inSequence, whether a template sequence
-// encloses the node and therefore flattens source-only layout choices.
-func lowerExpression(result syntax.Result, source syntax.SyntaxNode) layout {
-	node := normalizeExpression(result, source)
+// expressionWalker lowers a normalized expression view.
+type expressionWalker struct{ result syntax.Result }
 
-	type frame struct {
-		node       *expressionView
-		next       int
-		safe       bool // The surrounding grammar permits expression newlines.
-		inSequence bool // Templates flatten source-only object layout choices.
+func (expressionWalker) expand(node *expressionView, context grammarContext, children []visit[*expressionView, grammarContext]) []visit[*expressionView, grammarContext] {
+	switch node.Kind() {
+	case syntax.ObjectItem:
+		context.newlinesAllowed = false // Object keys and values are newline-sensitive.
+	case syntax.TemplateInterpolation, syntax.TemplateDirective:
+		context = grammarContext{newlinesAllowed: true, inSequence: true}
+	case syntax.ParenthesizedExpression, syntax.FunctionCallExpression,
+		syntax.TupleExpression, syntax.IndexAccess, syntax.ForExpression,
+		syntax.BinaryExpression, syntax.ConditionalExpression, syntax.TraversalExpression:
+		// These forms delimit their contents or add break parentheses.
+		context.newlinesAllowed = true
 	}
-	stack := []frame{{node: node}}
-	layouts := make(map[*expressionView]layout)
-
-	for len(stack) != 0 {
-		current := &stack[len(stack)-1]
-		if current.next < current.node.ChildCount() {
-			element := current.node.Child(current.next)
-			current.next++
-			if child, ok := element.Node(); ok {
-				safe, inSequence := current.safe, current.inSequence
-				switch current.node.Kind() {
-				case syntax.ObjectItem:
-					safe = false // Object keys and values are newline-sensitive.
-				case syntax.TemplateInterpolation, syntax.TemplateDirective:
-					// ${ } and %{ } delimit their contents, and templates
-					// flatten what they enclose (doc.go: Templates).
-					safe, inSequence = true, true
-				case syntax.ParenthesizedExpression, syntax.FunctionCallExpression,
-					syntax.TupleExpression, syntax.IndexAccess, syntax.ForExpression,
-					syntax.BinaryExpression, syntax.ConditionalExpression, syntax.TraversalExpression:
-					// Operations enclose themselves when their caller is not
-					// safe; their descendants can share that pair of
-					// parentheses.
-					safe = true
-				}
-				stack = append(stack, frame{node: child, safe: safe, inSequence: inSequence})
-			}
-			continue
+	for _, element := range node.children {
+		if element.node != nil {
+			children = append(children, visit[*expressionView, grammarContext]{element.node, context})
 		}
-
-		layouts[current.node] = lowerNode(result, current.node, current.safe, current.inSequence, layouts)
-		stack = stack[:len(stack)-1]
 	}
-	return layouts[node]
+	return children
 }
 
-// isExpressionKind reports whether kind is a complete expression that the
-// Expression entry point accepts. Traversal steps, object items, and template
-// parts are lowered only as children of these forms.
-func isExpressionKind(kind syntax.NodeKind) bool {
-	switch kind {
-	case syntax.LiteralExpression, syntax.VariableExpression,
-		syntax.ParenthesizedExpression, syntax.UnaryExpression,
-		syntax.BinaryExpression, syntax.ConditionalExpression,
-		syntax.FunctionCallExpression, syntax.TraversalExpression,
-		syntax.TupleExpression, syntax.ObjectExpression, syntax.ForExpression,
-		syntax.TemplateExpression:
-		return true
-	}
-	return false
+func (w expressionWalker) lower(node *expressionView, context grammarContext, children []layout) layout {
+	return lowerNode(w.result, node, context, children)
+}
+
+// grammarContext is what an expression node inherits from its ancestors.
+type grammarContext struct {
+	newlinesAllowed bool // The grammar permits newlines here.
+	inSequence      bool // Inside a template interpolation or directive.
 }
 
 // piece is one significant child of a node together with the trivia before
-// it. Delimiter and separator policy is local to the parent; children expose
-// only their layout. Exactly one of token and child is meaningful.
+// it. For a node piece, kind is syntax.Invalid; for a token piece, child is
+// zero.
 type piece struct {
-	// doc is the child's rendered form: a token's spelling or a child
-	// layout's doc. A parent may replace it, as object items do for their
-	// separator.
-	doc document.Doc
-	// token reports a token piece. A child piece leaves it false and leaves
-	// kind at syntax.Invalid, the zero TokenKind, so comparing kind against a
-	// specific token kind needs no token guard.
-	token bool
-	kind  syntax.TokenKind
-	// before is the trivia between the previous significant child and this
-	// one. Comma pieces normally hand theirs to the next piece
-	// (moveCommaTrivia), and clause helpers take it away (detachLeading) when
-	// they lay it out through a commentGap of their own.
-	before []syntax.SyntaxToken
-	// child is the lowered layout of a node piece. A token piece leaves it
-	// zero, whose false flags read as "no such boundary".
-	child layout
+	doc    document.Doc
+	token  bool
+	kind   syntax.TokenKind
+	before []syntax.Token
+	child  layout
 }
 
-// pieceList names children selected by their grammatical position.
+// pieceList names pieces by their grammatical position.
 type pieceList []piece
 
-func (pieces pieceList) opener() piece { return pieces[0] }
+func (p pieceList) opener() piece { return p[0] }
 
-func (pieces pieceList) closer() piece { return pieces[len(pieces)-1] }
+func (p pieceList) closer() piece { return p[len(p)-1] }
 
-// inner is the piece directly after the opening delimiter: the sole content
-// of a parenthesized expression or an index, or the first entry of an object.
-// An empty form has none, so inner is then the closer itself, whose leading
-// trivia is exactly the trivia the caller wants to inspect.
-func (pieces pieceList) inner() piece { return pieces[1] }
+// inner is the piece after the opening delimiter; for an empty form, the
+// closer.
+func (p pieceList) inner() piece { return p[1] }
 
-// beforeCloser is the last piece inside the delimiters. Its heredoc marker,
-// if any, decides whether the closer's gap owes a newline.
-func (pieces pieceList) beforeCloser() piece { return pieces[len(pieces)-2] }
+func (p pieceList) beforeCloser() piece { return p[len(p)-2] }
 
-func (pieces pieceList) contents(open int) pieceList { return pieces[open+1 : len(pieces)-1] }
+func (p pieceList) contents(open int) pieceList { return p[open+1 : len(p)-1] }
 
-// detachLeading copies pieces and clears the first copy's leading trivia,
-// returning that trivia. Clause and sequence helpers call it when they lay
-// out the first gap through a commentGap of their own, so the shared sequence
-// helpers see a first piece without trivia and cannot emit the same comments
-// twice. The copy leaves the parent's pieces untouched.
-func detachLeading(pieces []piece) ([]piece, []syntax.SyntaxToken) {
+// detachLeading returns a copy of pieces without the first piece's leading
+// trivia, and that trivia, for a caller that lays it out itself. The copy
+// keeps the comments from being emitted twice.
+func detachLeading(pieces []piece) ([]piece, []syntax.Token) {
 	detached := append([]piece(nil), pieces...)
 	leading := detached[0].before
 	detached[0].before = nil
 	return detached, leading
 }
 
-// layout is the lowered form of one expression node. Operations keep their
-// head and continuation separate so an enclosing parenthesized expression can
-// share their group, and the boundary flags let a parent choose spacing at
-// this node's edges without inspecting its tokens.
+// layout is the lowered form of one expression node, with the facts about
+// its edges that a parent needs to choose spacing.
 type layout struct {
-	// doc is the complete rendered expression; every node sets it.
 	doc document.Doc
-	// body is an operation's content without break parentheses. Explicit
-	// parentheses reuse it so that both spellings share one group and a
-	// second pass reproduces the first. Set only when operation is true.
-	body document.Doc
-	// head is the first operand and continuation the operator/operand tail.
-	// Enclosing delimiters supply indentation; continuations do not add
-	// another level. A same-precedence binary chain concatenates its child's
-	// continuation with its own instead of rescanning a prefix. Set only when
-	// operation is true.
+	// For an operation (binary, conditional, or traversal), body is doc
+	// without break parentheses, head is the first operand, and continuation
+	// is the rest. Explicit parentheses reuse body, so both spellings share
+	// one group and a second pass reproduces the first.
+	body               document.Doc
 	head, continuation document.Doc
-	// operation marks binary, conditional, and traversal nodes, whose broken
-	// layout is the head followed by continuation lines.
-	operation bool
-	// power is the binding power of a binary node's operator, letting a
-	// parent binary node recognize a same-precedence chain. Zero otherwise.
+	operation          bool
+	// power is a binary operator's precedence, for joining same-precedence
+	// chains.
 	power int
-	// endsNumber reports a trailing Number token and startsDot a leading dot
-	// step. With fusesNumber they decide whether a traversal must keep a
-	// space before a step so the number scanner cannot swallow it.
-	endsNumber bool
-	startsDot  bool
-	// fusesNumber reports that this attribute or legacy index step, placed
-	// directly after a number, would scan as part of that number
-	// (numberContinuesAcrossDot). Set only for those two step kinds.
+	// endsNumber, startsDot, and fusesNumber decide whether a traversal
+	// keeps a space so a step is not scanned as part of a number.
+	endsNumber  bool
+	startsDot   bool
 	fusesNumber bool
-	// endsHeredoc reports that the node's last significant token is a heredoc
-	// marker whose newline the following gap must supply (doc.go: Heredocs).
+	// endsHeredoc reports that the node ends in a heredoc end marker, so the
+	// following gap must supply a newline.
 	endsHeredoc bool
 	// startsBrace and endsBrace report object braces at the node's edges,
-	// which template sequence boundaries keep a space away from.
+	// which a template sequence keeps a space away from.
 	startsBrace, endsBrace bool
 }
 
-// lowerNode lowers one view node whose children are already in layouts. safe
-// and inSequence are the grammar context recorded by lowerExpression's frame.
-// Templates compose literal chunks and are handled apart; every other form
-// is split into pieces, given its boundary flags, and then laid out by the
-// helper that owns its delimiter and separator policy.
-func lowerNode(result syntax.Result, node *expressionView, safe, inSequence bool, layouts map[*expressionView]layout) layout {
+// lowerNode lowers one view node given its child nodes' layouts in order.
+func lowerNode(result syntax.Result, node *expressionView, context grammarContext, children []layout) layout {
 	switch node.Kind() {
 	case syntax.TemplateExpression, syntax.TemplateIf, syntax.TemplateFor:
-		return templateParts(result, node, layouts)
+		return templateParts(result, node, children)
 	}
 	if !lowerableKind(node.Kind()) {
-		// Unreachable: lowerableKind covers every non-template form a
-		// diagnostic-free parse can produce, and both entry points reject a
-		// result that carries diagnostics. A new node kind that reaches here
-		// is a lowering bug, not a caller error, so it must not be reported
-		// as one.
+		// A diagnostic-free parse produces only lowerable kinds.
 		panic(fmt.Sprintf("lowering: internal invariant: unsupported expression form %s", node.Kind()))
 	}
 
-	pieces := collectPieces(result, node, layouts)
+	pieces := collectPieces(result, node, children)
 	lowered := boundaryFlags(pieces)
 	switch node.Kind() {
 	case syntax.BinaryExpression, syntax.ConditionalExpression, syntax.TraversalExpression:
-		lowered = lowerOperation(result, node.Kind(), pieces, lowered, safe)
+		lowered = lowerOperation(result, node.Kind(), pieces, lowered, context.newlinesAllowed)
 	case syntax.AttributeAccess, syntax.LegacyIndexAccess:
 		lowered.doc = sequence(result, pieces)
 		lowered.fusesNumber = stepFusesNumber(result, node, pieces)
 	default:
-		lowered.doc = formDoc(result, node, pieces, inSequence)
+		lowered.doc = lowerForm(result, node, pieces, context.inSequence)
 	}
 	return lowered
 }
 
-// lowerableKind reports whether lowerNode has a layout for kind: every
-// non-template form a diagnostic-free parse can produce. isExpressionKind is
-// the narrower set accepted at the Expression entry point.
+// lowerableKind reports whether lowerNode has a layout for a non-template
+// kind.
 func lowerableKind(kind syntax.NodeKind) bool {
 	switch kind {
 	case syntax.LiteralExpression, syntax.VariableExpression,
@@ -247,34 +150,28 @@ func lowerableKind(kind syntax.NodeKind) bool {
 	return false
 }
 
-// collectPieces splits a node's children into significant pieces, each
-// carrying the trivia that preceded it. Token pieces keep their spelling,
-// synthesized or from source; node pieces carry the child's layout.
-func collectPieces(result syntax.Result, node *expressionView, layouts map[*expressionView]layout) []piece {
+// collectPieces splits a node's children into significant pieces.
+func collectPieces(result syntax.Result, node *expressionView, children []layout) []piece {
 	pieces := make([]piece, 0, node.ChildCount())
-	var trivia []syntax.SyntaxToken
+	var trivia []syntax.Token
 	for i := 0; i < node.ChildCount(); i++ {
 		element := node.Child(i)
 		if token, ok := element.Token(); ok {
-			switch token.Kind() {
-			case syntax.Whitespace, syntax.Newline, syntax.LineComment, syntax.BlockComment:
+			if token.Kind().IsTrivia() {
 				trivia = append(trivia, token.source)
 				continue
 			}
 			pieces = append(pieces, piece{doc: document.Text(token.spelling(result)), token: true, kind: token.Kind(), before: trivia})
 		} else {
-			child, _ := element.Node()
-			pieces = append(pieces, piece{doc: layouts[child].doc, child: layouts[child], before: trivia})
+			pieces = append(pieces, piece{doc: children[0].doc, child: children[0], before: trivia})
+			children = children[1:]
 		}
 		trivia = nil
 	}
 	return pieces
 }
 
-// boundaryFlags derives the layout flags describing a node's first and last
-// significant pieces. A token piece answers from its kind and a child piece
-// from its own flags; the other half of each disjunction is false because a
-// token piece has a zero child and a child piece has the Invalid kind.
+// boundaryFlags derives a node's edge flags from its first and last pieces.
 func boundaryFlags(pieces []piece) layout {
 	first, last := pieces[0], pieces[len(pieces)-1]
 	return layout{
@@ -286,9 +183,8 @@ func boundaryFlags(pieces []piece) layout {
 	}
 }
 
-// formDoc builds the doc for every non-operation, non-step form by delegating
-// to the helper that owns that form's delimiter and separator policy.
-func formDoc(result syntax.Result, node *expressionView, pieces pieceList, inSequence bool) document.Doc {
+// lowerForm lays out every form other than operations and steps.
+func lowerForm(result syntax.Result, node *expressionView, pieces pieceList, inSequence bool) document.Doc {
 	switch node.Kind() {
 	case syntax.LiteralExpression, syntax.VariableExpression, syntax.UnaryExpression:
 		return sequence(result, pieces)
@@ -299,10 +195,7 @@ func formDoc(result syntax.Result, node *expressionView, pieces pieceList, inSeq
 	case syntax.ObjectExpression:
 		return lowerObject(result, pieces, inSequence)
 	case syntax.ObjectItem:
-		// An object item is key, separator, value. The parser accepts either
-		// = or : as that separator with the same meaning; output spells it =
-		// (doc.go: Objects), so entries share one assignment column and a
-		// second pass sees the spelling it produced.
+		// Spell a : separator as =, so every entry aligns on one column.
 		const separator = 1
 		pieces[separator].doc = document.Text("=")
 		return lowerAssignment(result, pieces, true)
@@ -313,8 +206,7 @@ func formDoc(result syntax.Result, node *expressionView, pieces pieceList, inSeq
 	case syntax.IndexAccess:
 		return lowerIndex(result, node, pieces)
 	case syntax.AttributeSplat, syntax.FullSplat:
-		// The projection prefix is .* (two tokens) or [*] (three). The steps
-		// after it are the projection and lay out as a traversal tail.
+		// The prefix is .* (two tokens) or [*] (three).
 		prefix := 2
 		if node.Kind() == syntax.FullSplat {
 			prefix = 3
@@ -331,23 +223,19 @@ func formDoc(result syntax.Result, node *expressionView, pieces pieceList, inSeq
 }
 
 // lowerOperation lays out a binary, conditional, or traversal expression as
-// a head operand followed by continuation lines that begin with the operator
-// or step, all in one group (doc.go: Operators, Traversals). Where the grammar
-// forbids expression newlines, a broken binary or conditional operation adds
-// break parentheses. Traversals never do: width alone never breaks their
-// steps, and their calls and indices carry their own delimiters.
-func lowerOperation(result syntax.Result, kind syntax.NodeKind, pieces []piece, lowered layout, safe bool) layout {
+// a head followed by continuation lines that begin with the operator or step.
+// Where the grammar forbids newlines, a binary or conditional operation adds
+// break parentheses; a traversal never breaks between steps for width.
+func lowerOperation(result syntax.Result, kind syntax.NodeKind, pieces []piece, lowered layout, newlinesAllowed bool) layout {
 	head := pieces[0]
 	lowered.operation = true
 	lowered.head = head.doc
 	switch kind {
 	case syntax.BinaryExpression:
-		lowered.power = binaryPower(pieces[1].kind)
+		lowered.power = syntax.BinaryPrecedence(pieces[1].kind)
 		lowered.continuation = operationContinuation(result, pieces[1:], head.child.endsHeredoc)
 		if head.child.power == lowered.power {
-			// A same-precedence chain shares one group and one run of
-			// continuation lines instead of nesting a group per operator
-			// (doc.go: Operators).
+			// A same-precedence chain shares one group.
 			lowered.head = head.child.head
 			lowered.continuation = document.Concat(head.child.continuation, lowered.continuation)
 		}
@@ -359,36 +247,34 @@ func lowerOperation(result syntax.Result, kind syntax.NodeKind, pieces []piece, 
 
 	lowered.body = document.Concat(lowered.head, lowered.continuation)
 	lowered.doc = document.Group(lowered.body)
-	if !safe && kind != syntax.TraversalExpression {
+	if !newlinesAllowed && kind != syntax.TraversalExpression {
 		lowered.doc = breakParentheses(lowered.body)
-		// A heredoc marker forces the group to break, so the node now ends in
-		// its closing parenthesis and the following gap owes no newline.
+		// The node now ends in the closing parenthesis.
 		lowered.endsHeredoc = false
 	}
 	return lowered
 }
 
-// stepFusesNumber reports whether an attribute or legacy index step, placed
-// directly after a Number token, would scan as part of that number. A
-// retained comment between the dot and the name already separates the two
-// tokens, so no boundary space is needed then.
+// stepFusesNumber reports whether an attribute or legacy index step would
+// scan as part of a number directly before it, as .0 or .e2 would, so that a
+// space must separate them. OpenTofu 1.12.6 removes that space and cannot
+// parse its own output.
 func stepFusesNumber(result syntax.Result, node *expressionView, pieces []piece) bool {
 	name, _ := node.Child(node.ChildCount() - 1).Token()
-	if !numberContinuesAcrossDot(name.spelling(result)) {
+	if !syntax.ContinuesNumber(name.spelling(result)) {
 		return false
 	}
-	step := pieces[1] // A step is the dot and then the name or index.
+	step := pieces[1]
 	for _, token := range step.before {
-		if token.Kind() == syntax.LineComment || token.Kind() == syntax.BlockComment {
+		if token.Kind().IsComment() {
 			return false
 		}
 	}
 	return true
 }
 
-// sequence joins pieces that render on one line, spacing any comments. Inside
-// a splat or index a comment hugs its bracket, and a comment after a dot step
-// hugs the dot, so the step's tokens stay recognizable as one unit.
+// sequence joins pieces that render on one line. A comment inside brackets
+// or after a dot hugs its token, keeping the step visibly one unit.
 func sequence(result syntax.Result, pieces []piece) document.Doc {
 	parts := make([]document.Doc, 0, len(pieces)*2)
 	for i, part := range pieces {
@@ -410,14 +296,33 @@ func sequence(result syntax.Result, pieces []piece) document.Doc {
 	return document.Concat(parts...)
 }
 
-// parenthesized lays out explicit parentheses. They introduce no width-driven
-// break of their own (doc.go: Parentheses): an enclosed operation supplies
-// the group, and any other content simply carries its comments.
+// spacedSequence joins pieces with single spaces, as in a block header or a
+// for clause. Commas and ellipses attach to the piece before them.
+func spacedSequence(result syntax.Result, pieces []piece) document.Doc {
+	moveCommaTrivia(pieces)
+	parts := make([]document.Doc, 0, len(pieces)*3)
+	for i, part := range pieces {
+		style := spacedGap(tight)
+		style.requiredLine = i > 0 && pieces[i-1].child.endsHeredoc
+		if i > 0 {
+			style.empty = space
+		}
+		if part.token && (part.kind == syntax.Comma || part.kind == syntax.Ellipsis) {
+			style.empty, style.afterComment = tight, tight
+		}
+
+		gap, end := commentGap(result, part.before, style)
+		parts = append(parts, gap, end, part.doc)
+	}
+	return document.Concat(parts...)
+}
+
+// parenthesized lays out explicit parentheses. They break only with an
+// enclosed operation, whose group they share: break parentheses read back as
+// explicit ones, so sharing the group keeps formatting idempotent.
 func parenthesized(result syntax.Result, pieces pieceList) document.Doc {
 	opener, inner, closer := pieces.opener(), pieces.inner(), pieces.closer()
 	if inner.child.operation {
-		// Break parentheses become explicit on the next parse. Both paths
-		// share the inner operation's group, so formatting remains idempotent.
 		leading, start := commentGap(result, inner.before, openingGap(soft))
 		gap, end := commentGap(result, closer.before, breakingGap(soft, inner.child.endsHeredoc))
 		return document.Group(document.Concat(opener.doc, document.Indent(document.Concat(leading, start, inner.child.body, gap)), end, closer.doc))
@@ -434,39 +339,28 @@ func parenthesized(result syntax.Result, pieces pieceList) document.Doc {
 			break
 		}
 	}
-	// Non-operation content never breaks at the parentheses, so the opener
-	// and closer gaps have no empty separator: (x) stays compact.
 	leading, start := commentGap(result, inner.before, gapStyle{beforeComment: openerComment, afterComment: space})
 	gap, end := commentGap(result, closer.before, gapStyle{beforeComment: space, requiredLine: inner.child.endsHeredoc})
 	return document.Concat(opener.doc, document.Indent(document.Concat(leading, start, inner.doc, gap)), end, closer.doc)
 }
 
-// delimited lays out a bracketed list: a tuple, a call's arguments, or an
-// object's entries once lowerObject has materialized their commas. The piece
-// at open is the opening delimiter (a call's name precedes it), the last
-// piece is the closer, and the contents between alternate values with comma
-// and ellipsis tokens. preserveBlank keeps one source blank line between
-// broken entries (tuples and objects, not calls). edge is the separator
-// directly inside the delimiters: soft for brackets and parentheses, line
-// for objects, and hard for a source-vertical object.
+// delimited lays out a tuple, call arguments, or object entries. pieces[open]
+// is the opening delimiter, and edge is the separator just inside the
+// delimiters. preserveBlank keeps one source blank line between broken
+// entries. delimited modifies the trivia of pieces.
 //
-// A broken layout ends in a trailing comma and a flat layout in none, so the
-// output does not depend on whether the source had one and a second pass
-// reproduces it. The comma is omitted after an expanded call argument, since
-// the grammar allows a trailing comma or an ellipsis but not both, and after
-// a final heredoc, whose marker newline already separates it from the closer
-// (doc.go: Calls and tuples).
+// A broken list ends in a trailing comma and a flat one does not, whatever
+// the source had, except after an expanded argument (the grammar forbids
+// both) or a final heredoc.
 func delimited(result syntax.Result, pieces pieceList, open int, preserveBlank bool, edge spacing) document.Doc {
 	moveCommaTrivia(pieces)
-	// A heredoc's mandatory marker newline is enough before the closer. Drop
-	// a source trailing comma as well as avoiding a synthesized one. Its trivia
-	// has already moved to the closer, so no comments or blank lines are lost.
+	// Drop a trailing comma after a heredoc, giving its trivia to the closer.
 	if trailing := len(pieces) - 2; trailing > open && pieces[trailing].kind == syntax.Comma && pieces[trailing-1].child.endsHeredoc {
 		pieces[trailing+1].before = append(pieces[trailing].before, pieces[trailing+1].before...)
 		pieces = append(pieces[:trailing], pieces[trailing+1:]...)
 	}
 
-	head := sequence(result, pieces[:open+1]) // A call name precedes its opener.
+	head := sequence(result, pieces[:open+1])
 	closer := pieces.closer()
 	content := pieces.contents(open)
 	parts := make([]document.Doc, 0, len(content)*3+3)
@@ -474,17 +368,13 @@ func delimited(result syntax.Result, pieces pieceList, open int, preserveBlank b
 		style := spacedGap(tight)
 		style.requiredLine = i > 0 && content[i-1].child.endsHeredoc
 		if i == 0 {
-			// The first entry sits directly inside the opener.
 			style.empty, style.beforeComment = edge, edge
 		} else if content[i-1].kind == syntax.Comma || content[i-1].child.endsHeredoc {
-			// An entry after a separator starts its own line once the list
-			// breaks; a heredoc marker serves as that separator.
+			// A heredoc's newline also separates entries.
 			style.empty, style.afterComment = line, line
 			style.blankLine = preserveBlank
 		}
 		if part.kind == syntax.Comma || part.kind == syntax.Ellipsis {
-			// A comma or ellipsis is a suffix of the value before it, so it
-			// follows a comment tightly rather than after a space.
 			style.afterComment = tight
 		}
 
@@ -504,9 +394,8 @@ func delimited(result syntax.Result, pieces pieceList, open int, preserveBlank b
 
 	style := breakingGap(edge, len(content) > 0 && content[len(content)-1].child.endsHeredoc)
 	if len(content) == 0 {
-		// Empty delimiters stay compact: the closer hugs the opener, and a
-		// comment inside only forces a soft break. A source-vertical object
-		// keeps its hard line even when empty (doc.go: Objects).
+		// Empty delimiters stay compact unless the object was broken in the
+		// source.
 		style.empty, style.beforeComment, style.afterComment = tight, soft, soft
 		if edge == hard {
 			style.empty, style.beforeComment, style.afterComment = hard, hard, hard
@@ -517,14 +406,11 @@ func delimited(result syntax.Result, pieces pieceList, open int, preserveBlank b
 	return document.Group(document.Concat(head, document.Indent(document.Concat(parts...)), end, closer.doc))
 }
 
-// moveCommaTrivia hands each comma's leading trivia to the piece after it.
-// Commas are canonical separators rather than comment anchors, so a comment
-// written before a comma renders after it (doc.go: Comments). This also
-// applies to for bindings and template directive headers, not only lists.
+// moveCommaTrivia moves each comma's leading trivia to the piece after it,
+// so a comma always follows its value directly.
 func moveCommaTrivia(pieces []piece) {
 	for i := 0; i < len(pieces)-1; i++ {
-		// A required comma after a heredoc cannot cross the marker newline.
-		// Keeping that gap separate also avoids inventing a blank line later.
+		// A comma after a heredoc must stay on the line after its marker.
 		if i > 0 && pieces[i-1].child.endsHeredoc {
 			continue
 		}

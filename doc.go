@@ -1,56 +1,53 @@
-// Package terrablade formats complete native HCL configurations through Format.
-// Parsing, expression normalization, and layout are one operation; callers do
-// not manage syntax trees or rendering state. No Terraform/OpenTofu executable,
-// expression evaluation, or application schema is needed. HCL JSON is excluded.
+// Package terrablade formats native HCL configuration files.
+//
+// Format parses, normalizes, and lays out a complete file in one call. It needs
+// no Terraform or OpenTofu executable, evaluates no expressions, and checks no
+// application schema. HCL JSON is not supported.
 //
 // # Layout
 //
-// Formatting removes outer blank padding and a leading BOM, and emits a final
-// LF for every file, including empty or whitespace-only files. Attribute
-// groups retain at most one source blank line; block boundaries have one blank
-// line. Assignments and trailing comments align within consecutive groups.
-// Comments and literal template content are preserved, including lone CR bytes.
-// CRLF becomes LF except where a protective CR is needed to retain literal CR
-// content on the next parse.
+// Formatting removes outer blank lines and a leading BOM, and ends every file,
+// even an empty one, with LF. Attribute groups keep at most one source blank
+// line; blocks are separated by one blank line. Assignments and trailing
+// comments align within consecutive groups. Comments and literal template
+// content, including lone CR bytes, are preserved. CRLF becomes LF except where
+// a CR must remain for literal CR content to survive the next parse.
 //
 // # Normalization
 //
 // Interpolation-only quoted wrappers are removed recursively: "${a}" becomes a.
-// Legacy numeric traversal steps become bracket indices: foo.0 becomes foo[0].
-// Steps inside attribute-splat projections retain their legacy syntax to
-// preserve scope. Parentheses protect precedence, computed keys, comments, and
-// mandatory lines. General templates and heredocs retain their literal content.
-// Traversals and template sequences stay attached beyond the preferred width.
+// Legacy numeric traversal steps become bracket indices: foo.0 becomes foo[0],
+// except inside attribute-splat projections, where the rewrite would change
+// scope. Parentheses are kept where they protect precedence, computed keys,
+// comments, or mandatory lines. Templates and heredocs keep their literal
+// content, and traversals and template sequences are not split to fit the
+// preferred width.
 //
 // # Compatibility
 //
-// Default indentation follows Terraform/OpenTofu conventions, while width-driven
-// wrapping and canonical blank-line policies are Terrablade's own. Representative
-// default-indent output is tested as a formatting fixed point for both tools.
-// Known exceptions include the protective space kept after a numeric token when
-// the following dot step could extend that token, as with .0 or .e2 (OpenTofu
-// 1.12.6 removes the space and then rejects its own output), and indentation of
-// mandatory comment lines in general quoted templates. Attribute-splat legacy
-// indices are intentionally retained, not modernized across their scope.
+// Default indentation follows Terraform and OpenTofu conventions; wrapping and
+// blank-line policies are Terrablade's own. Output with default indentation is
+// meant to be left unchanged by terraform fmt and tofu fmt. Known exceptions:
+// Terrablade keeps a space after a numeric token when a following dot step could
+// extend it, as with .0 or .e2 (some tofu fmt versions remove that space and
+// then reject their own output), and indents mandatory comment lines in general
+// quoted templates differently.
 //
 // # Diagnostics
 //
-// Diagnostics describe the original bytes, not normalized output. Line and
-// grapheme columns are one-based; byte offsets are zero-based. CRLF is one
-// cluster and line ending; an offset within a cluster shares its starting
-// column. Each malformed UTF-8 byte counts separately. Tabs and lone CR each
-// occupy one column in diagnostics. Layout instead uses Unicode 17 terminal
-// display widths, with narrow East Asian ambiguous characters and configurable
-// tab stops. Filenames and error presentation belong to callers.
+// Diagnostics describe the original input, not the formatted output. Lines and
+// grapheme-cluster columns are one-based; byte offsets are zero-based. CRLF is
+// one cluster and one line ending, and an offset within a cluster shares its
+// starting column. Each malformed UTF-8 byte, tab, and lone CR occupies one
+// column. Layout instead measures Unicode 17 terminal display widths, with East
+// Asian ambiguous characters narrow and tabs expanded to TabWidth stops.
 //
 // # Resource use
 //
-// Calls share no mutable state. Storage scales with input, intermediate trees,
-// and expanded output. Recursive expression nesting has a parser limit, reported
-// as NestingLimitExceeded. Traversal and layout use iterative work stacks, but
-// deeply indented blocks inherently produce quadratic output bytes. Pathological
-// nested layout groups or fragmented graphemes can take quadratic rendering time.
-// Diagnostic locations take O(n + d log d) time and O(d) additional storage for
-// n input bytes and d diagnostics. There is no cancellation or output-size limit;
-// callers that process untrusted input should impose appropriate resource limits.
+// The parser limits expression nesting, reporting NestingLimitExceeded; other
+// traversal is iterative. Output grows quadratically with block nesting depth,
+// and pathological nested groups or fragmented grapheme clusters can take
+// quadratic rendering time. Locating d diagnostics in n input bytes takes
+// O(n + d log d) time. There is no cancellation or output-size limit, so
+// callers formatting untrusted input should bound its size.
 package terrablade

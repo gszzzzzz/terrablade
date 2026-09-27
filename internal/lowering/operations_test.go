@@ -1,6 +1,7 @@
 package lowering_test
 
 import (
+	"cmp"
 	"testing"
 
 	"github.com/gszzzzzz/terrablade/internal/lowering"
@@ -207,8 +208,8 @@ func TestOperationReferenceCompatibility(t *testing.T) {
 	}
 }
 
-// binaryOperators lists every binary operator with the token kind lowering's
-// ladder maps it through. The spellings drive the parser probes below.
+// binaryOperators lists every binary operator with its token kind. The
+// spellings drive the parser probes below.
 var binaryOperators = []struct {
 	text string
 	kind syntax.TokenKind
@@ -221,21 +222,18 @@ var binaryOperators = []struct {
 	{"*", syntax.Star}, {"/", syntax.Slash}, {"%", syntax.Percent},
 }
 
-// TestBindingPowersMatchParserPrecedence checks lowering's binding-power
-// ladder against the parser's precedence. The parser's own table is
-// unexported and lives in another package, so the only honest comparison runs
-// through the public parser: each probe parses an expression whose tree shape
-// is decided purely by precedence, and the shape is then read back as an
-// ordering. If the parser's precedence ever changes, normalization would
-// start adding or dropping parentheses without this test, since needsGrouping
-// and expressionPower decide that from the ladder alone.
+// TestBindingPowersMatchParserPrecedence checks the precedence the parser
+// exports against the tree shapes it actually produces, and lowering's own
+// traversal and atom levels above it. needsGrouping and expressionPower decide
+// parentheses from these levels alone, so a mismatch would add or drop
+// parentheses without any other test noticing.
 func TestBindingPowersMatchParserPrecedence(t *testing.T) {
 	t.Run("binary pairs", func(t *testing.T) {
 		for _, first := range binaryOperators {
 			for _, second := range binaryOperators {
 				name := first.text + " vs " + second.text
 				t.Run(name, func(t *testing.T) {
-					want := compare(lowering.BinaryPower(first.kind), lowering.BinaryPower(second.kind))
+					want := cmp.Compare(syntax.BinaryPrecedence(first.kind), syntax.BinaryPrecedence(second.kind))
 					if got := parserBinaryOrder(t, first.text, second.text); got != want {
 						t.Fatalf("parser orders %s as %d, ladder says %d", name, got, want)
 					}
@@ -255,7 +253,7 @@ func TestBindingPowersMatchParserPrecedence(t *testing.T) {
 			if operand := nodeChildren(t, root)[0]; operand.Kind() != syntax.UnaryExpression {
 				t.Fatalf("-a %s b has %s on the left, want UnaryExpression", operator.text, operand.Kind())
 			}
-			if lowering.UnaryPower <= lowering.BinaryPower(operator.kind) {
+			if syntax.UnaryPrecedence <= syntax.BinaryPrecedence(operator.kind) {
 				t.Fatalf("ladder puts unary at or below %s", operator.text)
 			}
 		}
@@ -272,7 +270,7 @@ func TestBindingPowersMatchParserPrecedence(t *testing.T) {
 			if operand := nodeChildren(t, root)[1]; operand.Kind() != syntax.TraversalExpression {
 				t.Fatalf("a %s b.c has %s on the right, want TraversalExpression", operator.text, operand.Kind())
 			}
-			if lowering.TraversalPower <= lowering.BinaryPower(operator.kind) {
+			if lowering.TraversalPower <= syntax.BinaryPrecedence(operator.kind) {
 				t.Fatalf("ladder puts traversal at or below %s", operator.text)
 			}
 		}
@@ -280,7 +278,7 @@ func TestBindingPowersMatchParserPrecedence(t *testing.T) {
 		if root.Kind() != syntax.UnaryExpression || nodeChildren(t, root)[0].Kind() != syntax.TraversalExpression {
 			t.Fatalf("-a.b parsed as %s, want a unary expression over a traversal", root.Kind())
 		}
-		if lowering.TraversalPower <= lowering.UnaryPower {
+		if lowering.TraversalPower <= syntax.UnaryPrecedence {
 			t.Fatal("ladder puts traversal at or below unary")
 		}
 	})
@@ -299,14 +297,14 @@ func TestBindingPowersMatchParserPrecedence(t *testing.T) {
 					t.Fatalf("%q parsed as %s, want ConditionalExpression", source, root.Kind())
 				}
 			}
-			if lowering.ConditionalPower >= lowering.BinaryPower(operator.kind) {
+			if syntax.ConditionalPrecedence >= syntax.BinaryPrecedence(operator.kind) {
 				t.Fatalf("ladder puts conditional at or above %s", operator.text)
 			}
 		}
 		if root := parseExpression(t, "-a ? b : c"); root.Kind() != syntax.ConditionalExpression {
 			t.Fatalf("-a ? b : c parsed as %s, want ConditionalExpression", root.Kind())
 		}
-		if lowering.ConditionalPower >= lowering.UnaryPower {
+		if syntax.ConditionalPrecedence >= syntax.UnaryPrecedence {
 			t.Fatal("ladder puts conditional at or above unary")
 		}
 	})
@@ -375,16 +373,16 @@ func groupsLeft(t *testing.T, source string) bool {
 
 // parseExpression parses one expression through the public parser and returns
 // its root node.
-func parseExpression(t *testing.T, source string) syntax.SyntaxNode {
+func parseExpression(t *testing.T, source string) syntax.Node {
 	t.Helper()
 	_, node := parse(t, source)
 	return node
 }
 
 // nodeChildren returns a node's child nodes in source order, skipping tokens.
-func nodeChildren(t *testing.T, node syntax.SyntaxNode) []syntax.SyntaxNode {
+func nodeChildren(t *testing.T, node syntax.Node) []syntax.Node {
 	t.Helper()
-	var children []syntax.SyntaxNode
+	var children []syntax.Node
 	for i := range node.ChildCount() {
 		if child, ok := node.Child(i).Node(); ok {
 			children = append(children, child)
@@ -394,16 +392,4 @@ func nodeChildren(t *testing.T, node syntax.SyntaxNode) []syntax.SyntaxNode {
 		t.Fatalf("%s has no child nodes", node.Kind())
 	}
 	return children
-}
-
-// compare returns the sign of left - right.
-func compare(left, right int) int {
-	switch {
-	case left < right:
-		return -1
-	case left > right:
-		return 1
-	default:
-		return 0
-	}
 }

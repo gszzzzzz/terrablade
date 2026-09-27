@@ -1,10 +1,7 @@
 package syntax
 
-// forExpression parses a tuple or object for expression whose opener is at the
-// cursor. It preserves the concrete tuple/object form instead of evaluating its
-// projection. Bindings and contextual keywords remain Identifier tokens. The
-// key/value arrow and the grouping ellipsis are parsed in both forms and
-// diagnosed in the tuple form, so the tree keeps their bytes either way.
+// forExpression parses a tuple or object for expression. The key arrow and
+// grouping ellipsis are parsed in both forms, and reported in a tuple.
 func (p *parser) forExpression(b *nodeBuilder) {
 	open := p.current().kind
 	closer, missingCloser := CloseBracket, ExpectedClosingBracket
@@ -40,19 +37,11 @@ func (p *parser) forExpression(b *nodeBuilder) {
 		p.operand(b, lowestPower, newlineTransparent)
 	}
 
-	if !p.expect(b, closer, missingCloser, newlineTransparent) {
-		// A for-expression has no item separators. Recover its remaining tail as
-		// one region rather than interpreting a stray comma as a new projection.
-		p.recoverUntil(b, newlineTransparent, expressionBoundaries)
-		if p.peek(newlineTransparent) == closer {
-			p.consumeLookahead(b, newlineTransparent)
-		}
-	}
+	p.expectCloser(b, closer, missingCloser)
 }
 
-// forIntroduction parses the bindings, "in", and collection that follow a for
-// keyword. The same grammar introduces template for directives. Callers consume
-// `for` and supply their own following ':' or template closer.
+// forIntroduction parses the variables, "in", and collection after the "for"
+// of a for expression or directive.
 func (p *parser) forIntroduction(b *nodeBuilder) bool {
 	if !p.expect(b, Identifier, ExpectedForVariable, newlineTransparent) {
 		return false

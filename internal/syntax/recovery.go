@@ -1,9 +1,8 @@
 package syntax
 
-// recoverUntil retains malformed material in one ErrorNode until a boundary
-// chosen by its caller. Leading trivia stays on the parent; trailing trivia is
-// left uncommitted for the next production. If already at a boundary, even the
-// leading trivia must stay untouched, especially at EOF or a template closer.
+// recoverUntil consumes tokens into one ErrorNode on parent until the next
+// token in stops. Leading trivia goes to parent and trailing trivia is left
+// unconsumed; at a stop it consumes nothing.
 func (p *parser) recoverUntil(parent *nodeBuilder, context newlineContext, stops tokenSet) {
 	if stops.has(p.peek(context)) {
 		return
@@ -14,7 +13,7 @@ func (p *parser) recoverUntil(parent *nodeBuilder, context newlineContext, stops
 	for !stops.has(p.peek(context)) {
 		p.consumeUntil(&b, p.look(context))
 		if closing(p.current().kind) != Invalid {
-			// Inner commas/newlines are not separators for the outer production.
+			// Separators inside a nested construct do not stop recovery.
 			p.skipConstruct(&b)
 		} else {
 			p.consumeLookahead(&b, context)
@@ -23,18 +22,14 @@ func (p *parser) recoverUntil(parent *nodeBuilder, context newlineContext, stops
 	parent.node(b.finish(ErrorNode))
 }
 
-// skipConstruct retains one balanced construct as raw tokens without recursion
-// during error recovery. Nested template/interpolation delimiters remain visible
-// in the lexical stream.
+// skipConstruct consumes the balanced construct opened at pos as raw tokens.
 func (p *parser) skipConstruct(b *nodeBuilder) {
 	if p.halted {
 		return
 	}
 
-	// Raw tokens preserve template whitespace and delimiters in the ErrorNode subtree;
-	// expression lookahead would interpret trivia in the wrong sub-language.
-	// An unterminated construct still ends at its last non-trivia token, so the
-	// trailing trivia of the file stays with the parent like any other node.
+	// An unterminated construct ends at its last non-trivia token, leaving
+	// trailing trivia to the parent.
 	var ends []TokenKind
 	end := p.pos
 	for i := p.pos; p.tokens[i].kind != EOF; i++ {
@@ -44,11 +39,10 @@ func (p *parser) skipConstruct(b *nodeBuilder) {
 		} else if len(ends) > 0 && ends[len(ends)-1] == kind {
 			ends = ends[:len(ends)-1]
 		} else if closingDelimiters.has(kind) {
-			// A mismatched closer can belong to an enclosing expression or
-			// template. Leave it available instead of swallowing the outer tail.
+			// A mismatched closer may belong to an enclosing construct.
 			break
 		}
-		if !isTrivia(kind) {
+		if !kind.IsTrivia() {
 			end = i + 1
 		}
 		if len(ends) == 0 {
@@ -58,9 +52,7 @@ func (p *parser) skipConstruct(b *nodeBuilder) {
 	p.consumeUntil(b, end)
 }
 
-// closing returns the token kind that balances an opener, or Invalid for any
-// other kind. Template openers close with TemplateSequenceEnd, so recovery can
-// skip a whole interpolation or directive as one construct.
+// closing returns the closer that balances an opener, or Invalid.
 func closing(kind TokenKind) TokenKind {
 	switch kind {
 	case OpenParen:

@@ -322,11 +322,11 @@ func TestLexTokens(t *testing.T) {
 			source := []byte(test.source)
 			result := lex(source)
 			assertLexInvariants(t, source, result)
-			if len(result.Diagnostics) != 0 {
-				t.Fatalf("unexpected diagnostics: %+v", result.Diagnostics)
+			if len(result.diagnostics) != 0 {
+				t.Fatalf("unexpected diagnostics: %+v", result.diagnostics)
 			}
 			var got []tokenText
-			for _, token := range result.Tokens[:len(result.Tokens)-1] {
+			for _, token := range result.tokens[:len(result.tokens)-1] {
 				got = append(got, tokenText{token.Kind(), string(source[token.Span().Start:token.Span().End])})
 			}
 			if !reflect.DeepEqual(got, test.want) {
@@ -382,8 +382,8 @@ func TestLexDiagnostics(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			result := lex([]byte(test.source))
 			assertLexInvariants(t, []byte(test.source), result)
-			if !reflect.DeepEqual(result.Diagnostics, test.want) {
-				t.Errorf("diagnostics = %+v, want %+v", result.Diagnostics, test.want)
+			if !reflect.DeepEqual(result.diagnostics, test.want) {
+				t.Errorf("diagnostics = %+v, want %+v", result.diagnostics, test.want)
 			}
 		})
 	}
@@ -538,11 +538,11 @@ func TestLexNumericCandidates(t *testing.T) {
 			source := []byte(test.source)
 			result := lex(source)
 			assertLexInvariants(t, source, result)
-			if len(result.Diagnostics) != 0 {
-				t.Fatalf("unexpected lexical diagnostics: %+v", result.Diagnostics)
+			if len(result.diagnostics) != 0 {
+				t.Fatalf("unexpected lexical diagnostics: %+v", result.diagnostics)
 			}
 			var got []tokenText
-			for _, token := range result.Tokens[:len(result.Tokens)-1] {
+			for _, token := range result.tokens[:len(result.tokens)-1] {
 				got = append(got, tokenText{token.Kind(), string(source[token.Span().Start:token.Span().End])})
 			}
 			if !reflect.DeepEqual(got, test.want) {
@@ -593,4 +593,16 @@ func FuzzLex(f *testing.F) {
 			t.Fatal("lex is not deterministic")
 		}
 	})
+}
+
+func TestContinuesNumber(t *testing.T) {
+	for step, want := range map[string]bool{
+		"0": true, "01": true, "e2": true, "E2": true, "e+2": true, "e-2": true,
+		"e2suffix": true, "id": false, "e": false, "e+": false, "e-x": false,
+		"E": false, "x0": false, "*": false, "_0": false,
+	} {
+		if got := ContinuesNumber(step); got != want {
+			t.Errorf("ContinuesNumber(%q) = %v, want %v", step, got, want)
+		}
+	}
 }

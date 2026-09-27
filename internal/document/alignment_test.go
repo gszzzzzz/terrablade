@@ -110,6 +110,17 @@ func TestAlignedCells(t *testing.T) {
 			),
 			80, "a    = 1\nlong = <<E\nx\nE\nz    = 2",
 		},
+		{
+			// Upstream HCL measures a row from its first line, so literal
+			// lines before a cell count toward that cell's prefix.
+			"literal lines count toward a later prefix",
+			document.Concat(
+				document.Text("/* multi"), document.LiteralLine(),
+				row("x */ a", document.Text("1"), ""), document.HardLine(),
+				row("long", document.Text("2"), ""),
+			),
+			80, "/* multi\nx */ a = 1\nlong            = 2",
+		},
 
 		{
 			"padding follows layout",

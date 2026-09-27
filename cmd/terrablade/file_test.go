@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
@@ -132,7 +133,7 @@ func TestWriteLinks(t *testing.T) {
 
 func TestWriteFileDoesNotCreateMissingPath(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "missing.tf")
-	if err := writeFile(path, []byte("a = 1\n")); !os.IsNotExist(err) {
+	if err := writeFile(path, nil, []byte("a = 1\n")); !os.IsNotExist(err) {
 		t.Fatalf("missing path: got %v, want not-exist error", err)
 	}
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
@@ -182,4 +183,22 @@ func statFile(t testing.TB, path string) os.FileInfo {
 		t.Fatal(err)
 	}
 	return info
+}
+
+func TestRestoreRewritesOriginal(t *testing.T) {
+	path := putFile(t, t.TempDir(), "main.tf", "a = 1 partial longer content")
+	file, err := os.OpenFile(path, os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := file.Seek(0, io.SeekEnd); err != nil {
+		t.Fatal(err)
+	}
+	if err := restore(file, []byte("a=1")); err != nil {
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+	assertContents(t, path, "a=1")
 }

@@ -163,3 +163,13 @@ func TestDiagnosticFormattingUsesKindName(t *testing.T) {
 		t.Fatalf("formatted diagnostic = %q, want readable kind", formatted)
 	}
 }
+
+func TestTokenKindClasses(t *testing.T) {
+	for kind := range tokenKindCount {
+		comment := kind == LineComment || kind == BlockComment
+		trivia := comment || kind == Whitespace || kind == Newline
+		if kind.IsComment() != comment || kind.IsTrivia() != trivia {
+			t.Errorf("%v: IsComment = %v, IsTrivia = %v", kind, kind.IsComment(), kind.IsTrivia())
+		}
+	}
+}

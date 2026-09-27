@@ -52,10 +52,7 @@ func FuzzFile(f *testing.F) {
 		if len(result.Diagnostics()) != 0 {
 			t.Skip()
 		}
-		doc, err := lowering.File(result)
-		if err != nil {
-			t.Fatal(err)
-		}
+		doc := lowering.File(result)
 		options := document.Options{PrintWidth: int(width) + 1}
 		output := document.Render(doc, options)
 		assertFileContent(t, source, output)
@@ -69,19 +66,18 @@ func TestDeepAndWideBodies(t *testing.T) {
 	// Construction must not recurse with block nesting. Rendering a deeply
 	// indented body has intrinsically quadratic output bytes, so test rendering
 	// separately at a depth that keeps that unavoidable output affordable.
-	deep := strings.Repeat("b {\n", 20000) + "a=x\n" + strings.Repeat("}\n", 20000)
+	limitStack(t)
+	deep := strings.Repeat("b {\n", 5000) + "a=x\n" + strings.Repeat("}\n", 5000)
 	result := syntax.Parse([]byte(deep))
 	if len(result.Diagnostics()) != 0 {
 		t.Fatal(result.Diagnostics())
 	}
-	if _, err := lowering.File(result); err != nil {
-		t.Fatal(err)
-	}
+	lowering.File(result)
 	for _, source := range []string{
 		strings.Repeat("b {\n", 512) + "a=x\n" + strings.Repeat("}\n", 512),
-		wideBody(10000),
-		"b" + strings.Repeat(" label", 20000) + " {}\n",
-		"b" + strings.Repeat(" /*header*/ label", 20000) + " {}\n",
+		wideBody(2500),
+		"b" + strings.Repeat(" label", 5000) + " {}\n",
+		"b" + strings.Repeat(" /*header*/ label", 5000) + " {}\n",
 	} {
 		output := renderFile(t, source, 30)
 		assertFileContent(t, source, output)
@@ -93,19 +89,12 @@ func TestDeepAndWideBodies(t *testing.T) {
 
 func TestConcurrentFileLowering(t *testing.T) {
 	result := syntax.Parse([]byte("b {\n a=1\n longer={\nx=1\nlong=2\n}\n}\n"))
-	doc, err := lowering.File(result)
-	if err != nil {
-		t.Fatal(err)
-	}
+	doc := lowering.File(result)
 	want := document.Render(doc, document.Options{})
 	var workers sync.WaitGroup
 	for range 8 {
 		workers.Go(func() {
-			other, err := lowering.File(result)
-			if err != nil {
-				t.Error(err)
-				return
-			}
+			other := lowering.File(result)
 			if document.Render(other, document.Options{}) != want || document.Render(doc, document.Options{}) != want {
 				t.Error("concurrent file layout changed")
 			}
@@ -126,9 +115,7 @@ func BenchmarkFileLowering(b *testing.B) {
 				b.ReportAllocs()
 				b.ResetTimer()
 				for b.Loop() {
-					if _, err := lowering.File(result); err != nil {
-						b.Fatal(err)
-					}
+					lowering.File(result)
 				}
 			})
 		}

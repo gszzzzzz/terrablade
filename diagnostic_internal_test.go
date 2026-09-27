@@ -39,7 +39,7 @@ func TestUnknownDiagnosticKindPanics(t *testing.T) {
 			t.Fatal("an unknown internal kind escaped the public conversion")
 		}
 	}()
-	newParseError("", []syntax.Diagnostic{{Kind: syntax.DiagnosticKindCount}})
+	newParseError(syntax.Result{}, []syntax.Diagnostic{{Kind: syntax.DiagnosticKindCount}})
 }
 
 // Inspect declarations instead of maintaining a second hand-written list that

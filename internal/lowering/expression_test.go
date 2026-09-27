@@ -44,7 +44,9 @@ func TestExpressionLayouts(t *testing.T) {
 		{"line comment before comma", lines("f(a # keep", ",b)"), 80, lines("f(", "  a, # keep", "  b,", ")")},
 		{"trailing comment", lines("[a # keep", "]"), 80, lines("[", "  a, # keep", "]")},
 		{"trailing comment after comma", lines("[a, # keep", "]"), 80, lines("[", "  a, # keep", "]")},
-		{"empty with line comment", lines("[ # empty", " ]"), 80, lines("[", "  # empty", "]")},
+		{"empty with line comment", lines("[ # empty", " ]"), 80, lines("[ # empty", "]")},
+		{"opener line comment stays inline", lines("[ # c", "1]"), 80, lines("[ # c", "  1,", "]")},
+		{"opener line comment on own line", lines("[", "# c", "1]"), 80, lines("[", "  # c", "  1,", "]")},
 		{"multiple comments", "f(/*a*/ /*b*/x)", 80, "f(/*a*/ /*b*/ x)"},
 		{
 			name:   "multiline comment literal",
@@ -130,10 +132,10 @@ func TestExpressionRejectsInvalidInput(t *testing.T) {
 	for _, test := range []struct {
 		name   string
 		result syntax.Result
-		node   syntax.SyntaxNode
+		node   syntax.Node
 	}{
-		{"zero result and node", syntax.Result{}, syntax.SyntaxNode{}},
-		{"zero node", valid, syntax.SyntaxNode{}},
+		{"zero result and node", syntax.Result{}, syntax.Node{}},
+		{"zero node", valid, syntax.Node{}},
 		{"file instead of expression", valid, valid.Root()},
 		{"diagnostic elsewhere", invalid, firstExpression(invalid)},
 	} {

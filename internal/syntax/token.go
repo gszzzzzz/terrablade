@@ -1,15 +1,15 @@
 package syntax
 
-// TokenKind identifies a lexical element. Its numeric value is not a stable format.
+//go:generate go run golang.org/x/tools/cmd/stringer@v0.42.0 -type=TokenKind,NodeKind,DiagnosticKind -output=kind_string.go
+
+// TokenKind identifies a lexical element.
 type TokenKind uint8
 
 const (
 	Invalid TokenKind = iota
 	EOF
-	// BOM is outside native HCL syntax, but Terraform/OpenTofu/HCL tooling may
-	// accept or strip a leading BOM. This token preserves those input bytes;
-	// placement acceptance belongs to parser policy, and canonical omission or
-	// preservation to printer policy. Comments and template text keep it as content.
+	// BOM is a U+FEFF outside comments and template text. Native HCL has no
+	// BOM, but upstream tooling accepts one at the start of a file.
 	BOM
 	Whitespace
 	Newline
@@ -65,15 +65,21 @@ const (
 	tokenKindCount
 )
 
+// IsTrivia reports whether k carries no syntax of its own: whitespace, a
+// newline, or a comment.
+func (k TokenKind) IsTrivia() bool { return classifyTrivia(k) != notTrivia }
+
+// IsComment reports whether k is a line or block comment.
+func (k TokenKind) IsComment() bool { return k == LineComment || k == BlockComment }
+
 // Span is a half-open byte interval [Start, End) in the original source.
 type Span struct {
 	Start int
 	End   int
 }
 
-// lexResult contains tokens and lexical errors, in source order. An input with
-// diagnostics must not be formatted. The token partition remains lossless.
+// lexResult holds the tokens and lexical errors, in source order.
 type lexResult struct {
-	Tokens      []SyntaxToken
-	Diagnostics []Diagnostic
+	tokens      []Token
+	diagnostics []Diagnostic
 }

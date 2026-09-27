@@ -63,6 +63,7 @@ func TestTemplateLayouts(t *testing.T) {
 		{"conditional ending in object", `"prefix ${true?{}:{}}"`, 1, `"prefix ${true ? {} : {} }"`},
 		{"object for boundaries", `"prefix ${{for k,v in x:k=>v}}"`, 1, `"prefix ${ { for k, v in x : k => v } }"`},
 		{"interpolation comments", lines(`"prefix ${a # why`, ` + b}"`), 1, lines(`"prefix ${a # why`, `  + b}"`)},
+		{"opener line comment keeps its space", lines(`"p ${f( # c`, `x)}"`), 80, lines(`"p ${f( # c`, `    x)}"`)},
 		{"strip interpolation overflows", `"prefix ${~alpha + beta~}"`, 1, `"prefix ${~alpha + beta~}"`},
 		{"directive overflows", `"%{if alpha && beta}yes%{endif}"`, 1, `"%{if alpha && beta}yes%{endif}"`},
 		{

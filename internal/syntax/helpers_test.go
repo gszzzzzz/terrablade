@@ -20,7 +20,7 @@ type tokenText struct {
 // is empty, a BOM token spans exactly one U+FEFF, and concatenating the tokens
 // reproduces the input. The lexer's own output and the leaves of a parsed tree
 // both pass through here so the rule is written down once.
-func assertTokenPartition(t *testing.T, source []byte, tokens []SyntaxToken) {
+func assertTokenPartition(t *testing.T, source []byte, tokens []Token) {
 	t.Helper()
 	if len(tokens) == 0 {
 		t.Fatal("missing EOF")
@@ -70,8 +70,8 @@ func assertDiagnosticOrder(t *testing.T, source []byte, diagnostics []Diagnostic
 // assertLexInvariants checks a lexer result, which has no tree around it yet.
 func assertLexInvariants(t *testing.T, source []byte, result lexResult) {
 	t.Helper()
-	assertTokenPartition(t, source, result.Tokens)
-	assertDiagnosticOrder(t, source, result.Diagnostics)
+	assertTokenPartition(t, source, result.tokens)
+	assertDiagnosticOrder(t, source, result.diagnostics)
 }
 
 // assertTreeInvariants is the one internal walker over a parsed tree. It
@@ -96,10 +96,10 @@ func assertTreeInvariants(t *testing.T, source []byte, file Result) {
 	}
 
 	type frame struct {
-		element SyntaxElement
+		element Element
 		exit    bool
 	}
-	var leaves []SyntaxToken
+	var leaves []Token
 	end, errors := 0, 0
 	stack := []frame{{element: file.root.Element()}}
 	for len(stack) > 0 {
@@ -122,10 +122,10 @@ func assertTreeInvariants(t *testing.T, source []byte, file Result) {
 			}
 			count := node.ChildCount()
 			if node.Kind() != File && node.Kind() != Body && count > 0 {
-				if token, ok := node.Child(0).Token(); ok && isTrivia(token.Kind()) {
+				if token, ok := node.Child(0).Token(); ok && token.Kind().IsTrivia() {
 					t.Fatalf("%v begins with %v trivia: %s", node.Kind(), token.Kind(), expressionShape(file, element))
 				}
-				if token, ok := node.Child(count - 1).Token(); ok && isTrivia(token.Kind()) {
+				if token, ok := node.Child(count - 1).Token(); ok && token.Kind().IsTrivia() {
 					t.Fatalf("%v ends with %v trivia: %s", node.Kind(), token.Kind(), expressionShape(file, element))
 				}
 			}
@@ -134,7 +134,7 @@ func assertTreeInvariants(t *testing.T, source []byte, file Result) {
 				stack = append(stack, frame{element: node.Child(i)})
 			}
 		} else if token, ok := element.Token(); ok {
-			leaves = append(leaves, SyntaxToken{kind: token.Kind(), span: span})
+			leaves = append(leaves, Token{kind: token.Kind(), span: span})
 			end = span.End
 		} else {
 			t.Fatal("invalid element in tree")
@@ -142,7 +142,7 @@ func assertTreeInvariants(t *testing.T, source []byte, file Result) {
 	}
 
 	assertTokenPartition(t, source, leaves)
-	if want := lex(source).Tokens; !reflect.DeepEqual(leaves, want) {
+	if want := lex(source).tokens; !reflect.DeepEqual(leaves, want) {
 		t.Fatalf("tree leaves differ from lexer tokens:\n%+v\nwant:\n%+v", leaves, want)
 	}
 	if errors > 0 && len(file.diagnostics) == 0 {
@@ -158,11 +158,11 @@ func assertTokens(t *testing.T, text string, want []tokenText) {
 	source := []byte(text)
 	result := lex(source)
 	assertLexInvariants(t, source, result)
-	if len(result.Diagnostics) != 0 {
-		t.Fatalf("unexpected diagnostics: %+v", result.Diagnostics)
+	if len(result.diagnostics) != 0 {
+		t.Fatalf("unexpected diagnostics: %+v", result.diagnostics)
 	}
 	var got []tokenText
-	for _, token := range result.Tokens[:len(result.Tokens)-1] {
+	for _, token := range result.tokens[:len(result.tokens)-1] {
 		got = append(got, tokenText{token.Kind(), string(source[token.Span().Start:token.Span().End])})
 	}
 	if !reflect.DeepEqual(got, want) {
@@ -203,30 +203,29 @@ func assertBody(t *testing.T, source string, diagnostics []Diagnostic, shape str
 // line, bodyShape indents one element per line. Both omit trivia, for
 // readability alone; assertTreeInvariants and the trivia-ownership tests
 // independently pin every token, every span, and each comment's parent.
-func expressionShape(file Result, current SyntaxElement) string {
+func expressionShape(file Result, current Element) string {
 	if element, ok := current.Token(); ok {
-		if isTrivia(element.Kind()) || element.Kind() == EOF {
+		if element.Kind().IsTrivia() || element.Kind() == EOF {
 			return ""
 		}
 		span := element.Span()
 		return strconv.Quote(file.source[span.Start:span.End])
 	} else if element, ok := current.Node(); ok {
-		names := shapeNodeNames
 		var children []string
 		for i := range element.ChildCount() {
 			if child := expressionShape(file, element.Child(i)); child != "" {
 				children = append(children, child)
 			}
 		}
-		return names[element.Kind()] + "(" + strings.Join(children, ", ") + ")"
+		return shapeNodeNames[element.Kind()] + "(" + strings.Join(children, ", ") + ")"
 	}
 	return "<invalid>"
 }
 
-func bodyShape(file Result, root SyntaxElement) string {
+func bodyShape(file Result, root Element) string {
 	var out strings.Builder
-	var visit func(SyntaxElement, int)
-	visit = func(element SyntaxElement, depth int) {
+	var visit func(Element, int)
+	visit = func(element Element, depth int) {
 		if node, ok := element.Node(); ok {
 			out.WriteString(strings.Repeat("  ", depth))
 			out.WriteString(shapeNodeNames[node.Kind()])
@@ -234,7 +233,7 @@ func bodyShape(file Result, root SyntaxElement) string {
 			for i := range node.ChildCount() {
 				visit(node.Child(i), depth+1)
 			}
-		} else if token, ok := element.Token(); ok && !isTrivia(token.Kind()) && token.Kind() != EOF {
+		} else if token, ok := element.Token(); ok && !token.Kind().IsTrivia() && token.Kind() != EOF {
 			out.WriteString(strings.Repeat("  ", depth))
 			span := token.Span()
 			out.WriteString(strconv.Quote(file.source[span.Start:span.End]))
@@ -263,7 +262,7 @@ var shapeNodeNames = map[NodeKind]string{
 
 // countTree walks every node and token with a caller-owned stack, which is how
 // the allocation tests and benchmarks traverse without allocating.
-func countTree(root SyntaxNode, stack []SyntaxElement) (nodes, tokens, width int) {
+func countTree(root Node, stack []Element) (nodes, tokens, width int) {
 	stack = append(stack[:0], root.Element())
 	for len(stack) > 0 {
 		element := stack[len(stack)-1]

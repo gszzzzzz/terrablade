@@ -10,27 +10,18 @@ import (
 
 // Options controls layout. Zero fields use defaults; negative fields panic.
 type Options struct {
-	// PrintWidth is the preferred terminal display width, default 80. Text is
-	// never split, so unbreakable content can exceed it.
-	PrintWidth int
-	// IndentWidth is the number of spaces per indentation level, default 2.
-	IndentWidth int
-	// TabWidth is the distance between tab stops, default 8. Literal tabs are
-	// preserved; automatic indentation always uses spaces.
-	TabWidth int
+	PrintWidth  int // Preferred line width in display columns; default 80.
+	IndentWidth int // Spaces per indentation level; default 2.
+	TabWidth    int // Distance between tab stops; default 8.
 }
 
-// The Options field documentation quotes these values; normalized substitutes
-// them for zero fields.
 const (
 	defaultPrintWidth  = 80
 	defaultIndentWidth = 2
 	defaultTabWidth    = 8
 )
 
-// Render returns a deterministic layout. It emits LF newlines only when asked
-// by the document and does not append a final newline or trim Text whitespace.
-// Automatic indentation is delayed until text, so empty lines have no padding.
+// Render lays out doc as text. The result is deterministic.
 func Render(doc Doc, options Options) string {
 	r := renderer{options: options.normalized(), stack: []command{{doc: doc}}}
 
@@ -39,9 +30,8 @@ func Render(doc Doc, options Options) string {
 		current := r.stack[last]
 		r.stack = r.stack[:last]
 
-		// A cell-end marker is popped exactly when every command pushed for
-		// the cell's content has been rendered, so the current row is the
-		// cell's last row. Its zero doc must not be treated as content.
+		// A cell-end marker pops once the cell's content has rendered, so the
+		// current row is the cell's last.
 		if current.cellEnd != 0 {
 			r.cells[current.cellEnd-1].lastRow = r.row
 			continue
@@ -68,47 +58,36 @@ func Render(doc Doc, options Options) string {
 	return alignCells(r.output.String(), r.cells)
 }
 
-// renderer is the mutable state of one Render call. Each call owns its own
-// renderer, which is what makes shared Docs safe to render concurrently.
+// renderer is the mutable state of one Render call.
 type renderer struct {
 	options Options
 	output  strings.Builder
-	// line tracks the display width of the current output line.
-	line lineWidth
-	// pendingIndent is indentation owed to the current line that has not
-	// been written yet. Writing it lazily, on the first text, is what keeps
-	// empty lines free of trailing spaces and lets a cell at the start of a
-	// line account for indentation it has not yet emitted.
+	line    lineWidth
+	// pendingIndent is indentation owed to the current line, written before
+	// its first text so that empty lines stay unpadded.
 	pendingIndent int
-	// stack holds the commands still to render, last first. probeScratch is
-	// kept between groups so fits does not reallocate its stack.
+	// stack holds pending commands, top last; probeScratch is reused by fits.
 	stack, probeScratch []command
-	// cells records every alignment cell in output order for alignCells.
-	cells []renderedCell
-	// row counts structural line breaks; rowStart is the output offset of
-	// the current row. LiteralLine advances neither, because literal text
-	// belongs to one opaque row for alignment purposes.
+	cells               []renderedCell
+	// row counts line breaks and rowStart is the current row's output offset.
+	// LiteralLine advances neither: literal text stays in one alignment row.
 	row, rowStart int
 }
 
-// command is one unit of pending render work: a document to emit in a given
-// indentation and flat/broken mode, or a cell-end marker.
+// command is pending render work: a Doc with its indentation and mode, or a
+// cell-end marker.
 type command struct {
 	doc    Doc
 	indent int
-	// flat selects the flat branch of lines and IfBreak. It is inherited by
-	// every command expanded from this one.
+	// flat selects flat lines and IfBreak branches; expanded commands inherit it.
 	flat bool
-	// cellEnd is the one-based index of an alignment cell whose content ends
-	// at this command, or zero for ordinary commands. Sharing the render
-	// stack with content is what lets the renderer learn a cell's last row
-	// without a recursive traversal; one-based so that the zero command is
-	// never mistaken for a marker.
+	// cellEnd is the one-based index of the cell whose content ends here, or
+	// zero. Pushed below the content, it finds a cell's last row without
+	// recursion.
 	cellEnd int
 }
 
-// flushIndent writes the indentation deferred by the last line break. It runs
-// before any visible output on the line, so empty lines stay unpadded.
+// flushIndent writes the pending indentation.
 func (r *renderer) flushIndent() {
 	if r.pendingIndent <= 0 {
 		return
@@ -138,9 +117,7 @@ func (r *renderer) emitLine(current command, k kind) {
 	r.output.WriteByte('\n')
 	r.line = lineWidth{}
 
-	// A literal line owes no indentation and does not start an alignment
-	// row; the indentation context survives in current.indent for the next
-	// ordinary line.
+	// A literal line owes no indentation and does not start an alignment row.
 	if k == literalLineKind {
 		r.pendingIndent = 0
 		return
@@ -154,10 +131,9 @@ func (r *renderer) emitLine(current command, k kind) {
 // A group inside a flat ancestor or with a mandatory line break needs no probe.
 func (r *renderer) enterGroup(current command, n *node) {
 	if !current.flat && !n.forceBreak {
-		candidate := command{doc: n.children[0], indent: current.indent, flat: true}
+		candidate := command{doc: n.child, indent: current.indent, flat: true}
 
-		// Indentation owed to this line occupies columns once text arrives,
-		// so the probe must start from it rather than from the empty line.
+		// Owed indentation counts toward the probe's starting width.
 		start := r.line
 		if r.pendingIndent > 0 {
 			start.width = r.pendingIndent
@@ -165,7 +141,7 @@ func (r *renderer) enterGroup(current command, n *node) {
 		current.flat, r.probeScratch = fits(candidate, r.stack, start, r.options, r.probeScratch)
 	}
 
-	current.doc = n.children[0]
+	current.doc = n.child
 	r.stack = append(r.stack, current)
 }
 
@@ -181,19 +157,14 @@ func (r *renderer) enterCell(current command, n *node) {
 	})
 	r.stack = append(r.stack, command{cellEnd: len(r.cells)})
 
-	current.doc = n.children[0]
+	current.doc = n.child
 	r.stack = append(r.stack, current)
 }
 
-// fits reports whether candidate, rendered flat, keeps the current line within
-// the print width, starting from line, a copy of the renderer's tracker for the
-// current output line. A probe includes the continuation, not just the candidate
-// group. Otherwise a closing delimiter or following operator could overflow a
-// line that "fits". It stops at the first physical newline; text beyond it
-// uses a fresh width. The continuation is borrowed read-only. Copying the
-// render stack for every group would make even a flat list of independent
-// groups quadratic. The returned slice is the emptied scratch stack, handed
-// back so the next probe can reuse its capacity.
+// fits reports whether candidate, rendered flat from line, fits in the print
+// width together with the continuation up to its first line break, so that a
+// following delimiter or operator is counted. The continuation is read, not
+// copied, to keep probing linear. fits returns scratch emptied for reuse.
 func fits(candidate command, continuation []command, line lineWidth, options Options, scratch []command) (bool, []command) {
 	stack := append(scratch[:0], candidate)
 	next := len(continuation) - 1
@@ -230,10 +201,9 @@ func fits(candidate command, continuation []command, line lineWidth, options Opt
 		case hardLineKind, literalLineKind:
 			return true, stack[:0]
 		case groupKind, cellKind:
-			// Candidate descendants inherit flat mode. An undecided sibling
-			// keeps the continuation's broken mode, so its break opportunity
-			// can end this line instead of forcing an earlier group to break.
-			current.doc = n.children[0]
+			// Candidate descendants inherit flat mode. Continuation groups
+			// stay broken, so their line breaks can end the probe.
+			current.doc = n.child
 			stack = append(stack, current)
 		default:
 			stack = expand(stack, current, options.IndentWidth)
@@ -243,9 +213,8 @@ func fits(candidate command, continuation []command, line lineWidth, options Opt
 	return line.width <= options.PrintWidth, stack[:0]
 }
 
-// expand pushes the children of a structural node in render order. Text,
-// lines, groups, and cells are handled by the callers because they produce
-// output or need probe state; the kinds here only rewrite the command.
+// expand pushes the children of a concat, indent, ForceFlat, or IfBreak node
+// in render order.
 func expand(stack []command, current command, indentWidth int) []command {
 	n := current.doc.node
 
@@ -256,11 +225,11 @@ func expand(stack []command, current command, indentWidth int) []command {
 		}
 	case indentKind:
 		current.indent = addWidth(current.indent, indentWidth)
-		current.doc = n.children[0]
+		current.doc = n.child
 		stack = append(stack, current)
 	case forceFlatKind:
 		current.flat = true
-		current.doc = n.children[0]
+		current.doc = n.child
 		stack = append(stack, current)
 	case ifBreakKind:
 		index := 0
@@ -270,25 +239,19 @@ func expand(stack []command, current command, indentWidth int) []command {
 		current.doc = n.children[index]
 		stack = append(stack, current)
 	default:
-		// Every other kind is handled by a caller before it gets here, so a
-		// kind reaching this point means a new primitive was added without
-		// teaching the render and probe loops about it.
+		// Callers handle every other kind.
 		panic("document: unhandled kind")
 	}
 
 	return stack
 }
 
-// lineWidth measures the display width of one output line across Text nodes.
-// It retains the last grapheme because the next Text may extend it, e.g.
-// separate Text("👩") and Text("\u200d💻"). Measuring each node independently
-// is incorrect. A copy is an independent probe: the retained string is
-// immutable.
+// lineWidth measures the display width of an output line across Text nodes.
+// It keeps the last grapheme cluster because the next Text may extend it, as
+// Text("\u200d💻") extends Text("👩"). Copies are independent.
 type lineWidth struct {
-	// width is the display width so far, in terminal cells.
 	width int
-	// tail is the last accepted grapheme cluster and tailWidth its width, so
-	// the cluster can be re-measured if the next text extends it.
+	// tail is the last grapheme cluster and tailWidth its width.
 	tail      string
 	tailWidth int
 }
@@ -299,10 +262,8 @@ func (w *lineWidth) measure(text string, tabWidth int) {
 		return
 	}
 
-	// Two adjacent ASCII code points never form one grapheme cluster (CR LF
-	// is the only ASCII pair, and Text cannot contain LF), so the retained
-	// tail cannot be extended. This is the common path for tokens, spaces,
-	// and punctuation: no copying.
+	// Adjacent ASCII characters never join into one cluster (CR LF would,
+	// but Text has no LF), so the common case skips joinTail.
 	if w.tail != "" {
 		ascii := w.tail[len(w.tail)-1] < utf8.RuneSelf && text[0] < utf8.RuneSelf
 		if !ascii {
@@ -319,11 +280,9 @@ func (w *lineWidth) measure(text string, tabWidth int) {
 	}
 }
 
-// joinTail re-measures the grapheme cluster that straddles the boundary
-// between the retained tail and text. It grows the tail one cluster of text
-// at a time until the joined string splits, so only the crossing cluster is
-// ever copied. It returns the unmeasured remainder of text and whether text
-// was consumed entirely.
+// joinTail re-measures the grapheme cluster that straddles tail and text,
+// copying only that cluster. It returns the unmeasured rest of text and
+// whether text was consumed entirely.
 func (w *lineWidth) joinTail(text string, tabWidth int) (string, bool) {
 	tailBytes := len(w.tail)
 	boundary := w.tail
@@ -336,16 +295,14 @@ func (w *lineWidth) joinTail(text string, tabWidth int) (string, bool) {
 		cluster := joined.Value()
 
 		if len(cluster) < len(boundary) {
-			// Only the cluster crossing the node boundary needs joining.
-			// Resume at its end in the original text, even when RI pairing
-			// moves that end into a cluster from the independent iterator.
+			// Resume after the joined cluster, even if regional-indicator
+			// pairing ends it inside one of text's own clusters.
 			w.width -= w.tailWidth
 			w.accept(cluster, joined.Width(), tabWidth)
 			return text[len(cluster)-tailBytes:], false
 		}
 		if len(boundary)-tailBytes == len(text) {
-			// All of text extends the tail into a single cluster, so there
-			// is nothing left to measure independently.
+			// All of text joins the tail's cluster.
 			w.width -= w.tailWidth
 			w.accept(cluster, joined.Width(), tabWidth)
 			return "", true
@@ -355,8 +312,7 @@ func (w *lineWidth) joinTail(text string, tabWidth int) (string, bool) {
 	return text, false
 }
 
-// accept records one grapheme cluster. A tab advances to the next tab stop
-// rather than a fixed width, so it must see the width accumulated so far.
+// accept records one grapheme cluster, expanding a tab to the next tab stop.
 func (w *lineWidth) accept(cluster string, width, tabWidth int) {
 	if cluster == "\t" {
 		width = tabWidth - w.width%tabWidth
@@ -365,8 +321,7 @@ func (w *lineWidth) accept(cluster string, width, tabWidth int) {
 	w.tail, w.tailWidth = cluster, width
 }
 
-// addWidth adds two non-negative widths and panics on overflow, which doc.go
-// classifies as a configuration error rather than a layout outcome.
+// addWidth adds two non-negative widths, panicking on overflow.
 func addWidth(left, right int) int {
 	if right > math.MaxInt-left {
 		panic("document: layout width overflows int")

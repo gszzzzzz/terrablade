@@ -90,7 +90,7 @@ func TestExpressionNormalization(t *testing.T) {
 		{
 			name:   "numeric index line comment",
 			source: lines("f(foo.// index", "0)"),
-			want:   lines("f(", "  foo[", "    // index", "    0", "  ],", ")"),
+			want:   lines("f(", "  foo[ // index", "    0", "  ],", ")"),
 		},
 		{
 			name:   "commented traversal in object",
@@ -128,10 +128,7 @@ func TestNormalizationFileAndCST(t *testing.T) {
 		"  )", "", "  obj = { (a) = b }", "}", "",
 	)
 	result := syntax.Parse([]byte(source))
-	doc, err := lowering.File(result)
-	if err != nil {
-		t.Fatal(err)
-	}
+	doc := lowering.File(result)
 	if got := document.Render(doc, document.Options{}); got != want {
 		t.Fatalf("File output = %q, want %q", got, want)
 	}
@@ -206,15 +203,17 @@ func TestNormalizationReferenceSemantics(t *testing.T) {
 		}
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
 	defer cancel()
 	command := exec.CommandContext(ctx, cli, "console", "-no-color")
 	command.Dir = t.TempDir()
 	command.Stdin = strings.NewReader(
 		`join(",", [for answer in [` + strings.Join(comparisons, ", ") + `] : tostring(answer)])` + "\n")
-	output, err := command.CombinedOutput()
+	var stderr strings.Builder
+	command.Stderr = &stderr
+	output, err := command.Output()
 	if err != nil {
-		t.Fatalf(lines("reference CLI semantic comparison failed: %v", "%s"), err, output)
+		t.Fatalf(lines("reference CLI semantic comparison failed: %v", "%s%s"), err, output, stderr.String())
 	}
 
 	answers := strings.Split(strings.Trim(strings.TrimSpace(string(output)), `"`), ",")

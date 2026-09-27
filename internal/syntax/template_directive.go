@@ -1,11 +1,9 @@
 package syntax
 
-// templateDirective parses only a %{...} header and returns it with its
-// keyword, or an empty name when the keyword is missing or unknown. Pairing
-// the header with a body is a separate, iterative step, and malformed headers
-// still retain their keyword so a later matching ending can recover the
-// surrounding template structure.
-func (p *parser) templateDirective() (SyntaxNode, string) {
+// templateDirective parses a %{...} header and returns it with its keyword, or
+// "" if the keyword is missing or unknown. A malformed header keeps its
+// keyword, so that it can still pair with its ending.
+func (p *parser) templateDirective() (Node, string) {
 	b := p.begin()
 	p.templateSequenceOpen(&b)
 	keyword := p.tokens[p.look(newlineTransparent)]
@@ -26,7 +24,6 @@ func (p *parser) templateDirective() (SyntaxNode, string) {
 			p.recoverUntil(&b, newlineTransparent, templateBoundaries)
 		}
 	case "else", "endif", "endfor":
-		// These boundaries contain no expression; the sequence closer follows.
 	default:
 		p.report(UnknownTemplateDirective, keyword.span)
 		p.recoverUntil(&b, newlineTransparent, templateBoundaries)
@@ -37,24 +34,17 @@ func (p *parser) templateDirective() (SyntaxNode, string) {
 	return b.finish(TemplateDirective), name
 }
 
-// templateScope is one open if or for directive. Its builder already holds
-// the opening header and collects the body until the matching ending.
+// templateScope is one open if or for directive.
 type templateScope struct {
-	builder nodeBuilder
-	kind    NodeKind
-	// previous is the index of the enclosing scope of the same kind, or -1,
-	// which pop restores as lastIf or lastFor.
-	previous int
-	// sawElse records that an if scope has its else, so a second else is
-	// diagnosed rather than attached.
-	sawElse bool
+	builder  nodeBuilder
+	kind     NodeKind
+	previous int // index of the enclosing scope of the same kind, or -1
+	sawElse  bool
 }
 
-// templateNesting tracks directive scopes inside one template. Directive
-// bodies nest without recursive calls. The latest matching scope indices make
-// even repeated unmatched endings linear, rather than searching the entire
-// stack each time. Each frame remembers the previous scope of its own kind so
-// popping restores those indices in constant time.
+// templateNesting tracks the open directive scopes of one template. lastIf
+// and lastFor index the innermost scope of each kind, so an ending finds its
+// scope in constant time.
 type templateNesting struct {
 	root    nodeBuilder
 	scopes  []templateScope
@@ -62,8 +52,7 @@ type templateNesting struct {
 	lastFor int
 }
 
-// current returns the builder that receives the next template content: the
-// innermost open scope, or the template itself.
+// current returns the builder for the innermost open scope, or the template.
 func (n *templateNesting) current() *nodeBuilder {
 	if len(n.scopes) == 0 {
 		return &n.root
@@ -71,11 +60,10 @@ func (n *templateNesting) current() *nodeBuilder {
 	return &n.scopes[len(n.scopes)-1].builder
 }
 
-// directive files a parsed header into the scope stack. Openers push a scope.
-// else, endif, and endfor attach to the latest scope of their kind after
-// closing any unfinished inner scopes; without one they are diagnosed and kept
-// in place. Anything else, including an unknown directive, stays in place too.
-func (n *templateNesting) directive(header SyntaxNode, name string) {
+// directive adds a header to the scope stack. "if" and "for" open a scope;
+// "else", "endif", and "endfor" join the innermost scope of their kind, first
+// closing any scopes inside it.
+func (n *templateNesting) directive(header Node, name string) {
 	p := n.root.parser
 	switch name {
 	case "if", "for":
@@ -100,8 +88,6 @@ func (n *templateNesting) directive(header SyntaxNode, name string) {
 			return
 		}
 
-		// A matching outer boundary must not be swallowed by an unfinished
-		// inner scope. Finish those inner nodes before appending this header.
 		n.closeMissing(target+1, header.Span())
 		n.current().node(header)
 		if name == "else" {
@@ -114,9 +100,8 @@ func (n *templateNesting) directive(header SyntaxNode, name string) {
 	}
 }
 
-// closeMissing finishes every scope above remaining, reporting each missing
-// ending at boundary: the closer or EOF that ended the template, or the outer
-// ending directive that an inner scope failed to close before.
+// closeMissing pops scopes until remaining are left, reporting each missing
+// ending at boundary.
 func (n *templateNesting) closeMissing(remaining int, boundary Span) {
 	for len(n.scopes) > remaining {
 		diagnostic := ExpectedTemplateEndIf
@@ -128,9 +113,7 @@ func (n *templateNesting) closeMissing(remaining int, boundary Span) {
 	}
 }
 
-// pop finishes the innermost scope into its node, appends that node to the
-// scope below, and restores the latest-of-kind index the scope saved when it
-// opened.
+// pop finishes the innermost scope and appends it to the one below.
 func (n *templateNesting) pop() {
 	last := n.scopes[len(n.scopes)-1]
 	if last.kind == TemplateIf {

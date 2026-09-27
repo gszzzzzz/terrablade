@@ -3,7 +3,6 @@ package lowering_test
 import (
 	"testing"
 
-	"github.com/gszzzzzz/terrablade/internal/document"
 	"github.com/gszzzzzz/terrablade/internal/lowering"
 	"github.com/gszzzzzz/terrablade/internal/reference"
 	"github.com/gszzzzzz/terrablade/internal/syntax"
@@ -173,12 +172,21 @@ func TestFileLayouts(t *testing.T) {
 	}
 }
 
+// assertFilePanics checks that File refuses result instead of formatting
+// recovered input.
+func assertFilePanics(t *testing.T, result syntax.Result) {
+	t.Helper()
+	defer func() {
+		if recover() == nil {
+			t.Errorf("File formatted input with diagnostics: %q", result.Source())
+		}
+	}()
+	lowering.File(result)
+}
+
 func TestFileRejectsInvalidInput(t *testing.T) {
 	for _, result := range []syntax.Result{syntax.Result{}, syntax.Parse([]byte("a=")), syntax.Parse([]byte(lines("good=1", "bad=")))} {
-		doc, err := lowering.File(result)
-		if err == nil || document.Render(doc, document.Options{}) != "" {
-			t.Fatalf("expected error and empty document, got %v", err)
-		}
+		assertFilePanics(t, result)
 	}
 }
 
@@ -193,10 +201,7 @@ func TestFileRejectsLineCommentsInsideBlockHeader(t *testing.T) {
 		if len(result.Diagnostics()) == 0 {
 			t.Fatalf("expected invalid block header: %q", source)
 		}
-		doc, err := lowering.File(result)
-		if err == nil || document.Render(doc, document.Options{}) != "" {
-			t.Fatalf("expected error and empty document for %q, got %v", source, err)
-		}
+		assertFilePanics(t, result)
 	}
 }
 

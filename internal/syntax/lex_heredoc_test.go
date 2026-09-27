@@ -225,11 +225,11 @@ func TestDeepHeredocNesting(t *testing.T) {
 	source := []byte(strings.Repeat("<<E\n${", depth) + "1" + strings.Repeat("}\nE\n", depth))
 	result := lex(source)
 	assertLexInvariants(t, source, result)
-	if len(result.Diagnostics) != 0 {
-		t.Fatalf("unexpected diagnostics: %+v", result.Diagnostics)
+	if len(result.diagnostics) != 0 {
+		t.Fatalf("unexpected diagnostics: %+v", result.diagnostics)
 	}
-	if len(result.Tokens) != depth*8+2 {
-		t.Fatalf("unexpected token count: %d", len(result.Tokens))
+	if len(result.tokens) != depth*8+2 {
+		t.Fatalf("unexpected token count: %d", len(result.tokens))
 	}
 }
 
@@ -276,11 +276,11 @@ func TestHeredocErrors(t *testing.T) {
 			result := lex([]byte(test.source))
 			assertLexInvariants(t, []byte(test.source), result)
 			var kinds []DiagnosticKind
-			for _, diagnostic := range result.Diagnostics {
+			for _, diagnostic := range result.diagnostics {
 				kinds = append(kinds, diagnostic.Kind)
 			}
 			if !reflect.DeepEqual(kinds, test.kinds) {
-				t.Errorf("diagnostics = %+v, want kinds %v", result.Diagnostics, test.kinds)
+				t.Errorf("diagnostics = %+v, want kinds %v", result.diagnostics, test.kinds)
 			}
 		})
 	}

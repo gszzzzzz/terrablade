@@ -1,7 +1,7 @@
 // Command genunicode regenerates the lexer's Unicode identifier tables.
 // Run through go generate ./internal/syntax; normal builds need no network.
-// The Unicode version and source checksum are intentionally pinned together:
-// changing them changes the accepted HCL identifiers and requires review.
+// The Unicode version and source checksum are pinned together; changing them
+// changes which HCL identifiers are accepted.
 package main
 
 import (
@@ -84,10 +84,9 @@ func generate() error {
 	return writeAtomically(outputFile, output)
 }
 
-// writeAtomically replaces name with data through a temporary file in the same
-// directory. A partial write would otherwise leave behind a table file that
-// still compiles but describes the wrong identifiers, and the rename is what
-// makes an interrupted run a no-op instead.
+// writeAtomically replaces name with data by renaming a temporary file in the
+// same directory, so an interrupted run cannot leave a truncated table file
+// that still compiles.
 func writeAtomically(name string, data []byte) (err error) {
 	temporary, err := os.CreateTemp(filepath.Dir(name), filepath.Base(name)+".tmp")
 	if err != nil {
@@ -113,10 +112,8 @@ func writeAtomically(name string, data []byte) (err error) {
 	return os.Rename(temporary.Name(), name)
 }
 
-// download fetches url and verifies its checksum, so a changed or tampered
-// upstream file can never reach the tables unnoticed. The client and the
-// pinned url/checksum are parameters so that the failure paths can be
-// exercised against a local server; generate supplies the pinned values.
+// download fetches url and verifies its SHA-256 checksum, so a changed or
+// tampered upstream file cannot reach the tables.
 func download(client *http.Client, url, checksum string) ([]byte, error) {
 	response, err := client.Get(url)
 	if err != nil {
@@ -179,7 +176,7 @@ func parseProperties(data []byte) (map[string][]interval, error) {
 		if hi < lo || hi > 0x10FFFF {
 			return nil, fmt.Errorf("invalid code point range %s", rangeText)
 		}
-		// This bound is what makes the conversion to rune lossless.
+		// This bound makes the conversion to rune lossless.
 		current := interval{rune(lo), rune(hi)}
 
 		// The lexer's binary search needs sorted, disjoint ranges, so any

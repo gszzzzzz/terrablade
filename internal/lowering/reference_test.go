@@ -1,11 +1,7 @@
 package lowering_test
 
 import (
-	"context"
-	"os/exec"
-	"strings"
 	"testing"
-	"time"
 
 	"github.com/gszzzzzz/terrablade/internal/reference"
 )
@@ -16,13 +12,9 @@ import (
 // produces something similar".
 func assertReferenceFormat(t *testing.T, output string) {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	command := exec.CommandContext(ctx, reference.CLI(t), "fmt", "-no-color", "-")
-	command.Stdin = strings.NewReader(output)
-	formatted, err := command.CombinedOutput()
+	formatted, err := reference.Format(t, []byte(output))
 	if err != nil {
-		t.Fatalf("reference CLI failed: %v\n%s", err, formatted)
+		t.Fatalf("reference CLI failed: %v", err)
 	}
 	if string(formatted) != output {
 		t.Errorf("reference CLI changed canonical formatting:\n%q\n=>\n%q", output, formatted)

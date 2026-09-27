@@ -478,7 +478,7 @@ func TestBodyRecoveryTriviaOwnership(t *testing.T) {
 		file := Parse([]byte(source))
 		assertTreeInvariants(t, []byte(source), file)
 		comments := 0
-		stack := []SyntaxNode{file.root}
+		stack := []Node{file.root}
 		for len(stack) > 0 {
 			node := stack[len(stack)-1]
 			stack = stack[:len(stack)-1]

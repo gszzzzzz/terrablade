@@ -1,112 +1,86 @@
 package lowering
 
 import (
-	"errors"
-
 	"github.com/gszzzzzz/terrablade/internal/document"
 	"github.com/gszzzzzz/terrablade/internal/syntax"
 )
 
-// File lowers a complete native HCL file, including body comments and its final
-// newline. A zero Result or any parse diagnostic returns an error and an empty
-// Doc. Layout width and indentation are selected later by document.Render.
-//
-// The traversal is iterative so deeply nested bodies do not grow the Go call
-// stack. A node is lowered after its children, whose results are kept for the
-// parent.
-func File(result syntax.Result) (document.Doc, error) {
-	if len(result.Diagnostics()) != 0 {
-		return document.Doc{}, errors.New("lowering: cannot format a result with diagnostics")
+// File lowers a complete native HCL file, including its comments and final
+// newline. It panics if result has diagnostics: recovered input is never
+// formatted.
+func File(result syntax.Result) document.Doc {
+	if len(result.Diagnostics()) != 0 || result.Root().Kind() != syntax.File {
+		panic("lowering: File requires a diagnostic-free parse")
 	}
-	if result.Root().Kind() != syntax.File {
-		return document.Doc{}, errors.New("lowering: expected a parsed file")
-	}
-
-	type frame struct {
-		node       syntax.SyntaxNode
-		next       int
-		nestedBody bool
-	}
-	stack := []frame{{node: result.Root()}}
-	layouts := make(map[syntax.SyntaxNode]bodyLayout)
-
-	for len(stack) != 0 {
-		current := &stack[len(stack)-1]
-		// Attributes are lowered whole by lowerAttribute, which walks the
-		// expression itself; descending into them would lower the value twice.
-		if current.node.Kind() != syntax.Attribute && current.next < current.node.ChildCount() {
-			element := current.node.Child(current.next)
-			current.next++
-			if child, ok := element.Node(); ok {
-				stack = append(stack, frame{node: child, nestedBody: current.node.Kind() == syntax.Block && child.Kind() == syntax.Body})
-			}
-			continue
-		}
-
-		var lowered bodyLayout
-		switch current.node.Kind() {
-		case syntax.File:
-			var parts []document.Doc
-			for i := range current.node.ChildCount() {
-				element := current.node.Child(i)
-				if body, ok := element.Node(); ok {
-					parts = append(parts, layouts[body].doc, layouts[body].end)
-				}
-			}
-			lowered.doc = document.Concat(parts...)
-		case syntax.Body:
-			lowered = lowerBody(result, current.node, current.nestedBody, layouts)
-		case syntax.Block:
-			lowered.doc = lowerBlock(result, current.node, layouts)
-		case syntax.BlockLabel:
-			text := result.Text(current.node.Span())
-			if token, _ := current.node.Child(0).Token(); token.Kind() == syntax.Identifier {
-				// Identifier labels cannot contain quote or template
-				// punctuation, so quoting the spelling verbatim yields a
-				// valid string label.
-				text = `"` + text + `"`
-			}
-			lowered.doc = document.Text(text)
-		case syntax.Attribute:
-			lowered = lowerAttribute(result, current.node)
-		}
-		layouts[current.node] = lowered
-		stack = stack[:len(stack)-1]
-	}
-	return layouts[result.Root()].doc, nil
+	return postOrder(fileWalker{result}, result.Root(), false).doc
 }
 
-// bodyLayout is the lowered form of one body-level node, kept in File's map
-// while the node's ancestors are still being lowered.
+// fileWalker lowers body-level nodes. Its context reports whether a Body
+// belongs to a block.
+type fileWalker struct{ result syntax.Result }
+
+func (fileWalker) expand(node syntax.Node, _ bool, children []visit[syntax.Node, bool]) []visit[syntax.Node, bool] {
+	// lowerAttribute walks the value expression itself.
+	if node.Kind() == syntax.Attribute {
+		return children
+	}
+	for i := range node.ChildCount() {
+		if child, ok := node.Child(i).Node(); ok {
+			children = append(children, visit[syntax.Node, bool]{child, node.Kind() == syntax.Block})
+		}
+	}
+	return children
+}
+
+func (w fileWalker) lower(node syntax.Node, nested bool, children []bodyLayout) bodyLayout {
+	switch node.Kind() {
+	case syntax.File:
+		var parts []document.Doc
+		for _, body := range children {
+			parts = append(parts, body.doc, body.end)
+		}
+		return bodyLayout{doc: document.Concat(parts...)}
+	case syntax.Body:
+		return lowerBody(w.result, node, nested, children)
+	case syntax.Block:
+		return bodyLayout{doc: lowerBlock(w.result, node, children)}
+	case syntax.BlockLabel:
+		text := w.result.Text(node.Span())
+		if token, _ := node.Child(0).Token(); token.Kind() == syntax.Identifier {
+			// An identifier needs no escaping inside quotes.
+			text = `"` + text + `"`
+		}
+		return bodyLayout{doc: document.Text(text)}
+	default: // Attribute, the only other body-level kind
+		return lowerAttribute(w.result, node)
+	}
+}
+
+// bodyLayout is the lowered form of one body-level node.
 type bodyLayout struct {
-	// doc is the node's rendered content, set for every node kind. For a
-	// Body it excludes the closing line, which belongs outside the enclosing
-	// block's Indent, and it begins with a line break only for nested bodies
-	// so an opener's inline comment can stay on the brace line.
+	// doc excludes a Body's final line break, which must fall outside the
+	// enclosing block's Indent. A nested body's doc starts with its first
+	// gap, so a comment after the opening brace can stay on that line.
 	doc document.Doc
-	// end is a Body's final line break, emitted by the enclosing block after
-	// its Indent or by the file at EOF. It stays empty for an empty nested
-	// body, which renders as {}. Set only for Body nodes.
+	// end is a Body's final line break; empty for an empty nested body,
+	// which renders as {}.
 	end document.Doc
-	// endsHeredoc reports an attribute whose value ends in a heredoc marker,
-	// so the following body gap must supply the marker's newline before any
-	// inline comment. Set only for Attribute nodes and read by lowerBody.
+	// endsHeredoc reports an attribute whose value ends in a heredoc, so the
+	// next gap must break the line before any inline comment.
 	endsHeredoc bool
 }
 
-// lowerAttribute lowers name = value together with the trivia between its
-// tokens. It is the only body-level node that holds an expression, so it is
-// where the body walk hands off to lowerExpression.
-func lowerAttribute(result syntax.Result, node syntax.SyntaxNode) bodyLayout {
+// lowerAttribute lowers name = value and the trivia between its tokens.
+func lowerAttribute(result syntax.Result, node syntax.Node) bodyLayout {
 	var parts []piece
-	var trivia []syntax.SyntaxToken
+	var trivia []syntax.Token
 	for i := range node.ChildCount() {
 		element := node.Child(i)
 		if child, ok := element.Node(); ok {
 			value := lowerExpression(result, child)
 			parts = append(parts, piece{doc: value.doc, child: value, before: trivia})
 		} else if token, ok := element.Token(); ok {
-			if isTrivia(token.Kind()) {
+			if token.Kind().IsTrivia() {
 				trivia = append(trivia, token)
 				continue
 			}
@@ -118,26 +92,46 @@ func lowerAttribute(result syntax.Result, node syntax.SyntaxNode) bodyLayout {
 	return bodyLayout{doc: lowerAssignment(result, parts, false), endsHeredoc: parts[len(parts)-1].child.endsHeredoc}
 }
 
-// lowerBlock lowers a block header and its already-lowered body. Header
-// comments are gathered into the trivia before the opening brace, and the
-// body's closing brace stays outside the Indent (doc.go: Blocks).
-func lowerBlock(result syntax.Result, node syntax.SyntaxNode, layouts map[syntax.SyntaxNode]bodyLayout) document.Doc {
+// lowerAssignment lays out key = value for a body attribute or an object
+// item. The separator and value form one cell so that consecutive rows align
+// their equals signs.
+func lowerAssignment(result syntax.Result, pieces pieceList, objectItem bool) document.Doc {
+	name, equals, value := pieces[0], pieces[1], pieces[2]
+	afterName, beforeEquals := commentGap(result, equals.before, spacedGap(space))
+	afterEquals, beforeValue := commentGap(result, value.before, spacedGap(space))
+	tail := document.Concat(beforeEquals, equals.doc, afterEquals, beforeValue, value.doc)
+
+	aligned := document.Cell(assignmentColumn, tail)
+	if objectItem {
+		// A flat object shares its row with other text; only a broken
+		// object's entries align.
+		aligned = document.IfBreak(aligned, tail)
+	}
+	// Comments before the equals sign stay outside the cell and so do not
+	// widen the column.
+	return document.Concat(name.doc, afterName, aligned)
+}
+
+// lowerBlock lowers a block header and its already-lowered body.
+func lowerBlock(result syntax.Result, node syntax.Node, children []bodyLayout) document.Doc {
 	var header []piece
-	var trivia []syntax.SyntaxToken
+	var trivia []syntax.Token
 	var contents bodyLayout
 	for i := range node.ChildCount() {
 		element := node.Child(i)
 		if child, ok := element.Node(); ok {
+			lowered := children[0]
+			children = children[1:]
 			if child.Kind() == syntax.Body {
-				contents = layouts[child]
+				contents = lowered
 				break
 			}
-			// Upstream drops comments before labels when rebuilding the header.
-			// Carry them past all labels to the brace's stable trivia position.
-			header = append(header, piece{doc: layouts[child].doc})
+			// Upstream drops comments before labels, so move them to the
+			// opening brace, where it keeps them.
+			header = append(header, piece{doc: lowered.doc})
 			continue
 		} else if token, ok := element.Token(); ok {
-			if isTrivia(token.Kind()) {
+			if token.Kind().IsTrivia() {
 				trivia = append(trivia, token)
 				continue
 			}
@@ -149,13 +143,11 @@ func lowerBlock(result syntax.Result, node syntax.SyntaxNode, layouts map[syntax
 	return document.Concat(spacedSequence(result, header), document.Indent(contents.doc), contents.end, document.Text("}"))
 }
 
-// lowerBody lowers the items of a file or block body. Each item is preceded
-// by the gap that owns the trivia before it; the trailing gap after the last
-// item owns any closing comments. nested distinguishes a block body, whose
-// first gap starts on the opening brace line, from the file body.
-func lowerBody(result syntax.Result, node syntax.SyntaxNode, nested bool, layouts map[syntax.SyntaxNode]bodyLayout) bodyLayout {
+// lowerBody lowers the items of a file or block body, each preceded by the
+// gap holding the trivia before it. The last gap holds any trailing comments.
+func lowerBody(result syntax.Result, node syntax.Node, nested bool, children []bodyLayout) bodyLayout {
 	var parts []document.Doc
-	var trivia []syntax.SyntaxToken
+	var trivia []syntax.Token
 	previous := syntax.InvalidNode
 	endsHeredoc := false
 	nonempty := false
@@ -167,46 +159,77 @@ func lowerBody(result syntax.Result, node syntax.SyntaxNode, nested bool, layout
 		}
 
 		child, _ := element.Node()
-		parts = append(parts, bodyGap(result, trivia, previous, child.Kind(), nested, endsHeredoc), layouts[child].doc)
+		lowered := children[0]
+		children = children[1:]
+		parts = append(parts, bodyGap(result, trivia, previous, child.Kind(), nested, endsHeredoc), lowered.doc)
 		trivia = nil
 		previous = child.Kind()
-		endsHeredoc = layouts[child].endsHeredoc
+		endsHeredoc = lowered.endsHeredoc
 		nonempty = true
 	}
 
 	for _, token := range trivia {
-		if token.Kind() == syntax.LineComment || token.Kind() == syntax.BlockComment {
+		if token.Kind().IsComment() {
 			nonempty = true
 		}
 	}
 	parts = append(parts, bodyGap(result, trivia, previous, syntax.InvalidNode, nested, endsHeredoc))
 
 	var end document.Doc
-	// A complete file always owns a final LF, including an empty file. Besides
-	// being a stable textual-file convention, this is the common fixed point
-	// of Terraform and OpenTofu: Terraform turns empty bytes into one LF, while
-	// both tools preserve that LF. Empty nested bodies still render inline
-	// as {}.
+	// A file, even an empty one, ends in LF: Terraform turns empty input into
+	// one LF, and both Terraform and OpenTofu preserve it.
 	if nonempty || !nested {
 		end = document.HardLine()
 	}
 	return bodyLayout{doc: document.Concat(parts...), end: end}
 }
 
-// bodyGap lays out the trivia between two body items, or between an item and
-// the body edge. Body gaps own both item separators and comments: each source
-// gap is classified before its separators are selected, so comment placement
-// and section policy stay independent of document construction.
+// bodyGap lays out the trivia between two body items, including item
+// separators and comments. previous and next are the kinds of the items on
+// either side, or InvalidNode at a body edge. afterHeredoc reports that
+// previous ends in a heredoc.
 //
-// previous and next are the item kinds on either side, or InvalidNode at a
-// body edge. The gap walks its comments in source order, choosing a separator
-// before each one from the sides known so far and then making that comment
-// the new before side, so a later decision never rescans earlier comments.
-// afterHeredoc reports that previous ends in a heredoc marker.
-func bodyGap(result syntax.Result, trivia []syntax.SyntaxToken, previous, next syntax.NodeKind, nested, afterHeredoc bool) document.Doc {
+// Comments are placed in source order, each separator chosen from the two
+// sides known so far; the comment then becomes the before side.
+func bodyGap(result syntax.Result, trivia []syntax.Token, previous, next syntax.NodeKind, nested, afterHeredoc bool) document.Doc {
+	gap := newBodyGap(previous, next, nested)
+
+	// A comment is standalone only if a newline follows it before the next
+	// item; the last newline's position decides that for every comment.
+	lastNewline := -1
+	for i, token := range trivia {
+		if token.Kind() == syntax.Newline {
+			lastNewline = i
+		}
+	}
+
 	var parts []document.Doc
-	// A gap owes no separation until the switch below finds an item boundary.
-	gap := bodyGapClass{
+	for i, token := range trivia {
+		switch {
+		case token.Kind() == syntax.Newline:
+			gap.lines = min(gap.lines+1, 2)
+		case token.Kind().IsComment():
+			if afterHeredoc {
+				// Unwrapping a template can leave a heredoc before an
+				// inline comment; its end marker needs its own line.
+				gap.lines = max(gap.lines, 1)
+				afterHeredoc = false
+			}
+			ownsLine := next == syntax.InvalidNode || i < lastNewline
+			parts = append(parts, gap.comment(result, token, ownsLine))
+		}
+	}
+
+	if next != syntax.InvalidNode {
+		gap.after = bodyGapSide{kind: bodyItem}
+		parts = append(parts, gap.separator().doc())
+	}
+	return document.Concat(parts...)
+}
+
+// newBodyGap classifies the boundary between previous and next.
+func newBodyGap(previous, next syntax.NodeKind, nested bool) bodyGapState {
+	gap := bodyGapState{
 		before:   bodyGapSide{kind: bodyItem},
 		boundary: bodyOuterBoundary,
 		onOpener: nested && previous == syntax.InvalidNode,
@@ -223,92 +246,50 @@ func bodyGap(result syntax.Result, trivia []syntax.SyntaxToken, previous, next s
 	default:
 		gap.boundary = bodyAttributeBoundary
 	}
-
-	// A comment is standalone only if a newline follows it before the next
-	// item; the last newline's position decides that for every comment.
-	lastNewline := -1
-	for i, token := range trivia {
-		if token.Kind() == syntax.Newline {
-			lastNewline = i
-		}
-	}
-
-	for i, token := range trivia {
-		if token.Kind() == syntax.Newline {
-			gap.lines = min(gap.lines+1, 2)
-			continue
-		}
-		if token.Kind() != syntax.LineComment && token.Kind() != syntax.BlockComment {
-			continue
-		}
-
-		if afterHeredoc {
-			// Unwrapping a template can expose a heredoc before an inline
-			// attribute comment. Its end marker must occupy its own line.
-			gap.lines = max(gap.lines, 1)
-			afterHeredoc = false
-		}
-		// A run can contain several block comments on the same line. They
-		// share their section status, but a prefix sharing the next item's
-		// line is not an independent comment section.
-		gap.after = bodyGapSide{
-			kind:       bodyBlockComment,
-			standalone: (gap.lines > 0 || gap.before.kind == bodyFileStart || gap.before.standalone) && (next == syntax.InvalidNode || i < lastNewline),
-		}
-		if token.Kind() == syntax.LineComment {
-			gap.after.kind = bodyLineComment
-		}
-
-		separator := gap.separator()
-		if separator == bodyLine || separator == bodyBlank {
-			gap.onOpener = false
-		}
-		if separator == bodyBlank && gap.boundary == bodyBlockBoundary {
-			// A block boundary inserts one blank line across the whole gap,
-			// not another one after every intervening comment.
-			gap.boundary = bodyBoundarySatisfied
-		}
-		comment := document.Concat(separator.doc(), commentLiteral(result, token))
-		if !gap.after.standalone && token.Kind() == syntax.LineComment {
-			comment = document.Cell(trailingCommentColumn, comment)
-		}
-		parts = append(parts, comment)
-
-		gap.before = gap.after
-		gap.lines = 0
-	}
-
-	if next != syntax.InvalidNode {
-		gap.after = bodyGapSide{kind: bodyItem}
-		parts = append(parts, gap.separator().doc())
-	}
-	return document.Concat(parts...)
+	return gap
 }
 
-// bodyBoundary classifies the items a gap separates, which fixes the minimum
-// separation the gap must insert regardless of source layout.
+// comment places a comment after the gap's before side and makes it the new
+// before side. ownsLine reports that a newline follows it before the next
+// item.
+func (gap *bodyGapState) comment(result syntax.Result, token syntax.Token, ownsLine bool) document.Doc {
+	gap.after = bodyGapSide{
+		kind:       bodyBlockComment,
+		standalone: ownsLine && (gap.lines > 0 || gap.before.kind == bodyFileStart || gap.before.standalone),
+	}
+	if token.Kind() == syntax.LineComment {
+		gap.after.kind = bodyLineComment
+	}
+
+	separator := gap.separator()
+	if separator == bodyLine || separator == bodyBlank {
+		gap.onOpener = false
+	}
+	if separator == bodyBlank && gap.boundary == bodyBlockBoundary {
+		// A block boundary needs one blank line per gap, not per comment.
+		gap.boundary = bodyBoundarySatisfied
+	}
+	comment := document.Concat(separator.doc(), commentLiteral(result, token))
+	if !gap.after.standalone && token.Kind() == syntax.LineComment {
+		comment = document.Cell(trailingCommentColumn, comment)
+	}
+
+	gap.before = gap.after
+	gap.lines = 0
+	return comment
+}
+
+// bodyBoundary classifies the items a gap separates.
 type bodyBoundary uint8
 
 const (
-	// bodyOuterBoundary has no item boundary to honor: the gap is leading or
-	// trailing body padding.
-	bodyOuterBoundary bodyBoundary = iota
-	// bodyAttributeBoundary separates two attributes. One source blank line
-	// survives because it also splits alignment groups (doc.go: Alignment).
-	bodyAttributeBoundary
-	// bodyBlockBoundary separates items of which at least one is a block.
-	// Exactly one blank line is inserted (doc.go: Item boundaries).
-	bodyBlockBoundary
-	// bodyBoundarySatisfied is a block boundary whose blank line bodyGap has
-	// already emitted, so the rest of the gap has nothing left to insert. It
-	// is distinct from bodyOuterBoundary only in name: separator asks only
-	// whether a boundary is one of the two that still owe a separation, so
-	// every boundary outside that pair behaves identically.
-	bodyBoundarySatisfied
+	bodyOuterBoundary     bodyBoundary = iota // Leading or trailing padding.
+	bodyAttributeBoundary                     // Keeps at most one source blank line.
+	bodyBlockBoundary                         // Adjoins a block; needs one blank line.
+	bodyBoundarySatisfied                     // A block boundary already separated.
 )
 
-// bodySideKind identifies what lies on one side of a separator: a body edge,
-// an item, or a comment already placed earlier in the same gap.
+// bodySideKind identifies what lies on one side of a separator.
 type bodySideKind uint8
 
 const (
@@ -322,50 +303,42 @@ const (
 // bodyGapSide describes one side of a separator decision.
 type bodyGapSide struct {
 	kind bodySideKind
-	// standalone marks a comment on lines of its own: it starts a line and no
-	// item shares its last line. Standalone comments form sections that keep
-	// a source blank line on either side, whereas a comment prefixing an item
-	// belongs to that item. Meaningful only for the comment kinds.
+	// standalone marks a comment on lines of its own. Such comments keep a
+	// source blank line on either side, whereas a comment that shares a line
+	// with an item belongs to that item.
 	standalone bool
 }
 
-// bodyGapClass is the state bodyGap carries across one gap. It advances after
-// every comment so that each separator decision sees only its two sides.
-type bodyGapClass struct {
-	// lines is a capped source newline count since the before side: zero
-	// means inline, one means adjacent lines, and two means a source blank
-	// line. Literal comment newlines stay opaque.
+// bodyGapState is the state bodyGap carries across one gap.
+type bodyGapState struct {
+	// lines counts source newlines since the before side, capped at 2
+	// (a blank line).
 	lines         int
 	before, after bodyGapSide
 	boundary      bodyBoundary
-	// onOpener reports that the gap still sits on a nested body's opening
-	// brace line, where a comment may stay but an item may not. It clears
-	// once a separator has broken the line.
+	// onOpener reports that the gap is still on a nested body's opening
+	// brace line, where a comment may stay but an item may not.
 	onOpener bool
 }
 
 // separator chooses the separator between the gap's before and after sides.
-// The cases implement doc.go's item-boundary policies in priority order:
-// body edges first, then the mandatory blank line around blocks, then source
-// blank lines that attribute groups and comment sections preserve, and last
-// the line breaks that source newlines and line comments force.
-func (gap bodyGapClass) separator() bodySeparator {
+// The cases are in priority order: body edges, the blank line around blocks,
+// preserved source blank lines, then line breaks forced by the source.
+func (gap *bodyGapState) separator() bodySeparator {
 	switch {
 	case gap.before.kind == bodyFileStart:
-		return bodyTight // Outer padding is removed (doc.go: File boundaries).
+		return bodyTight
 	case gap.before.kind == bodyBlockStart:
 		if gap.after.kind != bodyItem && gap.lines == 0 {
 			return bodySpace // Keep a comment attached to the opening brace.
 		}
 		return bodyLine
 	case gap.onOpener && gap.after.kind == bodyItem:
-		// A multiline block cannot begin with an item on its opening line.
-		// Block comments may stay there, but must not keep that item inline.
+		// An item never shares the opening brace line.
 		return bodyLine
 	case gap.boundary == bodyBlockBoundary && (gap.lines > 0 || gap.before.kind == bodyLineComment || gap.after.kind == bodyItem):
-		// The blank line lands at the first line break in the gap, or right
-		// before the item, so an inline comment after the previous item
-		// stays on its line.
+		// Place the blank line at the first line break, so an inline
+		// comment after the previous item stays on its line.
 		return bodyBlank
 	case gap.lines == 2 && (gap.boundary == bodyAttributeBoundary || gap.before.standalone || gap.after.standalone):
 		return bodyBlank
@@ -388,8 +361,8 @@ const (
 	bodyBlank // One blank line: two hard line breaks.
 )
 
-func (separator bodySeparator) doc() document.Doc {
-	switch separator {
+func (s bodySeparator) doc() document.Doc {
+	switch s {
 	case bodySpace:
 		return document.Text(" ")
 	case bodyLine:
@@ -399,11 +372,4 @@ func (separator bodySeparator) doc() document.Doc {
 	default:
 		return document.Doc{}
 	}
-}
-
-// isTrivia reports whether a token carries no syntax of its own. Despite
-// the name it applies to every token stream in the package: the expression
-// view reuses it to skip the same kinds.
-func isTrivia(kind syntax.TokenKind) bool {
-	return kind == syntax.Whitespace || kind == syntax.Newline || kind == syntax.LineComment || kind == syntax.BlockComment
 }

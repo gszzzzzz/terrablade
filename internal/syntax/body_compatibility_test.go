@@ -1,11 +1,9 @@
 package syntax
 
 import (
-	"context"
+	"errors"
 	"os/exec"
-	"strings"
 	"testing"
-	"time"
 
 	"github.com/gszzzzzz/terrablade/internal/reference"
 )
@@ -111,25 +109,16 @@ func TestBodyCompatibility(t *testing.T) {
 }
 
 func TestBodyReferenceCompatibility(t *testing.T) {
-	cli := reference.CLI(t)
+	reference.CLI(t)
 	for _, test := range bodyCompatibilityCases {
 		t.Run(test.name, func(t *testing.T) {
-			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-			defer cancel()
-			command := exec.CommandContext(ctx, cli, "fmt", "-no-color", "-")
-			command.Stdin = strings.NewReader(test.source)
-			output, err := command.CombinedOutput()
-			if ctx.Err() != nil {
-				t.Fatal(ctx.Err())
-			}
-			if err != nil {
-				if exit, ok := err.(*exec.ExitError); !ok || exit.ExitCode() != 2 {
-					t.Fatalf("unexpected reference CLI failure: %v\n%s", err, output)
-				}
+			_, err := reference.Format(t, []byte(test.source))
+			if exit := (*exec.ExitError)(nil); err != nil && (!errors.As(err, &exit) || exit.ExitCode() != 2) {
+				t.Fatalf("unexpected reference CLI failure: %v", err)
 			}
 			accepted := len(Parse([]byte(test.source)).diagnostics) == 0
 			if (err == nil) != test.valid || (err == nil) != accepted {
-				t.Fatalf("reference CLI accepted=%v, parser accepted=%v, want=%v\n%s", err == nil, accepted, test.valid, output)
+				t.Fatalf("reference CLI accepted=%v, parser accepted=%v, want=%v: %v", err == nil, accepted, test.valid, err)
 			}
 		})
 	}

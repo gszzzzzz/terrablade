@@ -3,20 +3,15 @@ package terrablade
 import (
 	"fmt"
 	"slices"
-	"strings"
-	"unicode/utf8"
-
-	"github.com/clipperhouse/uax29/v2/graphemes"
 
 	"github.com/gszzzzzz/terrablade/internal/syntax"
 )
 
-// DiagnosticKind is a stable, symbolic error category. Match these values
-// rather than Diagnostic.Message, whose English wording may improve over time.
-// The zero value is not a diagnostic kind. Future versions may add new kinds.
+// DiagnosticKind categorizes a Diagnostic. Kinds are stable identifiers for
+// programmatic use; the zero value is not a kind, and new kinds may be added.
 type DiagnosticKind string
 
-// Lexical and syntax diagnostic kinds describe native HCL errors.
+// Lexical and syntax diagnostic kinds.
 const (
 	InvalidUTF8                  DiagnosticKind = "InvalidUTF8"
 	InvalidCharacter             DiagnosticKind = "InvalidCharacter"
@@ -65,9 +60,8 @@ const (
 	DuplicateAttribute           DiagnosticKind = "DuplicateAttribute"
 )
 
-// Keep the external vocabulary explicit. An internal kind must be deliberately
-// mapped here before it can appear in a public diagnostic, even when its name
-// happens to match. The internal count makes additions visible to our tests.
+// publicDiagnosticKinds maps each internal kind to its public name. An
+// internal kind becomes public only by being listed here.
 var publicDiagnosticKinds = [syntax.DiagnosticKindCount]DiagnosticKind{
 	syntax.InvalidUTF8:                  InvalidUTF8,
 	syntax.InvalidCharacter:             InvalidCharacter,
@@ -116,9 +110,7 @@ var publicDiagnosticKinds = [syntax.DiagnosticKindCount]DiagnosticKind{
 	syntax.DuplicateAttribute:           DuplicateAttribute,
 }
 
-// publicDiagnosticKind translates an internal kind through the explicit map
-// above. An unmapped kind is a programming error: panicking here keeps a new
-// internal kind from leaking into the public vocabulary under its own name.
+// publicDiagnosticKind panics for an unmapped kind.
 func publicDiagnosticKind(kind syntax.DiagnosticKind) DiagnosticKind {
 	if kind >= syntax.DiagnosticKindCount || publicDiagnosticKinds[kind] == "" {
 		panic(fmt.Sprintf("terrablade: internal invariant: unmapped diagnostic kind %s", kind))
@@ -135,30 +127,29 @@ type Position struct {
 }
 
 // Span is a half-open interval [Start.Offset, End.Offset) in the original input.
-// End may equal Start for missing syntax. Neither endpoint includes a filename.
+// End may equal Start, as for missing syntax.
 type Span struct {
 	Start Position
 	End   Position
 }
 
-// Diagnostic describes one lexical or syntax error at an original-source span.
-// Message is standalone English prose without a location; its wording is not
-// stable. Diagnostics may overlap and do not imply a one-to-one mapping to tokens.
+// Diagnostic describes one lexical or syntax error in the original input.
+// Message is an English sentence without a location; unlike Kind, its wording
+// is not stable. Diagnostic spans may overlap.
 type Diagnostic struct {
 	Kind    DiagnosticKind
 	Message string
 	Span    Span
 }
 
-// ParseError contains all lexical and syntax diagnostics for rejected input.
-// It owns its diagnostics without retaining the input or parse tree. Copies may
-// be read concurrently. A zero ParseError has no diagnostics.
+// ParseError holds the diagnostics for rejected input, without retaining it.
+// It is safe for concurrent use; a zero ParseError has no diagnostics.
 type ParseError struct {
 	diagnostics []Diagnostic
 }
 
-// Error summarizes the first diagnostic. Use Diagnostics for every error and
-// programmatic decisions; Error's human-readable wording is not stable.
+// Error summarizes the first diagnostic. Its wording is not stable; use
+// Diagnostics to inspect errors programmatically.
 func (e *ParseError) Error() string {
 	if len(e.diagnostics) == 0 {
 		return "terrablade: invalid HCL"
@@ -172,81 +163,27 @@ func (e *ParseError) Error() string {
 		first.Span.Start.Line, first.Span.Start.Column, first.Message, len(e.diagnostics), noun)
 }
 
-// Diagnostics returns an independent copy, or nil for a zero ParseError.
-// Diagnostics are ordered by starting byte offset, with lexical errors first
-// at equal offsets. Remaining ties retain their reporting order.
+// Diagnostics returns a copy of the diagnostics, or nil for a zero ParseError.
+// They are sorted stably by start offset, lexical errors first.
 func (e *ParseError) Diagnostics() []Diagnostic { return slices.Clone(e.diagnostics) }
 
-// newParseError converts internal diagnostics, which carry byte offsets only,
-// into public ones with line and column. The public diagnostics are built
-// first so that locate can fill both ends of every span in place.
-func newParseError(source string, parsed []syntax.Diagnostic) *ParseError {
+// newParseError adds line and column to internal diagnostics, which carry only
+// byte offsets, locating every endpoint in one scan.
+func newParseError(result syntax.Result, parsed []syntax.Diagnostic) *ParseError {
+	located := make([]syntax.Position, 2*len(parsed))
+	endpoints := make([]*syntax.Position, len(located))
+	for i, diagnostic := range parsed {
+		located[2*i].Offset, located[2*i+1].Offset = diagnostic.Span.Start, diagnostic.Span.End
+		endpoints[2*i], endpoints[2*i+1] = &located[2*i], &located[2*i+1]
+	}
+	result.Locate(endpoints)
+
 	diagnostics := make([]Diagnostic, len(parsed))
-	endpoints := make([]*Position, 0, 2*len(parsed))
 	for i, diagnostic := range parsed {
 		diagnostics[i] = Diagnostic{
 			Kind: publicDiagnosticKind(diagnostic.Kind), Message: diagnostic.Kind.Message(),
-			Span: Span{Start: Position{Offset: diagnostic.Span.Start}, End: Position{Offset: diagnostic.Span.End}},
+			Span: Span{Start: Position(located[2*i]), End: Position(located[2*i+1])},
 		}
-		endpoints = append(endpoints, &diagnostics[i].Span.Start, &diagnostics[i].Span.End)
 	}
-
-	locate(source, endpoints)
 	return &ParseError{diagnostics: diagnostics}
-}
-
-// locate fills in Line and Column for every endpoint in one scan of source.
-// Repeated single-position lookups would make error reporting quadratic for
-// an input with many diagnostics.
-func locate(source string, endpoints []*Position) {
-	// The scan visits offsets in increasing order, so the endpoints must be
-	// consumed in the same order.
-	slices.SortFunc(endpoints, func(a, b *Position) int { return a.Offset - b.Offset })
-
-	// accept records that the cluster ending at end has been consumed: every
-	// endpoint inside it receives the cluster's starting position, because an
-	// offset within a cluster shares that cluster's column. Then the position
-	// advances past the cluster.
-	line, column, next := 1, 1, 0
-	accept := func(end int, newline bool) {
-		for next < len(endpoints) && endpoints[next].Offset < end {
-			endpoints[next].Line, endpoints[next].Column = line, column
-			next++
-		}
-		if newline {
-			line, column = line+1, 1
-		} else {
-			column++
-		}
-	}
-
-	for start := 0; start < len(source); {
-		// Grapheme iteration assumes valid UTF-8. Invalid bytes each own a
-		// column and separate surrounding clusters, matching parser positions.
-		end := start
-		for end < len(source) {
-			r, width := utf8.DecodeRuneInString(source[end:])
-			if r == utf8.RuneError && width == 1 {
-				break
-			}
-			end += width
-		}
-		if end == start {
-			accept(start+1, false)
-			start++
-			continue
-		}
-
-		clusters := graphemes.FromString(source[start:end])
-		for clusters.Next() {
-			accept(start+clusters.End(), strings.HasSuffix(clusters.Value(), "\n"))
-		}
-		start = end
-	}
-
-	// Whatever remains lies at EOF, which is a valid position one past the
-	// final cluster.
-	for _, endpoint := range endpoints[next:] {
-		endpoint.Line, endpoint.Column = line, column
-	}
 }
