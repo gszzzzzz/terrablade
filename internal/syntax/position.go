@@ -8,24 +8,21 @@ import (
 	"github.com/clipperhouse/uax29/v2/graphemes"
 )
 
-// Position identifies a byte offset in a Result's source. It contains no source
-// identity; callers must keep track of the Result to which it belongs. Position's
-// zero value is not a source position; the start of a source is (0, 1, 1).
+// Position is a location in a Result's source. The start of a source is
+// {0, 1, 1}.
 type Position struct {
-	Offset int // Zero-based byte offset from the start of the source.
-	Line   int // One-based line number.
-	Column int // One-based Unicode 17 grapheme-cluster column, not a display width.
+	Offset int // byte offset, from 0
+	Line   int // line number, from 1
+	Column int // grapheme-cluster column, from 1; see Result.Locate
 }
 
-// Locate fills in Line and Column for every position from its Offset, which
-// must be in [0, len(r.Source())]; EOF is valid and other offsets panic. It
-// reorders positions by offset and scans the source once, so d positions take
-// O(n + d log d) time rather than one scan each.
+// Locate sets Line and Column of each position from its Offset, which must be
+// in [0, len(r.Source())]; other offsets panic. It sorts positions by offset
+// and scans the source once.
 //
-// Each LF starts a new line immediately after that byte, so CRLF counts as one
-// line ending and one cluster. An offset inside a cluster, including the LF of
-// a CRLF, has that cluster's starting column. Each malformed UTF-8 byte forms
-// its own cluster, so columns never decrease as offsets advance within a line.
+// Only LF starts a new line. Columns count Unicode 17 extended grapheme
+// clusters, so CRLF is one cluster; an offset inside a cluster has that
+// cluster's column. Each malformed UTF-8 byte is a cluster of its own.
 func (r Result) Locate(positions []*Position) {
 	for _, position := range positions {
 		if position.Offset < 0 || position.Offset > len(r.source) {
@@ -34,8 +31,7 @@ func (r Result) Locate(positions []*Position) {
 	}
 	slices.SortFunc(positions, func(a, b *Position) int { return a.Offset - b.Offset })
 
-	// accept consumes the cluster ending at end: every position inside it
-	// takes the cluster's starting line and column, then the scan advances.
+	// accept locates the positions in the cluster ending at end.
 	line, column, next := 1, 1, 0
 	accept := func(end int, newline bool) {
 		for next < len(positions) && positions[next].Offset < end {
@@ -51,8 +47,7 @@ func (r Result) Locate(positions []*Position) {
 
 	source := r.source
 	for start := 0; start < len(source); {
-		// Grapheme iteration does not validate UTF-8. Separate valid runs so
-		// even overlong or surrogate encodings cannot join a neighboring cluster.
+		// graphemes does not validate UTF-8, so segment only valid runs.
 		end := start
 		for end < len(source) {
 			runeValue, width := utf8.DecodeRuneInString(source[end:])
@@ -74,7 +69,7 @@ func (r Result) Locate(positions []*Position) {
 		start = end
 	}
 
-	// The rest are at EOF, one past the final cluster.
+	// The rest are at EOF.
 	for _, position := range positions[next:] {
 		position.Line, position.Column = line, column
 	}

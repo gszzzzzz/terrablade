@@ -1,26 +1,20 @@
 package syntax
 
-// NodeKind identifies a grammatical structure, separately from TokenKind.
-// Its numeric value is not a stable storage format.
+// NodeKind identifies a grammatical structure.
 //
-// The comment on each kind lists its children in source order. Tokens are
-// named by their TokenKind, nodes by their NodeKind, and "expression" means a
-// node of any expression kind or, where the operand is missing, an empty
-// ErrorNode. Every node may also hold trivia tokens (Whitespace, Newline,
-// LineComment, BlockComment) between the listed children; only File and Body
-// begin or end with trivia. Two words distinguish absence: a child marked
-// optional may be absent in valid source because the grammar allows it, while
-// a child that is "missing" is absent only when recovery from malformed input
-// ended the node early, and a diagnostic always accompanies that.
+// The comment on each kind lists its children in source order. "Expression"
+// means a node of any expression kind, or an empty ErrorNode where the operand
+// is missing. Trivia tokens may appear between the listed children; only File
+// and Body begin or end with trivia. An "optional" child may be absent in valid
+// source; a "missing" one is absent only after recovery, which reports a
+// diagnostic.
 type NodeKind uint8
 
 const (
 	// InvalidNode is the kind of a zero Node. Parse never produces it.
 	InvalidNode NodeKind = iota
-	// File: optional BOM, Body, EOF. After a NestingLimitExceeded diagnostic,
-	// trivia, an ErrorNode holding the unparsed remainder, and further trivia
-	// may appear between Body and EOF. The parseExpressionSource test seam puts
-	// an expression in place of Body.
+	// File: optional BOM, Body, EOF. After NestingLimitExceeded, trivia and an
+	// ErrorNode holding the unparsed remainder may follow Body.
 	File
 	// ErrorNode: zero or more raw tokens and no nodes. It is empty where an
 	// operand was expected but missing, and otherwise holds the malformed
@@ -29,8 +23,7 @@ const (
 	// LiteralExpression: one Number token, or one Identifier spelled true,
 	// false, or null.
 	LiteralExpression
-	// VariableExpression: one Identifier token. In an ObjectItem's key
-	// position it denotes a literal key; see the package documentation.
+	// VariableExpression: one Identifier token.
 	VariableExpression
 	// ParenthesizedExpression: OpenParen, expression, CloseParen (possibly
 	// missing).
@@ -75,7 +68,8 @@ const (
 	// recovery can place ErrorNode children among them.
 	ObjectExpression
 	// ObjectItem: key expression, then Equal or Colon and value expression,
-	// both missing when no separator was found.
+	// both missing when no separator was found. A bare VariableExpression key
+	// denotes a literal key; a parenthesized key is computed.
 	ObjectItem
 	// ForExpression: OpenBracket or OpenBrace, Identifier "for", Identifier,
 	// optional Comma and Identifier, Identifier "in", collection expression,
@@ -110,9 +104,8 @@ const (
 	// TemplateFor: the "for" TemplateDirective, content, then the "endfor"
 	// TemplateDirective, missing when unmatched.
 	TemplateFor
-	// Body: zero or more Attribute, Block, and ErrorNode children. Body owns
-	// the trivia between and around its items, including the newline that
-	// ends each item.
+	// Body: zero or more Attribute, Block, and ErrorNode children, and the
+	// trivia around them, including the newline that ends each item.
 	Body
 	// Attribute: Identifier name, Equal, value expression.
 	Attribute
@@ -127,16 +120,14 @@ const (
 	nodeKindCount
 )
 
-// Element is a read-only handle to a node or token in source order.
-// Copies share immutable tree storage. The zero value is neither a node nor a
-// token and has an empty span. A handle keeps its tree storage alive.
+// Element is a child of a Node: either a Node or a Token. The zero Element is
+// neither.
 type Element struct {
 	arena *arena
 	ref   elementRef
 }
 
-// Node returns the node view, or the zero node and false for a token or zero
-// element. Converting views does not allocate.
+// Node returns e as a Node, reporting whether it is one.
 func (e Element) Node() (Node, bool) {
 	if e.arena == nil || e.ref <= 0 {
 		return Node{}, false
@@ -144,8 +135,7 @@ func (e Element) Node() (Node, bool) {
 	return Node{arena: e.arena, index: int(e.ref) - 1}, true
 }
 
-// Token returns the lexical value, or the zero token and false for a node or
-// zero element. The returned value exposes no mutable tree storage.
+// Token returns e as a Token, reporting whether it is one.
 func (e Element) Token() (Token, bool) {
 	if e.arena == nil || e.ref >= 0 {
 		return Token{}, false
@@ -153,7 +143,7 @@ func (e Element) Token() (Token, bool) {
 	return e.arena.tokens[-int(e.ref)-1], true
 }
 
-// Span covers the original source bytes represented by the element.
+// Span returns the source bytes the element covers.
 func (e Element) Span() Span {
 	if node, ok := e.Node(); ok {
 		return node.Span()
@@ -162,10 +152,8 @@ func (e Element) Span() Span {
 	return token.Span()
 }
 
-// Node is a read-only grammatical structure. Children mix nodes and tokens
-// in source order. Trivia remains token children rather than node metadata.
-// Copies share immutable tree storage; a handle keeps that storage alive. The
-// zero node has InvalidNode kind, an empty span, and no children.
+// Node is an immutable handle to a node in a parsed tree; it keeps the tree
+// alive. The zero Node has kind InvalidNode and no children.
 type Node struct {
 	arena *arena
 	index int
@@ -178,17 +166,16 @@ func (n Node) record() nodeRecord {
 	return n.arena.nodes[n.index]
 }
 
-// Kind identifies the node's grammatical structure.
+// Kind returns the node's kind.
 func (n Node) Kind() NodeKind { return n.record().kind }
 
-// Span covers the node's children, including any trivia between them.
+// Span returns the source bytes covered by the node's children.
 func (n Node) Span() Span { return n.record().span }
 
 // ChildCount returns the number of immediate children.
 func (n Node) ChildCount() int { return n.record().childCount }
 
-// Child returns a read-only element in source order without allocating.
-// An index outside [0, ChildCount()) panics, like ordinary slice indexing.
+// Child returns the child at index, which must be in [0, ChildCount()).
 func (n Node) Child(index int) Element {
 	record := n.record()
 	if index < 0 || index >= record.childCount {
@@ -197,8 +184,7 @@ func (n Node) Child(index int) Element {
 	return Element{arena: n.arena, ref: n.arena.children[record.firstChild+index]}
 }
 
-// Element returns the generic view without allocating. A zero node produces a
-// zero element.
+// Element returns n as an Element.
 func (n Node) Element() Element {
 	if n.arena == nil {
 		return Element{}
@@ -206,9 +192,8 @@ func (n Node) Element() Element {
 	return Element{arena: n.arena, ref: elementRef(n.index + 1)}
 }
 
-// References use positive node indices and negative token indices, both offset
-// by one so zero remains invalid. Indices survive growth of the backing slices.
-// They never escape this package or imply a stable serialization format.
+// An elementRef is a node index plus one, or a negated token index minus one,
+// so that zero is invalid.
 type elementRef int
 
 type nodeRecord struct {
@@ -218,24 +203,22 @@ type nodeRecord struct {
 	childCount int
 }
 
-// The parser is the sole writer; published handles only read these slices.
-// Tokens reuse the lexer's storage rather than being copied into every parent.
+// An arena stores a whole tree. Only the parser writes to it.
 type arena struct {
 	nodes    []nodeRecord
 	tokens   []Token
 	children []elementRef
 }
 
-// Token is a read-only source leaf, including whitespace and comments.
-// Its text is available through Result.Text(t.Span()); it owns no source bytes.
+// Token is a leaf of the tree. Use Result.Text to read its source.
 type Token struct {
 	kind TokenKind
 	span Span
 }
 
-// Kind identifies the lexical element.
+// Kind returns the token's kind.
 func (t Token) Kind() TokenKind { return t.kind }
 
-// Span identifies the original source bytes. Among tokens produced by Parse,
-// only EOF has an empty span. A zero token also has an empty span.
+// Span returns the token's source bytes. Of the tokens Parse produces, only
+// EOF is empty.
 func (t Token) Span() Span { return t.span }

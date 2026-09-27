@@ -1,10 +1,6 @@
 package syntax
 
-// templateExpression parses a quoted template or heredoc whose opener is at
-// the cursor. It keeps literal spelling, escapes, strip markers, and heredoc
-// indentation untouched. Only interpolation contents enter the ordinary
-// expression grammar; literal template bytes are never expression trivia.
-// Directive scopes are tracked by templateNesting rather than by recursion.
+// templateExpression parses a quoted template or heredoc.
 func (p *parser) templateExpression(b *nodeBuilder) {
 	closer := QuoteClose
 	if p.current().kind == HeredocOpen {
@@ -12,8 +8,7 @@ func (p *parser) templateExpression(b *nodeBuilder) {
 	}
 	p.consumeUntil(b, p.pos+1)
 
-	// Builders are cursor snapshots. Copying the root avoids making every
-	// caller's expression builder escape to the heap through the scope stack.
+	// Copy b so that it does not escape to the heap.
 	nesting := templateNesting{root: *b, lastIf: -1, lastFor: -1}
 	for {
 		body := nesting.current()
@@ -22,8 +17,8 @@ func (p *parser) templateExpression(b *nodeBuilder) {
 			nesting.closeMissing(0, p.current().span)
 			p.consumeUntil(b, p.pos+1)
 			return
+		// The lexer reports the unterminated template.
 		case EOF:
-			// The lexer diagnoses the unclosed template at its opening delimiter.
 			nesting.closeMissing(0, p.current().span)
 			return
 		case TemplateText, HeredocMarker:
@@ -34,8 +29,8 @@ func (p *parser) templateExpression(b *nodeBuilder) {
 			header, name := p.templateDirective()
 			nesting.directive(header, name)
 		case Whitespace, Newline, LineComment, BlockComment:
-			// The heredoc header owns a newline when followed by content or its
-			// closer. Trivia left at EOF by malformed sequences remains outside.
+			// Trivia at EOF, left by a malformed sequence, stays outside the
+			// template.
 			next := p.look(newlineTransparent)
 			if p.tokens[next].kind == EOF {
 				nesting.closeMissing(0, p.tokens[next].span)
@@ -43,9 +38,7 @@ func (p *parser) templateExpression(b *nodeBuilder) {
 			}
 			p.consumeUntil(body, next)
 		default:
-			// The lexer normally emits only the cases above in a template body.
-			// Diagnose unexpected tokens as a lexer/parser invariant defense, and
-			// still consume one so a broken assumption cannot prevent progress.
+			// The lexer should not produce other tokens here.
 			p.report(UnexpectedToken, p.current().span)
 			part := p.begin()
 			p.consumeUntil(&part, p.pos+1)
@@ -58,15 +51,14 @@ func (p *parser) templateExpression(b *nodeBuilder) {
 func (p *parser) interpolation(parent *nodeBuilder) {
 	b := p.begin()
 	p.templateSequenceOpen(&b)
-	// Interpolations permit newlines even inside a quoted, single-line template.
+	// Newlines are allowed even in a quoted template's interpolation.
 	p.operand(&b, lowestPower, newlineTransparent)
 	p.templateSequenceEnd(&b)
 	parent.node(b.finish(TemplateInterpolation))
 }
 
-// templateSequenceOpen consumes the opener and an opening strip marker. Only a
-// strip marker immediately after the opener belongs to its opening edge. Any
-// later marker is before the closing brace, even across expression trivia.
+// templateSequenceOpen consumes the opener and a strip marker directly after
+// it.
 func (p *parser) templateSequenceOpen(b *nodeBuilder) {
 	p.consumeUntil(b, p.pos+1)
 	if p.current().kind == StripMarker {
@@ -74,10 +66,8 @@ func (p *parser) templateSequenceOpen(b *nodeBuilder) {
 	}
 }
 
-// templateSequenceEnd consumes a closing strip marker and the closing brace of
-// an interpolation or directive header. Material the expression left before
-// the closer becomes one ErrorNode bounded by the template's own closers, so a
-// broken sequence cannot swallow the template's closing quote or marker.
+// templateSequenceEnd consumes a closing strip marker and brace, recovering
+// from anything before them without passing the template's own closer.
 func (p *parser) templateSequenceEnd(b *nodeBuilder) {
 	kind := p.peek(newlineTransparent)
 	if kind != TemplateSequenceEnd && kind != StripMarker && kind != EOF {

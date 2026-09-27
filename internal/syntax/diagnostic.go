@@ -5,9 +5,7 @@ import (
 	"slices"
 )
 
-// DiagnosticKind identifies a lexical or syntax error. Message provides English
-// prose and String its stable symbolic name. Its numeric value is not a stable
-// storage format.
+// DiagnosticKind identifies a lexical or syntax error.
 type DiagnosticKind uint8
 
 const (
@@ -56,16 +54,11 @@ const (
 	ExpectedSingleLineAttribute
 	ExpectedSingleLineBlockEnd
 	DuplicateAttribute
-	// DiagnosticKindCount bounds the contiguous diagnostic enumeration.
-	// Consumers with exhaustive diagnostic mappings use it to detect added
-	// kinds.
+	// DiagnosticKindCount is the number of diagnostic kinds.
 	DiagnosticKindCount
 )
 
-// Diagnostic points to the source responsible for a lexical or syntax error.
-// An error does not require an Invalid token: an unterminated comment, for
-// example, retains its BlockComment kind so its source remains recognizable.
-// Use Kind.Message for prose and Result.Locate to locate span endpoints.
+// Diagnostic is a lexical or syntax error at Span.
 type Diagnostic struct {
 	Kind DiagnosticKind
 	Span Span
@@ -119,12 +112,9 @@ var diagnosticMessages = [DiagnosticKindCount]string{
 	DuplicateAttribute:           "An attribute with this name is already defined in the same body.",
 }
 
-// Message returns a standalone English sentence describing the error category,
-// without source text, filename, or location. Unknown kinds return
-// "Unknown diagnostic.". Message does not allocate.
-//
-// Wording may improve over time. Use the kind for programmatic decisions and
-// String for its stable symbolic name, rather than matching message text.
+// Message returns an English sentence describing the error, without source
+// text or location, or "Unknown diagnostic." for an unknown kind. The wording
+// may change; compare kinds, not messages.
 func (k DiagnosticKind) Message() string {
 	if k < DiagnosticKindCount {
 		return diagnosticMessages[k]
@@ -132,10 +122,8 @@ func (k DiagnosticKind) Message() string {
 	return "Unknown diagnostic."
 }
 
-// sortDiagnostics orders diagnostics by starting offset. The sort is stable
-// so that, at equal offsets, each phase keeps its own reporting order and the
-// lexical diagnostics stay ahead of the parser diagnostics appended after
-// them, which is the order Result.Diagnostics promises.
+// sortDiagnostics stably sorts diagnostics by start offset, so lexical errors
+// precede parser errors appended after them.
 func sortDiagnostics(diagnostics []Diagnostic) {
 	slices.SortStableFunc(diagnostics, func(a, b Diagnostic) int {
 		return cmp.Compare(a.Span.Start, b.Span.Start)

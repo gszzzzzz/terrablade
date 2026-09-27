@@ -4,26 +4,20 @@ package syntax
 type traversalMode uint8
 
 const (
-	// allTraversalSteps accepts dot and bracket steps.
 	allTraversalSteps traversalMode = iota
-	// attributeTraversalSteps accepts only dot steps: the suffix of an
-	// attribute splat, where a bracket step ends the projection and belongs
-	// to the enclosing traversal instead.
+	// attributeTraversalSteps accepts only dot steps, for the suffix of an
+	// attribute splat.
 	attributeTraversalSteps
 )
 
-// continuesTraversal reports whether kind begins another step in mode.
 func continuesTraversal(kind TokenKind, mode traversalMode) bool {
 	return kind == Dot || (kind == OpenBracket && mode != attributeTraversalSteps)
 }
 
-// steps keeps traversal steps flat except where splat semantics group suffixes.
-// Attribute splats contain only following dot accesses; a full splat contains every
-// following traversal, including nested splats. This follows upstream HCL's
-// parseExpressionTraversals without introducing evaluated or synthetic nodes.
+// steps parses traversal steps into parent. As in upstream HCL, an attribute
+// splat contains the dot steps after it, and a full splat all steps after it.
 func (p *parser) steps(parent *nodeBuilder, context newlineContext, mode traversalMode) {
-	// An absent suffix costs no recursive level. Otherwise a complete splat at
-	// the depth boundary would fail merely while checking for another step.
+	// Take a depth level only when a step follows.
 	if !continuesTraversal(p.peek(context), mode) {
 		return
 	}
@@ -39,7 +33,7 @@ func (p *parser) steps(parent *nodeBuilder, context newlineContext, mode travers
 		if !continuesTraversal(kind, mode) {
 			return
 		}
-		// Inter-step trivia belongs at traversal level; the step starts at '.' or '['.
+		// Trivia between steps belongs to the traversal.
 		p.consumeUntil(parent, p.look(context))
 		b := p.begin()
 		p.consumeLookahead(&b, context)
@@ -54,31 +48,24 @@ func (p *parser) steps(parent *nodeBuilder, context newlineContext, mode travers
 	}
 }
 
-// dotStep completes a step whose '.' is already in b: an attribute name, a
-// legacy numeric index, or an attribute splat. It reports false when nothing
-// valid follows the dot, which ends the traversal with an ErrorNode for the
-// stray dot.
+// dotStep completes a step whose '.' is in b. It reports false for a stray
+// dot, which ends the traversal.
 func (p *parser) dotStep(parent, b *nodeBuilder, context newlineContext, mode traversalMode) bool {
 	switch p.peek(context) {
 	case Identifier:
 		p.consumeLookahead(b, context)
 		parent.node(b.finish(AttributeAccess))
 	case Number:
-		// The lexer makes foo.0.1 the tokens foo, '.', and 0.1, so the legacy
-		// index rule against a decimal point is checked on the number here.
 		p.number(b, context, true)
 		parent.node(b.finish(LegacyIndexAccess))
 	case Star:
 		if mode == attributeTraversalSteps {
-			// Nested .* is invalid within a legacy projection. A preceding
-			// bracket step would already have ended that projection.
 			p.report(NestedAttributeSplat, p.tokens[p.look(context)].span)
 			p.consumeLookahead(b, context)
 			parent.node(b.finish(ErrorNode))
 			return true
 		}
 		p.consumeLookahead(b, context)
-		// Bracket indexing stays outside this legacy projection as a sibling.
 		p.steps(b, context, attributeTraversalSteps)
 		parent.node(b.finish(AttributeSplat))
 	default:
@@ -89,15 +76,13 @@ func (p *parser) dotStep(parent, b *nodeBuilder, context newlineContext, mode tr
 	return true
 }
 
-// bracketStep completes a step whose '[' is already in b: a full splat [*] or
-// an index expression. Upstream detects [*] in the outer newline context before
-// entering ordinary index-expression mode. Thus a[\n*] is invalid outside
-// parens, while a[\n0] is valid. Preserve this distinction and all raw trivia.
+// bracketStep completes a step whose '[' is in b. As upstream, [*] is matched
+// in the outer newline context, so a[\n*] is invalid outside parentheses while
+// a[\n0] is valid.
 func (p *parser) bracketStep(parent, b *nodeBuilder, context newlineContext) {
 	if p.peek(context) == Star {
 		p.consumeLookahead(b, context)
 		if p.expect(b, CloseBracket, ExpectedClosingBracket, context) {
-			// Every suffix projects per element, so it stays inside this splat.
 			p.steps(b, context, allTraversalSteps)
 		}
 		parent.node(b.finish(FullSplat))

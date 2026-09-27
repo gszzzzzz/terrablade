@@ -1,36 +1,23 @@
 package syntax
 
-// bodyFrame is one open body in the iterative descent through blocks. The
-// file body has no block; every nested frame pairs the block's builder, which
-// already holds the header, with the builder for its body.
+// bodyFrame is one open body. For a block body, block holds the header.
 type bodyFrame struct {
 	block nodeBuilder
 	body  nodeBuilder
-	// single marks a block whose body began on the header line, as in
-	// b { a = 1 }. Upstream allows exactly one attribute there, followed by the
-	// closing brace on the same line. Recovery clears single once that form is
-	// broken so the following lines parse as an ordinary body.
-	single bool
-	// attribute records that the body has parsed an attribute, after which a
-	// single-line body must end.
-	attribute bool
+	// single marks a body that began on the header line, as in b { a = 1 },
+	// which may hold only one attribute. Recovery clears it.
+	single    bool
+	attribute bool // the body has an attribute
 }
 
-// bodyAttributeKey identifies an attribute name within one body so that one
-// map can diagnose duplicates per scope.
+// bodyAttributeKey identifies an attribute name within one body. Distinct
+// bodies have distinct start offsets.
 type bodyAttributeKey struct {
-	// Nested bodies start after distinct consumed '{' tokens. Only the deepest
-	// unfinished body can start at EOF, so body.start uniquely identifies scope.
 	bodyStart int
 	name      string
 }
 
-// body parses the file body and every block body nested in it. Bodies nest
-// iteratively: a deep block hierarchy consumes arena and frame storage
-// proportional to source size, without growing the Go call stack. The one
-// attribute table keys by body start, keeping sibling scopes distinct without
-// allocating a separate map for every small body. Each loop iteration ends a
-// single-line body, closes a block, or parses one item.
+// body parses the file body and, iteratively, every block body nested in it.
 func (p *parser) body() Node {
 	frames := []bodyFrame{{body: p.begin()}}
 	attributes := make(map[bodyAttributeKey]struct{})
@@ -50,17 +37,12 @@ func (p *parser) body() Node {
 			continue
 		}
 
-		// An unmatched '}' in the file body reaches bodyItem like any other
-		// token that cannot start an item.
 		frames = p.bodyItem(frames, attributes)
 	}
 }
 
-// singleLineBodyEnd enforces that a single-line block ends right after its one
-// attribute, which is upstream's stricter single-line rule. After reporting,
-// the frame becomes an ordinary body: a newline after a malformed single-line
-// body is a useful recovery point, retaining later attributes rather than
-// swallowing the block.
+// singleLineBodyEnd requires a single-line body to end after its attribute.
+// On error the body continues as an ordinary multi-line body.
 func (p *parser) singleLineBodyEnd(frame *bodyFrame) {
 	kind := p.peek(newlineTerminates)
 	if kind == CloseBrace || kind == EOF {
@@ -72,8 +54,7 @@ func (p *parser) singleLineBodyEnd(frame *bodyFrame) {
 }
 
 // closeBlock finishes the innermost block at its '}' or at EOF and appends it
-// to the enclosing body. Like any other item, the block must be followed by a
-// line end, which bodyItemEnd checks on the parent's behalf.
+// to the enclosing body.
 func (p *parser) closeBlock(frames []bodyFrame) []bodyFrame {
 	frame := frames[len(frames)-1]
 	block := frame.block
@@ -87,18 +68,16 @@ func (p *parser) closeBlock(frames []bodyFrame) []bodyFrame {
 	return frames
 }
 
-// bodyItem parses one attribute or block header at the cursor, or recovers
-// from a token that cannot start either. It returns the frame stack, extended
-// by one frame when a block header opened a new body.
+// bodyItem parses one attribute or block header, pushing a frame for a block
+// body.
 func (p *parser) bodyItem(frames []bodyFrame, attributes map[bodyAttributeKey]struct{}) []bodyFrame {
 	frame := &frames[len(frames)-1]
 	kind := p.current().kind
 	if kind != Identifier {
 		p.report(ExpectedBodyItem, p.current().span)
 		if kind == CloseBrace {
-			// Only the file body can encounter an unmatched brace here. It is a
-			// recovery boundary, so recoverUntil would not consume it; wrapping
-			// just that token is what guarantees progress.
+			// An unmatched '}' in the file body. recoverUntil stops at it,
+			// so consume it here.
 			bad := p.begin()
 			p.consumeUntil(&bad, p.pos+1)
 			frame.body.node(bad.finish(ErrorNode))
@@ -117,10 +96,7 @@ func (p *parser) bodyItem(frames []bodyFrame, attributes map[bodyAttributeKey]st
 		return frames
 	}
 	if frame.single {
-		// Upstream allows only an attribute in a single-line block, so a name
-		// without '=' cannot start a nested block here.
 		p.report(ExpectedSingleLineAttribute, name)
-		// Finish the partial item before recovery reuses the pending tail.
 		frame.body.node(item.finish(ErrorNode))
 		p.recoverUntil(&frame.body, newlineTerminates, bodyItemBoundaries)
 		frame.single = false
@@ -140,8 +116,7 @@ func (p *parser) bodyItem(frames []bodyFrame, attributes map[bodyAttributeKey]st
 		return frames
 	}
 
-	// A body that begins on the header line is single-line unless that line
-	// ends immediately, which leaves an ordinary multi-line body.
+	// A body that starts on the header line is single-line.
 	next = p.peek(newlineTerminates)
 	return append(frames, bodyFrame{
 		block:  item,
@@ -150,9 +125,8 @@ func (p *parser) bodyItem(frames []bodyFrame, attributes map[bodyAttributeKey]st
 	})
 }
 
-// bodyAttribute parses the rest of an attribute whose name is already in item
-// and whose '=' is next. Duplicate names within one body are an error;
-// attributes, keyed by body start, tracks them across the iterative descent.
+// bodyAttribute parses the rest of an attribute whose name is in item and
+// whose '=' is next.
 func (p *parser) bodyAttribute(frame *bodyFrame, item *nodeBuilder, name Span, attributes map[bodyAttributeKey]struct{}) {
 	key := bodyAttributeKey{frame.body.start, p.source[name.Start:name.End]}
 	if _, duplicate := attributes[key]; duplicate {
@@ -164,16 +138,14 @@ func (p *parser) bodyAttribute(frame *bodyFrame, item *nodeBuilder, name Span, a
 	p.operand(item, lowestPower, newlineTerminates)
 	frame.body.node(item.finish(Attribute))
 	frame.attribute = true
-	// A single-line body checks its end at the top of the body loop instead.
+	// The body loop checks the end of a single-line body.
 	if !frame.single {
 		p.bodyItemEnd(&frame.body)
 	}
 }
 
-// bodyItemEnd requires a line end after an attribute or block. Only a
-// single-line block's sole attribute may touch its containing '}'. All other
-// attributes and blocks require a newline, including before an outer '}'. EOF
-// can terminate a file's last item without a final newline, as upstream does.
+// bodyItemEnd requires a newline or EOF after an attribute or block. Only the
+// attribute of a single-line body may be followed directly by '}'.
 func (p *parser) bodyItemEnd(body *nodeBuilder) {
 	kind := p.peek(newlineTerminates)
 	if lineSeparators.has(kind) || kind == EOF {
@@ -183,9 +155,8 @@ func (p *parser) bodyItemEnd(body *nodeBuilder) {
 	p.recoverUntil(body, newlineTerminates, bodyItemBoundaries)
 }
 
-// blockHeader parses the labels after a block type and its opening brace,
-// reporting whether the brace was found. Labels are identifiers or quoted
-// literals, never expressions, so a label sees only the lexer's tokens.
+// blockHeader parses the labels and opening brace after a block type,
+// reporting whether the brace was found.
 func (p *parser) blockHeader(block *nodeBuilder) bool {
 	for {
 		switch p.peek(newlineTerminates) {
@@ -208,10 +179,8 @@ func (p *parser) blockHeader(block *nodeBuilder) bool {
 	}
 }
 
-// quotedBlockLabel parses a quoted label from its opening quote. Labels allow
-// string escapes, but never template interpolation or directives. Invalid
-// sequences remain raw ErrorNode subtrees, so they cannot be mistaken for
-// references or executable expressions by consumers of a partial tree.
+// quotedBlockLabel parses a quoted label. Labels allow escapes but not
+// template sequences, which are kept as raw ErrorNodes.
 func (p *parser) quotedBlockLabel(label *nodeBuilder) {
 	p.consumeUntil(label, p.pos+1)
 	for {
@@ -219,14 +188,13 @@ func (p *parser) quotedBlockLabel(label *nodeBuilder) {
 		case QuoteClose:
 			p.consumeUntil(label, p.pos+1)
 			return
+		// The lexer reports the unterminated quote.
 		case EOF:
-			// The lexer already reports an unterminated quote at its opener.
 			return
 		case TemplateText:
 			p.consumeUntil(label, p.pos+1)
 		case Whitespace, Newline, LineComment, BlockComment:
-			// Recovery from an unterminated sequence can leave expression trivia
-			// at EOF. Keep that tail with Body, as for unfinished expressions.
+			// Trivia at EOF, left by an unterminated sequence, belongs to Body.
 			next := p.look(newlineTransparent)
 			if p.tokens[next].kind == EOF {
 				return

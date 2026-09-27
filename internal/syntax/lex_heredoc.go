@@ -5,13 +5,11 @@ import (
 	"unicode/utf8"
 )
 
-// heredocIntroducer opens a heredoc. An optional '-' after it selects the
-// indented form, which affects only later indentation removal, not lexing.
+// heredocIntroducer opens a heredoc, optionally followed by '-'.
 const heredocIntroducer = "<<"
 
-// heredocOpener reports the marker span of a complete <<[-]Identifier Newline
-// prefix at the cursor. Only that complete prefix starts heredoc mode;
-// incomplete prefixes remain ordinary config tokens for the parser to reject.
+// heredocOpener returns the marker span of a complete <<[-]Identifier Newline
+// header at offset.
 func (l *lexer) heredocOpener() (Span, bool) {
 	start := l.offset + len(heredocIntroducer)
 	if start < len(l.source) && l.source[start] == '-' {
@@ -37,12 +35,8 @@ func (l *lexer) heredocOpener() (Span, bool) {
 	return Span{}, false
 }
 
-// scanHeredoc scans one token inside a heredoc. The frame keeps no explicit
-// state: heredocOpener guaranteed that the marker and its newline follow the
-// opener contiguously, so the cursor's position relative to the marker span
-// tells which header token is due. The marker and its newline are separate
-// tokens so that the line ending stays an ordinary Newline, which the parser
-// consumes through the same trivia lookahead as every other line ending.
+// scanHeredoc scans one token inside a heredoc. The marker and the newline
+// after it follow the opener directly, so the offset tells which is due.
 func (l *lexer) scanHeredoc() TokenKind {
 	frame := l.modes[len(l.modes)-1]
 	if l.offset == frame.marker.Start {
@@ -66,9 +60,7 @@ func (l *lexer) scanHeredoc() TokenKind {
 		return kind
 	}
 
-	// Literal text runs until a template opener or a closing marker line. The
-	// closer check is skipped at the run's first position only because it was
-	// already made above and would fail again.
+	// Literal text runs until a template opener or a closing marker line.
 	start := l.offset
 	for l.offset < len(l.source) {
 		if l.hasPrefix(interpolationOpener) || l.hasPrefix(directiveOpener) {
@@ -87,12 +79,9 @@ func (l *lexer) scanHeredoc() TokenKind {
 	return TemplateText
 }
 
-// heredocEnd reports the end offset of a closing marker line starting at the
-// cursor. Terraform-family implementations recognize a whitespace-trimmed
-// marker line for both << and <<-. The dash affects later indentation removal,
-// not closing marker recognition. Keep those surrounding bytes, and require a
-// final newline just as native HCL does. No normalization is applied to marker
-// identifiers.
+// heredocEnd returns the end of a closing marker line at offset, excluding
+// its line ending. As upstream, the marker may be surrounded by whitespace for
+// both << and <<-, and the line must end with a newline.
 func (l *lexer) heredocEnd(marker Span) (int, bool) {
 	if l.offset == 0 || l.source[l.offset-1] != '\n' {
 		return 0, false

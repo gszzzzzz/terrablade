@@ -7,9 +7,8 @@ import (
 	"strings"
 )
 
-// exactNumberLength bounds the candidates checked by big.ParseFloat itself.
-// Its decimal-to-binary mantissa conversion is quadratic in the digit count,
-// so longer candidates take the linear path in largeNumberRepresentable.
+// exactNumberLength bounds the candidates passed to big.ParseFloat, which is
+// quadratic in the digit count.
 const exactNumberLength = 1024
 
 // numberRepresentable reports whether a lexer numeric candidate is accepted by
@@ -22,12 +21,11 @@ func numberRepresentable(text string) bool {
 	return largeNumberRepresentable(text)
 }
 
-// largeNumberRepresentable repeats big.ParseFloat's decision in linear time.
-// ParseFloat fails on malformed syntax, on an exponent outside int64, and when
-// the binary exponent bitlen(mantissa) - fractionDigits + exponent leaves the
-// int32 range; the power of five from a decimal exponent only rounds. The
-// mantissa's bit length comes from a float64 logarithm, which is exact unless
-// the digits lie within about one part in 10^12 of a power of two.
+// largeNumberRepresentable reproduces numberRepresentable's result in linear
+// time. ParseFloat fails on malformed syntax, an exponent outside int64, or a
+// binary exponent outside the int32 range. The mantissa's bit length is
+// estimated from a float64 logarithm, which is exact unless the digits lie
+// within about one part in 10^12 of a power of two.
 func largeNumberRepresentable(text string) bool {
 	mantissa, exponentText := text, ""
 	if i := strings.IndexAny(text, "eE"); i >= 0 {
