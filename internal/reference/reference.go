@@ -3,9 +3,13 @@
 package reference
 
 import (
+	"bytes"
+	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"testing"
+	"time"
 )
 
 // Variable names the environment variable that selects the executable. CI sets
@@ -31,4 +35,26 @@ func CLI(t testing.TB) string {
 		t.Fatalf("find reference CLI %q: %v", name, err)
 	}
 	return path
+}
+
+// Format runs the reference executable's "fmt -no-color -" on source and
+// returns its stdout. Stderr stays apart, so a warning cannot pass for
+// formatted text, and is appended to a non-nil error, which wraps the
+// *exec.ExitError. A run longer than ten seconds fails t.
+func Format(t testing.TB, source []byte) ([]byte, error) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	command := exec.CommandContext(ctx, CLI(t), "fmt", "-no-color", "-")
+	command.Stdin = bytes.NewReader(source)
+	var stderr bytes.Buffer
+	command.Stderr = &stderr
+	stdout, err := command.Output()
+	if ctx.Err() != nil {
+		t.Fatalf("reference CLI: %v", ctx.Err())
+	}
+	if err != nil {
+		return stdout, fmt.Errorf("%w\n%s", err, stderr.Bytes())
+	}
+	return stdout, nil
 }

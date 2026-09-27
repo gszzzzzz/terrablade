@@ -206,15 +206,17 @@ func TestNormalizationReferenceSemantics(t *testing.T) {
 		}
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
 	defer cancel()
 	command := exec.CommandContext(ctx, cli, "console", "-no-color")
 	command.Dir = t.TempDir()
 	command.Stdin = strings.NewReader(
 		`join(",", [for answer in [` + strings.Join(comparisons, ", ") + `] : tostring(answer)])` + "\n")
-	output, err := command.CombinedOutput()
+	var stderr strings.Builder
+	command.Stderr = &stderr
+	output, err := command.Output()
 	if err != nil {
-		t.Fatalf(lines("reference CLI semantic comparison failed: %v", "%s"), err, output)
+		t.Fatalf(lines("reference CLI semantic comparison failed: %v", "%s%s"), err, output, stderr.String())
 	}
 
 	answers := strings.Split(strings.Trim(strings.TrimSpace(string(output)), `"`), ",")

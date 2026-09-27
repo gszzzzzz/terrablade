@@ -2,17 +2,14 @@ package terrablade_test
 
 import (
 	"bytes"
-	"context"
-	"os/exec"
 	"testing"
-	"time"
 
 	"github.com/gszzzzzz/terrablade"
 	"github.com/gszzzzzz/terrablade/internal/reference"
 )
 
 func TestReferenceFixedPoints(t *testing.T) {
-	cli := reference.CLI(t)
+	reference.CLI(t)
 	// These fixtures use upstream's indentation convention. Custom indentation
 	// and the narrow exceptions documented in doc.go are not upstream fixed points.
 	for _, source := range []string{
@@ -29,13 +26,9 @@ func TestReferenceFixedPoints(t *testing.T) {
 	} {
 		for _, width := range []int{16, 80} {
 			output := format(t, []byte(source), terrablade.Options{PrintWidth: width})
-			ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
-			command := exec.CommandContext(ctx, cli, "fmt", "-no-color", "-")
-			command.Stdin = bytes.NewReader(output)
-			formatted, err := command.CombinedOutput()
-			cancel()
+			formatted, err := reference.Format(t, output)
 			if err != nil {
-				t.Fatalf("reference CLI rejected %q: %v\n%s", output, err, formatted)
+				t.Fatalf("reference CLI rejected %q: %v", output, err)
 			}
 			if !bytes.Equal(formatted, output) {
 				t.Errorf("reference CLI changed canonical output: %q => %q", output, formatted)
