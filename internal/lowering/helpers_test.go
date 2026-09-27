@@ -76,10 +76,7 @@ func renderFile(t testing.TB, source string, width int) string {
 	if diagnostics := result.Diagnostics(); len(diagnostics) != 0 {
 		t.Fatalf("invalid file %q: %+v", source, diagnostics)
 	}
-	doc, err := lowering.File(result)
-	if err != nil {
-		t.Fatal(err)
-	}
+	doc := lowering.File(result)
 	return document.Render(doc, document.Options{PrintWidth: width})
 }
 

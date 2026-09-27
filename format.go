@@ -75,13 +75,7 @@ func Format(source []byte, options Options) ([]byte, error) {
 		return nil, newParseError(result, diagnostics)
 	}
 
-	doc, err := lowering.File(result)
-	if err != nil {
-		// Lowering supports every diagnostic-free native-HCL parse. Failure
-		// here is an internal invariant violation, not a third caller error.
-		panic(fmt.Sprintf("terrablade: internal invariant: cannot lower diagnostic-free input: %v", err))
-	}
-	return []byte(document.Render(doc, document.Options{
+	return []byte(document.Render(lowering.File(result), document.Options{
 		PrintWidth: options.PrintWidth, IndentWidth: options.IndentWidth, TabWidth: options.TabWidth,
 	})), nil
 }

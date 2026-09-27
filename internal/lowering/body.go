@@ -1,24 +1,19 @@
 package lowering
 
 import (
-	"errors"
-
 	"github.com/gszzzzzz/terrablade/internal/document"
 	"github.com/gszzzzzz/terrablade/internal/syntax"
 )
 
 // File lowers a complete native HCL file, including body comments and its final
-// newline. A zero Result or any parse diagnostic returns an error and an empty
-// Doc. Layout width and indentation are selected later by document.Render.
-func File(result syntax.Result) (document.Doc, error) {
-	if len(result.Diagnostics()) != 0 {
-		return document.Doc{}, errors.New("lowering: cannot format a result with diagnostics")
+// newline. result must come from a diagnostic-free parse: recovered input is
+// never formatted, so File panics otherwise. Layout width and indentation are
+// selected later by document.Render.
+func File(result syntax.Result) document.Doc {
+	if len(result.Diagnostics()) != 0 || result.Root().Kind() != syntax.File {
+		panic("lowering: File requires a diagnostic-free parse")
 	}
-	if result.Root().Kind() != syntax.File {
-		return document.Doc{}, errors.New("lowering: expected a parsed file")
-	}
-
-	return postOrder(fileWalker{result}, result.Root(), false).doc, nil
+	return postOrder(fileWalker{result}, result.Root(), false).doc
 }
 
 // fileWalker lowers body-level nodes for File. Its context reports whether a

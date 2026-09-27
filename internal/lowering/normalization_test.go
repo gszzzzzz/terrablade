@@ -128,10 +128,7 @@ func TestNormalizationFileAndCST(t *testing.T) {
 		"  )", "", "  obj = { (a) = b }", "}", "",
 	)
 	result := syntax.Parse([]byte(source))
-	doc, err := lowering.File(result)
-	if err != nil {
-		t.Fatal(err)
-	}
+	doc := lowering.File(result)
 	if got := document.Render(doc, document.Options{}); got != want {
 		t.Fatalf("File output = %q, want %q", got, want)
 	}

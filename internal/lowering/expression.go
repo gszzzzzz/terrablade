@@ -1,40 +1,14 @@
 package lowering
 
 import (
-	"errors"
 	"fmt"
 
 	"github.com/gszzzzzz/terrablade/internal/document"
 	"github.com/gszzzzzz/terrablade/internal/syntax"
 )
 
-// Expression lowers node from result to a layout. The caller must supply a node
-// from this same Result, just as with Result.Text. Any diagnostics anywhere in
-// result or a zero/non-expression node returns an error and an empty Doc. It
-// never formats a recovered partial expression.
-// Quoted interpolation-only wrappers and legacy numeric indices are normalized
-// without changing result. Indices inside attribute splats retain their syntax
-// because bracket indexing would change the projection's scope.
-// Layout width and indentation are selected later by document.Render.
-//
-// File is the entry the formatter uses; Expression exists as a seam for tests,
-// which lower and render one expression in isolation without a surrounding
-// body. It stays exported so those tests can fuzz expressions directly.
-func Expression(result syntax.Result, node syntax.SyntaxNode) (document.Doc, error) {
-	if len(result.Diagnostics()) != 0 {
-		return document.Doc{}, errors.New("lowering: cannot format a result with diagnostics")
-	}
-	if !isExpressionKind(node.Kind()) {
-		return document.Doc{}, errors.New("lowering: expected an expression node")
-	}
-
-	return lowerExpression(result, node).doc, nil
-}
-
-// lowerExpression normalizes source and lowers the resulting view. It does not
-// check diagnostics: Expression checks them for one node and File once for the
-// whole file, and Result.Diagnostics clones its slice on every call, so this
-// shared path must not repeat the check per attribute.
+// lowerExpression normalizes source and lowers the resulting view. File has
+// already checked the whole result for diagnostics.
 func lowerExpression(result syntax.Result, source syntax.SyntaxNode) layout {
 	return postOrder(expressionWalker{result}, normalizeExpression(result, source), grammarContext{})
 }
@@ -76,22 +50,6 @@ type grammarContext struct {
 	// inSequence reports an enclosing template sequence, which flattens
 	// source-only layout choices.
 	inSequence bool
-}
-
-// isExpressionKind reports whether kind is a complete expression that the
-// Expression entry point accepts. Traversal steps, object items, and template
-// parts are lowered only as children of these forms.
-func isExpressionKind(kind syntax.NodeKind) bool {
-	switch kind {
-	case syntax.LiteralExpression, syntax.VariableExpression,
-		syntax.ParenthesizedExpression, syntax.UnaryExpression,
-		syntax.BinaryExpression, syntax.ConditionalExpression,
-		syntax.FunctionCallExpression, syntax.TraversalExpression,
-		syntax.TupleExpression, syntax.ObjectExpression, syntax.ForExpression,
-		syntax.TemplateExpression:
-		return true
-	}
-	return false
 }
 
 // piece is one significant child of a node together with the trivia before
@@ -221,8 +179,7 @@ func lowerNode(result syntax.Result, node *expressionView, context grammarContex
 }
 
 // lowerableKind reports whether lowerNode has a layout for kind: every
-// non-template form a diagnostic-free parse can produce. isExpressionKind is
-// the narrower set accepted at the Expression entry point.
+// non-template form a diagnostic-free parse can produce.
 func lowerableKind(kind syntax.NodeKind) bool {
 	switch kind {
 	case syntax.LiteralExpression, syntax.VariableExpression,
