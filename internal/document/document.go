@@ -130,7 +130,9 @@ func Indent(content Doc) Doc { return wrap(indentKind, content) }
 // after all line breaks have been chosen, so padding may exceed PrintWidth.
 // Columns count grapheme clusters, not terminal display cells.
 // A cell spanning an ordinary newline is ineligible and splits its chain.
-// LiteralLine belongs to opaque text and does not separate alignment rows.
+// LiteralLine belongs to opaque text and does not separate alignment rows; a
+// cell's prefix runs from the start of its row, through any literal lines, as
+// upstream HCL measures it.
 func Cell(column uint8, content Doc) Doc {
 	if content.node == nil {
 		return content
