@@ -85,8 +85,34 @@ jobs:
       # this toolchain's export data and fails before it analyzes anything.
       - name: Run predeclared
         run: go run github.com/nishanths/predeclared@v0.2.3-0.20250331095553-51e8c974458a ./...
+      - name: Run govulncheck
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
       - name: Run race tests
         run: go test -race ./...
+
+  fuzz:
+    name: Fuzz smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      # The regular test jobs run only the seed corpora. A short run of every
+      # target explores beyond them; a failing input is written to testdata.
+      - name: Fuzz each target
+        shell: bash
+        run: |
+          set -euo pipefail
+          for package in $(go list ./...); do
+            for target in $(go test -list '^Fuzz' "$package" | grep '^Fuzz' || true); do
+              go test -run '^$' -fuzz "^${target}\$" -fuzztime 15s "$package"
+            done
+          done
 
   compatibility:
     name: ${{ matrix.name }} compatibility
@@ -125,4 +151,6 @@ jobs:
       - name: Run compatibility tests
         env:
           TERRABLADE_REFERENCE_CLI: ${{ matrix.executable }}
+          # Keep the reference tools from contacting their update service.
+          CHECKPOINT_DISABLE: "1"
         run: go test ./...
