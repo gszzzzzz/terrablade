@@ -1,6 +1,9 @@
 package syntax
 
-import "sort"
+import (
+	"sort"
+	"unicode/utf8"
+)
 
 // HCL identifiers require the Unicode derived properties ID_Start/ID_Continue,
 // which unicode.IsLetter/IsDigit do not reproduce (for example, ID_Start admits
@@ -24,13 +27,21 @@ func inRanges(r rune, ranges []runeRange) bool {
 }
 
 // identifierStart reports whether r may begin an identifier: ID_Start or the
-// HCL addition '_'.
+// HCL addition '_'. ASCII, where ID_Start is the letters, skips the search.
 func identifierStart(r rune) bool {
-	return r == '_' || inRanges(r, idStart[:])
+	if r < utf8.RuneSelf {
+		return asciiLetter(r) || r == '_'
+	}
+	return inRanges(r, idStart[:])
 }
 
 // identifierContinue reports whether r may continue an identifier: ID_Continue
-// or the HCL addition '-'.
+// or the HCL addition '-'. ASCII ID_Continue is letters, digits, and '_'.
 func identifierContinue(r rune) bool {
-	return r == '-' || inRanges(r, idContinue[:])
+	if r < utf8.RuneSelf {
+		return asciiLetter(r) || '0' <= r && r <= '9' || r == '_' || r == '-'
+	}
+	return inRanges(r, idContinue[:])
 }
+
+func asciiLetter(r rune) bool { return 'a' <= r && r <= 'z' || 'A' <= r && r <= 'Z' }

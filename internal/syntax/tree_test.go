@@ -195,6 +195,32 @@ func BenchmarkParseExpressionChain(b *testing.B) {
 	}
 }
 
+// BenchmarkParse measures lexing and parsing of typical configuration: blocks,
+// identifiers, operators, calls, and templates in roughly equal measure.
+func BenchmarkParse(b *testing.B) {
+	const resource = `resource "aws_instance" "web_${count.index}" {
+  ami           = var.images[var.region]
+  instance_type = count.index > 2 ? "t3.large" : "t3.micro"
+  tags = {
+    Name  = "web-${count.index}"
+    Owner = lookup(var.owners, "web", "platform-team")
+  }
+  # A line comment between attributes.
+  user_data = <<-EOT
+    #!/bin/sh
+    echo ${var.greeting}
+  EOT
+}
+
+`
+	source := []byte(strings.Repeat(resource, 200))
+	b.ReportAllocs()
+	b.SetBytes(int64(len(source)))
+	for b.Loop() {
+		_ = Parse(source)
+	}
+}
+
 func BenchmarkTraverseDeepExpression(b *testing.B) {
 	terms := maxRecursiveExpressionDepth * 8
 	file := parseExpressionSource([]byte(strings.Repeat("x + ", terms-1) + "x"))

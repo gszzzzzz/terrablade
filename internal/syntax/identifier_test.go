@@ -1,6 +1,9 @@
 package syntax
 
-import "testing"
+import (
+	"testing"
+	"unicode/utf8"
+)
 
 func TestIdentifierProperties(t *testing.T) {
 	for _, test := range []struct {
@@ -35,6 +38,17 @@ func TestUnicodeTablesAreOrdered(t *testing.T) {
 			if i > 0 && ranges[i-1].hi >= r.lo {
 				t.Fatalf("%s: overlapping or unordered range %v", name, r)
 			}
+		}
+	}
+}
+
+func TestIdentifierASCIIMatchesTables(t *testing.T) {
+	for r := range rune(utf8.RuneSelf) {
+		if got, want := identifierStart(r), r == '_' || inRanges(r, idStart[:]); got != want {
+			t.Errorf("identifierStart(%q) = %v, table says %v", r, got, want)
+		}
+		if got, want := identifierContinue(r), r == '-' || inRanges(r, idContinue[:]); got != want {
+			t.Errorf("identifierContinue(%q) = %v, table says %v", r, got, want)
 		}
 	}
 }
