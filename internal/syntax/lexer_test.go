@@ -594,3 +594,15 @@ func FuzzLex(f *testing.F) {
 		}
 	})
 }
+
+func TestContinuesNumber(t *testing.T) {
+	for step, want := range map[string]bool{
+		"0": true, "01": true, "e2": true, "E2": true, "e+2": true, "e-2": true,
+		"e2suffix": true, "id": false, "e": false, "e+": false, "e-x": false,
+		"E": false, "x0": false, "*": false, "_0": false,
+	} {
+		if got := ContinuesNumber(step); got != want {
+			t.Errorf("ContinuesNumber(%q) = %v, want %v", step, got, want)
+		}
+	}
+}

@@ -200,6 +200,15 @@ func (l *lexer) number() {
 	}
 }
 
+// ContinuesNumber reports whether step, written directly after a number and a
+// dot, would be scanned into that number, as .0 and .e2 are but .id and .e
+// are not. Only a prefix matters: .e2suffix still extends the number.
+func ContinuesNumber(step string) bool {
+	l := lexer{source: []byte("0." + step)}
+	l.number()
+	return l.offset > len("0")
+}
+
 func digit(c byte) bool { return c >= '0' && c <= '9' }
 
 // singlePunctuation maps an ASCII byte to its one-byte operator or delimiter.

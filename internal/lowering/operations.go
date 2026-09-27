@@ -115,25 +115,6 @@ func traversalSequence(result syntax.Result, pieces []piece, endsNumber, endsHer
 	return document.Concat(parts...)
 }
 
-// numberContinuesAcrossDot reports whether a step name following a number and
-// a dot would be scanned as part of that number. syntax's number scanner
-// crosses a dot only if it later consumes a digit or a complete exponent
-// prefix. Ordinary names and splats cannot extend a number; legacy numeric
-// indices and names beginning e/E[+-]?[0-9] can. Test the prefix, not the
-// entire name: e2suffix would still swallow e2 into the numeric token. A minus
-// can occur in an attribute name (e-2). A plus is a separate operator token in
-// the CST: .e + 2 supplies only "e" here and needs no boundary space. The
-// caller supplies a diagnostic-free attribute/index token, never empty.
-func numberContinuesAcrossDot(next string) bool {
-	if next[0] == 'e' || next[0] == 'E' {
-		next = next[1:]
-		if next != "" && (next[0] == '+' || next[0] == '-') {
-			next = next[1:]
-		}
-	}
-	return next != "" && next[0] >= '0' && next[0] <= '9'
-}
-
 // lowerIndex lays out one bracketed index step. An index holding a bare
 // literal or name is atomic and never breaks; any other index may break
 // inside its brackets (doc.go: Traversals).
@@ -167,35 +148,11 @@ func lowerIndex(result syntax.Result, node *expressionView, pieces pieceList) do
 // Binding powers order HCL's expression forms from loosest to tightest. An
 // operand binding more loosely than its operator needs parentheses to keep its
 // meaning, and equal power on the right of a binary operator would reassociate
-// a left-associative chain. The values only compare against one another and
-// are never rendered; binaryPower and expressionPower map forms onto them.
+// a left-associative chain. The parser defines the operator levels, read with
+// syntax.BinaryPrecedence; traversals and atoms bind tighter than any of them.
 const (
-	conditionalPower    = iota // a ? b : c
-	orPower                    // ||
-	andPower                   // &&
-	equalityPower              // == !=
-	comparisonPower            // < <= > >=
-	additivePower              // + -
-	multiplicativePower        // * / %
-	unaryPower                 // - !
-	traversalPower             // .attr [index] .* [*]
-	atomicPower                // Literals, names, and delimited forms.
+	conditionalPower = syntax.ConditionalPrecedence // a ? b : c
+	unaryPower       = syntax.UnaryPrecedence       // - !
+	traversalPower   = unaryPower + 1               // .attr [index] .* [*]
+	atomicPower      = traversalPower + 1           // Literals, names, and delimited forms.
 )
-
-// binaryPower maps a binary operator token to its binding power.
-func binaryPower(kind syntax.TokenKind) int {
-	switch kind {
-	case syntax.Or:
-		return orPower
-	case syntax.And:
-		return andPower
-	case syntax.EqualEqual, syntax.NotEqual:
-		return equalityPower
-	case syntax.Less, syntax.LessEqual, syntax.Greater, syntax.GreaterEqual:
-		return comparisonPower
-	case syntax.Plus, syntax.Minus:
-		return additivePower
-	default: // Star, Slash, Percent: the highest binary precedence.
-		return multiplicativePower
-	}
-}

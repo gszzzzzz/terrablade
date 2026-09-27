@@ -86,8 +86,19 @@ func (p *parser) expression(minimum int, context newlineContext) SyntaxNode {
 	return left
 }
 
-// binaryPower returns the binding power of a binary operator token, or
-// lowestPower for any other token.
+// Exported levels of the ladder above. Higher binds tighter.
+const (
+	// ConditionalPrecedence is the loosest level, a ? b : c, which
+	// BinaryPrecedence also returns for tokens that are not binary operators.
+	ConditionalPrecedence = lowestPower
+	// UnaryPrecedence binds tighter than every binary operator.
+	UnaryPrecedence = unaryPower
+)
+
+// BinaryPrecedence returns the binding power of a binary operator token, or
+// ConditionalPrecedence for any other token.
+func BinaryPrecedence(kind TokenKind) int { return binaryPower(kind) }
+
 func binaryPower(kind TokenKind) int {
 	switch kind {
 	case Or:

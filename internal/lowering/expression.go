@@ -178,7 +178,7 @@ type layout struct {
 	startsDot  bool
 	// fusesNumber reports that this attribute or legacy index step, placed
 	// directly after a number, would scan as part of that number
-	// (numberContinuesAcrossDot). Set only for those two step kinds.
+	// (syntax.ContinuesNumber). Set only for those two step kinds.
 	fusesNumber bool
 	// endsHeredoc reports that the node's last significant token is a heredoc
 	// marker whose newline the following gap must supply (doc.go: Heredocs).
@@ -332,7 +332,7 @@ func lowerOperation(result syntax.Result, kind syntax.NodeKind, pieces []piece, 
 	lowered.head = head.doc
 	switch kind {
 	case syntax.BinaryExpression:
-		lowered.power = binaryPower(pieces[1].kind)
+		lowered.power = syntax.BinaryPrecedence(pieces[1].kind)
 		lowered.continuation = operationContinuation(result, pieces[1:], head.child.endsHeredoc)
 		if head.child.power == lowered.power {
 			// A same-precedence chain shares one group and one run of
@@ -364,7 +364,7 @@ func lowerOperation(result syntax.Result, kind syntax.NodeKind, pieces []piece, 
 // tokens, so no boundary space is needed then.
 func stepFusesNumber(result syntax.Result, node *expressionView, pieces []piece) bool {
 	name, _ := node.Child(node.ChildCount() - 1).Token()
-	if !numberContinuesAcrossDot(name.spelling(result)) {
+	if !syntax.ContinuesNumber(name.spelling(result)) {
 		return false
 	}
 	step := pieces[1] // A step is the dot and then the name or index.

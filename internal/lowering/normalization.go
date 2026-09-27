@@ -322,7 +322,7 @@ func needsGrouping(result syntax.Result, parent syntax.SyntaxNode, position int,
 		power := 0
 		for i := range parent.ChildCount() {
 			if token, ok := parent.Child(i).Token(); ok && !token.Kind().IsTrivia() {
-				power = binaryPower(token.Kind())
+				power = syntax.BinaryPrecedence(token.Kind())
 				break
 			}
 		}
@@ -374,7 +374,7 @@ func expressionPower(node *expressionView) int {
 	case syntax.BinaryExpression:
 		for _, element := range node.children {
 			if element.node == nil && !element.token.kind.IsTrivia() {
-				return binaryPower(element.token.kind)
+				return syntax.BinaryPrecedence(element.token.kind)
 			}
 		}
 	case syntax.UnaryExpression:
