@@ -106,7 +106,7 @@ func lowerAttribute(result syntax.Result, node syntax.SyntaxNode) bodyLayout {
 			value := lowerExpression(result, child)
 			parts = append(parts, piece{doc: value.doc, child: value, before: trivia})
 		} else if token, ok := element.Token(); ok {
-			if isTrivia(token.Kind()) {
+			if token.Kind().IsTrivia() {
 				trivia = append(trivia, token)
 				continue
 			}
@@ -137,7 +137,7 @@ func lowerBlock(result syntax.Result, node syntax.SyntaxNode, layouts map[syntax
 			header = append(header, piece{doc: layouts[child].doc})
 			continue
 		} else if token, ok := element.Token(); ok {
-			if isTrivia(token.Kind()) {
+			if token.Kind().IsTrivia() {
 				trivia = append(trivia, token)
 				continue
 			}
@@ -175,7 +175,7 @@ func lowerBody(result syntax.Result, node syntax.SyntaxNode, nested bool, layout
 	}
 
 	for _, token := range trivia {
-		if token.Kind() == syntax.LineComment || token.Kind() == syntax.BlockComment {
+		if token.Kind().IsComment() {
 			nonempty = true
 		}
 	}
@@ -399,11 +399,4 @@ func (separator bodySeparator) doc() document.Doc {
 	default:
 		return document.Doc{}
 	}
-}
-
-// isTrivia reports whether a token carries no syntax of its own. Despite
-// the name it applies to every token stream in the package: the expression
-// view reuses it to skip the same kinds.
-func isTrivia(kind syntax.TokenKind) bool {
-	return kind == syntax.Whitespace || kind == syntax.Newline || kind == syntax.LineComment || kind == syntax.BlockComment
 }

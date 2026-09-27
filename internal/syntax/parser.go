@@ -47,8 +47,6 @@ func classifyTrivia(kind TokenKind) triviaClass {
 	}
 }
 
-func isTrivia(kind TokenKind) bool { return classifyTrivia(kind) != notTrivia }
-
 // parser is a single-pass recursive-descent parser over the lexer's tokens.
 // Three fields cooperate to bound recursion without losing source. depth
 // counts the recursive productions currently active. When it reaches
@@ -281,7 +279,7 @@ func (p *parser) retainRemainder(root *nodeBuilder) {
 	if p.tokens[p.pos].kind != EOF {
 		p.report(UnexpectedToken, p.tokens[p.pos].span)
 		end := len(p.tokens) - 1
-		for end > p.pos && isTrivia(p.tokens[end-1].kind) {
+		for end > p.pos && p.tokens[end-1].kind.IsTrivia() {
 			end--
 		}
 		rest := p.begin()

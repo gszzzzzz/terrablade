@@ -48,7 +48,7 @@ func (p *parser) skipConstruct(b *nodeBuilder) {
 			// template. Leave it available instead of swallowing the outer tail.
 			break
 		}
-		if !isTrivia(kind) {
+		if !kind.IsTrivia() {
 			end = i + 1
 		}
 		if len(ends) == 0 {

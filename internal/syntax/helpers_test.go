@@ -122,10 +122,10 @@ func assertTreeInvariants(t *testing.T, source []byte, file Result) {
 			}
 			count := node.ChildCount()
 			if node.Kind() != File && node.Kind() != Body && count > 0 {
-				if token, ok := node.Child(0).Token(); ok && isTrivia(token.Kind()) {
+				if token, ok := node.Child(0).Token(); ok && token.Kind().IsTrivia() {
 					t.Fatalf("%v begins with %v trivia: %s", node.Kind(), token.Kind(), expressionShape(file, element))
 				}
-				if token, ok := node.Child(count - 1).Token(); ok && isTrivia(token.Kind()) {
+				if token, ok := node.Child(count - 1).Token(); ok && token.Kind().IsTrivia() {
 					t.Fatalf("%v ends with %v trivia: %s", node.Kind(), token.Kind(), expressionShape(file, element))
 				}
 			}
@@ -205,7 +205,7 @@ func assertBody(t *testing.T, source string, diagnostics []Diagnostic, shape str
 // independently pin every token, every span, and each comment's parent.
 func expressionShape(file Result, current SyntaxElement) string {
 	if element, ok := current.Token(); ok {
-		if isTrivia(element.Kind()) || element.Kind() == EOF {
+		if element.Kind().IsTrivia() || element.Kind() == EOF {
 			return ""
 		}
 		span := element.Span()
@@ -234,7 +234,7 @@ func bodyShape(file Result, root SyntaxElement) string {
 			for i := range node.ChildCount() {
 				visit(node.Child(i), depth+1)
 			}
-		} else if token, ok := element.Token(); ok && !isTrivia(token.Kind()) && token.Kind() != EOF {
+		} else if token, ok := element.Token(); ok && !token.Kind().IsTrivia() && token.Kind() != EOF {
 			out.WriteString(strings.Repeat("  ", depth))
 			span := token.Span()
 			out.WriteString(strconv.Quote(file.source[span.Start:span.End]))

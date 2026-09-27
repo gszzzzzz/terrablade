@@ -67,6 +67,13 @@ const (
 	tokenKindCount
 )
 
+// IsTrivia reports whether k carries no syntax of its own: whitespace, a
+// newline, or a comment.
+func (k TokenKind) IsTrivia() bool { return classifyTrivia(k) != notTrivia }
+
+// IsComment reports whether k is a line or block comment.
+func (k TokenKind) IsComment() bool { return k == LineComment || k == BlockComment }
+
 // Span is a half-open byte interval [Start, End) in the original source.
 type Span struct {
 	Start int

@@ -256,8 +256,7 @@ func collectPieces(result syntax.Result, node *expressionView, layouts map[*expr
 	for i := 0; i < node.ChildCount(); i++ {
 		element := node.Child(i)
 		if token, ok := element.Token(); ok {
-			switch token.Kind() {
-			case syntax.Whitespace, syntax.Newline, syntax.LineComment, syntax.BlockComment:
+			if token.Kind().IsTrivia() {
 				trivia = append(trivia, token.source)
 				continue
 			}
@@ -379,7 +378,7 @@ func stepFusesNumber(result syntax.Result, node *expressionView, pieces []piece)
 	}
 	step := pieces[1] // A step is the dot and then the name or index.
 	for _, token := range step.before {
-		if token.Kind() == syntax.LineComment || token.Kind() == syntax.BlockComment {
+		if token.Kind().IsComment() {
 			return false
 		}
 	}

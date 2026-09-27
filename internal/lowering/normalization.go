@@ -227,7 +227,7 @@ func expressionEndsHeredoc(node *expressionView) bool {
 		if child.node != nil {
 			return child.node.endsHeredoc
 		}
-		if !isTrivia(child.token.kind) {
+		if !child.token.kind.IsTrivia() {
 			return false
 		}
 	}
@@ -253,7 +253,7 @@ func quotedWrapper(node *expressionView) (inner *expressionView, before, after [
 	for _, element := range interpolation.children {
 		if element.node != nil {
 			inner = element.node
-		} else if isTrivia(element.token.kind) {
+		} else if element.token.kind.IsTrivia() {
 			if inner == nil {
 				before = append(before, element)
 			} else {
@@ -266,7 +266,7 @@ func quotedWrapper(node *expressionView) (inner *expressionView, before, after [
 
 func hasComments(elements []expressionElement) bool {
 	for _, element := range elements {
-		if element.token.kind == syntax.LineComment || element.token.kind == syntax.BlockComment {
+		if element.token.kind.IsComment() {
 			return true
 		}
 	}
@@ -315,7 +315,7 @@ func needsGrouping(result syntax.Result, parent syntax.SyntaxNode, position int,
 		// direct token that is not trivia.
 		power := 0
 		for i := range parent.ChildCount() {
-			if token, ok := parent.Child(i).Token(); ok && !isTrivia(token.Kind()) {
+			if token, ok := parent.Child(i).Token(); ok && !token.Kind().IsTrivia() {
 				power = binaryPower(token.Kind())
 				break
 			}
@@ -367,7 +367,7 @@ func expressionPower(node *expressionView) int {
 		return conditionalPower
 	case syntax.BinaryExpression:
 		for _, element := range node.children {
-			if element.node == nil && !isTrivia(element.token.kind) {
+			if element.node == nil && !element.token.kind.IsTrivia() {
 				return binaryPower(element.token.kind)
 			}
 		}

@@ -147,7 +147,7 @@ func lowerIndex(result syntax.Result, node *expressionView, pieces pieceList) do
 	}
 	for _, part := range pieces[1:] {
 		for _, token := range part.before {
-			if token.Kind() == syntax.LineComment || token.Kind() == syntax.BlockComment {
+			if token.Kind().IsComment() {
 				atomic = false
 			}
 		}

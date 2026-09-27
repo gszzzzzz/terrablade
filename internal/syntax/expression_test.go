@@ -317,7 +317,7 @@ func TestUnterminatedExpressionLeavesTrailingTrivia(t *testing.T) {
 			// must follow it at File level, exactly as after a parenthesized error.
 			node, _ := file.root.Child(0).Node()
 			last, _ := node.Child(node.ChildCount() - 1).Token()
-			if isTrivia(last.Kind()) || file.root.ChildCount() < 3 {
+			if last.Kind().IsTrivia() || file.root.ChildCount() < 3 {
 				t.Fatalf("trailing trivia absorbed: %v ends with %v, file has %d children", node.Kind(), last.Kind(), file.root.ChildCount())
 			}
 		})
