@@ -1,6 +1,7 @@
 package lowering_test
 
 import (
+	"cmp"
 	"testing"
 
 	"github.com/gszzzzzz/terrablade/internal/lowering"
@@ -235,7 +236,7 @@ func TestBindingPowersMatchParserPrecedence(t *testing.T) {
 			for _, second := range binaryOperators {
 				name := first.text + " vs " + second.text
 				t.Run(name, func(t *testing.T) {
-					want := compare(lowering.BinaryPower(first.kind), lowering.BinaryPower(second.kind))
+					want := cmp.Compare(lowering.BinaryPower(first.kind), lowering.BinaryPower(second.kind))
 					if got := parserBinaryOrder(t, first.text, second.text); got != want {
 						t.Fatalf("parser orders %s as %d, ladder says %d", name, got, want)
 					}
@@ -394,16 +395,4 @@ func nodeChildren(t *testing.T, node syntax.SyntaxNode) []syntax.SyntaxNode {
 		t.Fatalf("%s has no child nodes", node.Kind())
 	}
 	return children
-}
-
-// compare returns the sign of left - right.
-func compare(left, right int) int {
-	switch {
-	case left < right:
-		return -1
-	case left > right:
-		return 1
-	default:
-		return 0
-	}
 }

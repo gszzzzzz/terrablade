@@ -445,12 +445,14 @@ func parenthesized(result syntax.Result, pieces pieceList) document.Doc {
 // reproduces it. The comma is omitted after an expanded call argument, since
 // the grammar allows a trailing comma or an ellipsis but not both, and after
 // a final heredoc, whose marker newline already separates it from the closer
-// (doc.go: Calls and tuples).
+// (doc.go: Calls and tuples). delimited moves trivia between the caller's
+// pieces in place.
 func delimited(result syntax.Result, pieces pieceList, open int, preserveBlank bool, edge spacing) document.Doc {
 	moveCommaTrivia(pieces)
 	// A heredoc's mandatory marker newline is enough before the closer. Drop
-	// a source trailing comma as well as avoiding a synthesized one. Its trivia
-	// has already moved to the closer, so no comments or blank lines are lost.
+	// a source trailing comma as well as avoiding a synthesized one.
+	// moveCommaTrivia leaves a comma after a heredoc alone, so hand its
+	// trivia to the closer here; no comments or blank lines are lost.
 	if trailing := len(pieces) - 2; trailing > open && pieces[trailing].kind == syntax.Comma && pieces[trailing-1].child.endsHeredoc {
 		pieces[trailing+1].before = append(pieces[trailing].before, pieces[trailing+1].before...)
 		pieces = append(pieces[:trailing], pieces[trailing+1:]...)

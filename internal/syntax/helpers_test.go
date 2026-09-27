@@ -211,14 +211,13 @@ func expressionShape(file Result, current SyntaxElement) string {
 		span := element.Span()
 		return strconv.Quote(file.source[span.Start:span.End])
 	} else if element, ok := current.Node(); ok {
-		names := shapeNodeNames
 		var children []string
 		for i := range element.ChildCount() {
 			if child := expressionShape(file, element.Child(i)); child != "" {
 				children = append(children, child)
 			}
 		}
-		return names[element.Kind()] + "(" + strings.Join(children, ", ") + ")"
+		return shapeNodeNames[element.Kind()] + "(" + strings.Join(children, ", ") + ")"
 	}
 	return "<invalid>"
 }
