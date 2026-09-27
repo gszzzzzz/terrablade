@@ -68,7 +68,7 @@ func Format(source []byte, options Options) ([]byte, error) {
 
 	result := syntax.Parse(source)
 	if diagnostics := result.Diagnostics(); len(diagnostics) != 0 {
-		return nil, newParseError(result.Source(), diagnostics)
+		return nil, newParseError(result, diagnostics)
 	}
 
 	doc, err := lowering.File(result)

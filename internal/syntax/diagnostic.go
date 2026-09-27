@@ -65,7 +65,7 @@ const (
 // Diagnostic points to the source responsible for a lexical or syntax error.
 // An error does not require an Invalid token: an unterminated comment, for
 // example, retains its BlockComment kind so its source remains recognizable.
-// Use Kind.Message for prose and Result.Position to locate either span endpoint.
+// Use Kind.Message for prose and Result.Locate to locate span endpoints.
 type Diagnostic struct {
 	Kind DiagnosticKind
 	Span Span

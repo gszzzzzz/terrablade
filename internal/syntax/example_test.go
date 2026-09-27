@@ -39,11 +39,12 @@ func ExampleDiagnosticKind_Message() {
 	// ExpectedExpression
 }
 
-func ExampleResult_Position() {
+func ExampleResult_Locate() {
 	result := syntax.Parse([]byte("a = 1\r\na = 2\r\n"))
 	// The caller supplies the filename and chooses how to render the error.
 	for _, diagnostic := range result.Diagnostics() {
-		position := result.Position(diagnostic.Span.Start)
+		position := syntax.Position{Offset: diagnostic.Span.Start}
+		result.Locate([]*syntax.Position{&position})
 		fmt.Printf("main.tf:%d:%d: %s\n", position.Line, position.Column, diagnostic.Kind.Message())
 	}
 	// Output:

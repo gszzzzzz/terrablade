@@ -26,10 +26,10 @@ func TestParseResourceRecovery(t *testing.T) {
 	if limit.Kind.Message() != "Expression nesting exceeds the parser limit." {
 		t.Fatalf("nesting limit message = %q", limit.Kind.Message())
 	}
-	if got := result.Position(limit.Span.Start); got.Offset != limit.Span.Start || got.Line != 2 || got.Column != limit.Span.Start-len("outer {\n")+1 {
+	if got := position(result, limit.Span.Start); got.Offset != limit.Span.Start || got.Line != 2 || got.Column != limit.Span.Start-len("outer {\n")+1 {
 		t.Fatalf("nesting limit position = %+v for span %+v", got, limit.Span)
 	}
-	if got := result.Position(len(source)); got.Line != 5 || got.Column != 1 {
+	if got := position(result, len(source)); got.Line != 5 || got.Column != 1 {
 		t.Fatalf("position in retained unparsed tail = %+v", got)
 	}
 	root := result.Root()
@@ -104,7 +104,7 @@ func FuzzParse(f *testing.F) {
 			t.Fatal("reusing input changed the Result")
 		}
 		// Probe arbitrary byte boundaries as well as diagnostic endpoints. Keep
-		// the number of lookups bounded: Position intentionally scans its prefix.
+		// the number of lookups bounded: each one scans the whole source.
 		offsets := []int{0, len(source) / 2, len(source)}
 		diagnostics := result.Diagnostics()
 		if len(diagnostics) != 0 {
@@ -137,7 +137,7 @@ func FuzzParse(f *testing.F) {
 					want.Column++
 				}
 			}
-			if got := result.Position(offset); got != want || again.Position(offset) != want {
+			if got := position(result, offset); got != want || position(again, offset) != want {
 				t.Fatalf("Position(%d) = %+v, want %+v on both independent parses", offset, got, want)
 			}
 		}

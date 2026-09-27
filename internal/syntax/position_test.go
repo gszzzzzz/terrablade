@@ -9,6 +9,13 @@ import (
 	"github.com/gszzzzzz/terrablade/internal/syntax"
 )
 
+// position locates one offset; Locate itself serves batches.
+func position(result syntax.Result, offset int) syntax.Position {
+	located := syntax.Position{Offset: offset}
+	result.Locate([]*syntax.Position{&located})
+	return located
+}
+
 func TestResultPosition(t *testing.T) {
 	for _, test := range []struct {
 		name, source string
@@ -41,7 +48,7 @@ func TestResultPosition(t *testing.T) {
 					if offset > start && offset < len(test.source) && test.source[offset-1:offset+1] == "\r\n" {
 						want.Column-- // Both bytes of CRLF share its starting column.
 					}
-					if got := result.Position(offset); got != want {
+					if got := position(result, offset); got != want {
 						t.Errorf("Position(%d) = %+v, want %+v", offset, got, want)
 					}
 				}
@@ -95,7 +102,7 @@ func TestResultPositionGraphemeColumns(t *testing.T) {
 			for relative, column := range test.columns {
 				offset := len("# first\r\n") + relative
 				want := syntax.Position{Offset: offset, Line: 2, Column: column}
-				got := result.Position(offset)
+				got := position(result, offset)
 				if got != want {
 					t.Errorf("Position(%d) = %+v, want %+v", offset, got, want)
 				}
@@ -122,7 +129,7 @@ func TestResultPositionGraphemeLineEndings(t *testing.T) {
 		{Offset: 8, Line: 2, Column: 2},
 		{Offset: 9, Line: 3, Column: 1},
 	} {
-		if got := result.Position(want.Offset); got != want {
+		if got := position(result, want.Offset); got != want {
 			t.Errorf("Position(%d) = %+v, want %+v", want.Offset, got, want)
 		}
 	}
@@ -130,7 +137,7 @@ func TestResultPositionGraphemeLineEndings(t *testing.T) {
 
 func TestResultPositionZeroAndBounds(t *testing.T) {
 	var zero syntax.Result
-	if got := zero.Position(0); got != (syntax.Position{Offset: 0, Line: 1, Column: 1}) {
+	if got := position(zero, 0); got != (syntax.Position{Offset: 0, Line: 1, Column: 1}) {
 		t.Fatalf("zero Result.Position(0) = %+v", got)
 	}
 	for _, result := range []syntax.Result{zero, syntax.Parse(nil), syntax.Parse([]byte("a=1\n"))} {
@@ -141,7 +148,7 @@ func TestResultPositionZeroAndBounds(t *testing.T) {
 						t.Errorf("Position(%d) did not panic for source of length %d", offset, len(result.Source()))
 					}
 				}()
-				result.Position(offset)
+				position(result, offset)
 			}()
 		}
 	}
@@ -153,7 +160,7 @@ func TestResultPositionCopiesAndConcurrentReads(t *testing.T) {
 	copied := result
 	want := make([]syntax.Position, len(source)+1)
 	for offset := range want {
-		want[offset] = result.Position(offset)
+		want[offset] = position(result, offset)
 	}
 	result = syntax.Parse([]byte("replacement=1\n"))
 	var readers sync.WaitGroup
@@ -161,9 +168,9 @@ func TestResultPositionCopiesAndConcurrentReads(t *testing.T) {
 		readers.Go(func() {
 			local := copied
 			for range 20 {
-				for offset, position := range want {
-					if got := local.Position(offset); got != position {
-						t.Errorf("copied Position(%d) = %+v, want %+v", offset, got, position)
+				for offset, expected := range want {
+					if got := position(local, offset); got != expected {
+						t.Errorf("copied Position(%d) = %+v, want %+v", offset, got, expected)
 					}
 				}
 				for _, diagnostic := range local.Diagnostics() {
@@ -175,27 +182,36 @@ func TestResultPositionCopiesAndConcurrentReads(t *testing.T) {
 		})
 	}
 	readers.Wait()
-	if got := result.Position(len(result.Source())); got != (syntax.Position{Offset: 14, Line: 2, Column: 1}) {
+	if got := position(result, len(result.Source())); got != (syntax.Position{Offset: 14, Line: 2, Column: 1}) {
 		t.Fatalf("replacement Result.Position(EOF) = %+v", got)
 	}
 }
 
-func TestResultPositionAllocations(t *testing.T) {
+func TestLocateAllocations(t *testing.T) {
 	result := syntax.Parse([]byte(strings.Repeat("# e\u0301👩‍💻\u0600\xc0\xaf\r\n", 100)))
-	column := 0
+	positions := make([]syntax.Position, len(result.Source())+1)
+	pointers := make([]*syntax.Position, len(positions))
+	for i := range positions {
+		pointers[i] = &positions[i]
+	}
 	allocations := testing.AllocsPerRun(100, func() {
-		for offset := range len(result.Source()) + 1 {
-			column += result.Position(offset).Column
+		for i := range positions {
+			positions[i] = syntax.Position{Offset: len(positions) - 1 - i}
 		}
+		result.Locate(pointers)
 	})
-	if column == 0 || allocations != 0 {
-		t.Fatalf("position columns sum to %d with %g allocations", column, allocations)
+	for i, located := range positions {
+		if want := position(result, located.Offset); located != want {
+			t.Fatalf("batch position %d = %+v, want %+v", i, located, want)
+		}
+	}
+	if allocations != 0 {
+		t.Fatalf("Locate allocated %g times", allocations)
 	}
 }
 
 func TestResultPositionLongCluster(t *testing.T) {
-	// A cluster can exceed bufio.Scanner's default token limit. Its prefix must
-	// still resolve without reading all of the combining suffix.
+	// A cluster can exceed bufio.Scanner's default token limit.
 	source := "# e" + strings.Repeat("\u0301", 1<<16) + "\n"
 	result := syntax.Parse([]byte(source))
 	for _, want := range []syntax.Position{
@@ -205,41 +221,32 @@ func TestResultPositionLongCluster(t *testing.T) {
 		{Offset: len(source) - 1, Line: 1, Column: 4},
 		{Offset: len(source), Line: 2, Column: 1},
 	} {
-		if got := result.Position(want.Offset); got != want {
+		if got := position(result, want.Offset); got != want {
 			t.Errorf("Position(%d) = %+v, want %+v", want.Offset, got, want)
 		}
 	}
 }
 
-func BenchmarkResultPositionClusterPrefix(b *testing.B) {
-	for _, marks := range []int{16, 1 << 16, 1 << 20} {
-		b.Run(strconv.Itoa(marks), func(b *testing.B) {
-			result := syntax.Parse([]byte("# e" + strings.Repeat("\u0301", marks)))
-			var position syntax.Position
-			b.ReportAllocs()
-			for b.Loop() {
-				position = result.Position(3)
-			}
-			if position != (syntax.Position{Offset: 3, Line: 1, Column: 3}) {
-				b.Fatalf("Position(3) = %+v", position)
-			}
-		})
-	}
-}
-
-func BenchmarkResultPosition(b *testing.B) {
+func BenchmarkLocate(b *testing.B) {
 	for _, size := range []int{4096, 65536, 1048576} {
 		b.Run(strconv.Itoa(size), func(b *testing.B) {
 			source := strings.Repeat("#"+strings.Repeat("x", 62)+"\n", size/64)
 			result := syntax.Parse([]byte(source))
-			var position syntax.Position
+			positions := make([]syntax.Position, size/64+1)
+			pointers := make([]*syntax.Position, len(positions))
+			for i := range positions {
+				pointers[i] = &positions[i]
+			}
 			b.ReportAllocs()
 			b.SetBytes(int64(len(source)))
 			for b.Loop() {
-				position = result.Position(len(source))
+				for i := range positions {
+					positions[i] = syntax.Position{Offset: i * 64}
+				}
+				result.Locate(pointers)
 			}
-			if position.Offset != len(source) || position.Line != size/64+1 || position.Column != 1 {
-				b.Fatalf("Position(EOF) = %+v", position)
+			if last := positions[len(positions)-1]; last.Line != size/64+1 || last.Column != 1 {
+				b.Fatalf("EOF = %+v", last)
 			}
 		})
 	}

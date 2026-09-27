@@ -62,15 +62,14 @@
 //
 // # Positions and Unicode
 //
-// Result.Position converts a source byte offset, including EOF, to a one-based
-// line and Unicode 17 extended grapheme-cluster column. Only LF advances the
-// line; CRLF is one cluster. An offset inside a cluster shares its starting
-// column. Each invalid or truncated UTF-8 byte counts separately. Grapheme
-// columns are not terminal display widths, and rare boundaries may differ from
-// upstream HCL when its toolchain selects other Unicode tables. A zero Result
-// maps offset zero to line 1, column 1. Position panics for offsets outside
-// the source. Filenames, excerpts, display widths, and diagnostic rendering
-// belong to callers.
+// Result.Locate converts source byte offsets, including EOF, to one-based
+// lines and Unicode 17 extended grapheme-cluster columns in one scan. Only LF
+// advances the line; CRLF is one cluster. An offset inside a cluster shares its
+// starting column. Each invalid or truncated UTF-8 byte counts separately.
+// Grapheme columns are not terminal display widths, and rare boundaries may
+// differ from upstream HCL when its toolchain selects other Unicode tables.
+// Locate panics for offsets outside the source. Filenames, excerpts, display
+// widths, and diagnostic rendering belong to callers.
 //
 // # Limits and allocation
 //

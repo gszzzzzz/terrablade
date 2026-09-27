@@ -3,10 +3,6 @@ package terrablade
 import (
 	"fmt"
 	"slices"
-	"strings"
-	"unicode/utf8"
-
-	"github.com/clipperhouse/uax29/v2/graphemes"
 
 	"github.com/gszzzzzz/terrablade/internal/syntax"
 )
@@ -178,75 +174,22 @@ func (e *ParseError) Error() string {
 func (e *ParseError) Diagnostics() []Diagnostic { return slices.Clone(e.diagnostics) }
 
 // newParseError converts internal diagnostics, which carry byte offsets only,
-// into public ones with line and column. The public diagnostics are built
-// first so that locate can fill both ends of every span in place.
-func newParseError(source string, parsed []syntax.Diagnostic) *ParseError {
+// into public ones with line and column, locating every endpoint in one scan.
+func newParseError(result syntax.Result, parsed []syntax.Diagnostic) *ParseError {
+	located := make([]syntax.Position, 2*len(parsed))
+	endpoints := make([]*syntax.Position, len(located))
+	for i, diagnostic := range parsed {
+		located[2*i].Offset, located[2*i+1].Offset = diagnostic.Span.Start, diagnostic.Span.End
+		endpoints[2*i], endpoints[2*i+1] = &located[2*i], &located[2*i+1]
+	}
+	result.Locate(endpoints)
+
 	diagnostics := make([]Diagnostic, len(parsed))
-	endpoints := make([]*Position, 0, 2*len(parsed))
 	for i, diagnostic := range parsed {
 		diagnostics[i] = Diagnostic{
 			Kind: publicDiagnosticKind(diagnostic.Kind), Message: diagnostic.Kind.Message(),
-			Span: Span{Start: Position{Offset: diagnostic.Span.Start}, End: Position{Offset: diagnostic.Span.End}},
+			Span: Span{Start: Position(located[2*i]), End: Position(located[2*i+1])},
 		}
-		endpoints = append(endpoints, &diagnostics[i].Span.Start, &diagnostics[i].Span.End)
 	}
-
-	locate(source, endpoints)
 	return &ParseError{diagnostics: diagnostics}
-}
-
-// locate fills in Line and Column for every endpoint in one scan of source.
-// Repeated single-position lookups would make error reporting quadratic for
-// an input with many diagnostics.
-func locate(source string, endpoints []*Position) {
-	// The scan visits offsets in increasing order, so the endpoints must be
-	// consumed in the same order.
-	slices.SortFunc(endpoints, func(a, b *Position) int { return a.Offset - b.Offset })
-
-	// accept records that the cluster ending at end has been consumed: every
-	// endpoint inside it receives the cluster's starting position, because an
-	// offset within a cluster shares that cluster's column. Then the position
-	// advances past the cluster.
-	line, column, next := 1, 1, 0
-	accept := func(end int, newline bool) {
-		for next < len(endpoints) && endpoints[next].Offset < end {
-			endpoints[next].Line, endpoints[next].Column = line, column
-			next++
-		}
-		if newline {
-			line, column = line+1, 1
-		} else {
-			column++
-		}
-	}
-
-	for start := 0; start < len(source); {
-		// Grapheme iteration assumes valid UTF-8. Invalid bytes each own a
-		// column and separate surrounding clusters, matching parser positions.
-		end := start
-		for end < len(source) {
-			r, width := utf8.DecodeRuneInString(source[end:])
-			if r == utf8.RuneError && width == 1 {
-				break
-			}
-			end += width
-		}
-		if end == start {
-			accept(start+1, false)
-			start++
-			continue
-		}
-
-		clusters := graphemes.FromString(source[start:end])
-		for clusters.Next() {
-			accept(start+clusters.End(), strings.HasSuffix(clusters.Value(), "\n"))
-		}
-		start = end
-	}
-
-	// Whatever remains lies at EOF, which is a valid position one past the
-	// final cluster.
-	for _, endpoint := range endpoints[next:] {
-		endpoint.Line, endpoint.Column = line, column
-	}
 }
