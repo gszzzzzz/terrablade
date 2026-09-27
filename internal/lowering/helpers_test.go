@@ -2,6 +2,7 @@ package lowering_test
 
 import (
 	"reflect"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"testing"
@@ -270,4 +271,13 @@ func wideBody(count int) string {
 		source.WriteString("=x # value\nb { a=x }\n")
 	}
 	return source.String()
+}
+
+// limitStack caps goroutine stacks for the rest of the test so that lowering
+// that recursed with input depth would overflow at the depths these tests use.
+// Under the default 1 GB cap, a recursive implementation would pass them.
+// Parsing stays within the cap only for input the parser handles iteratively.
+func limitStack(t *testing.T) {
+	previous := debug.SetMaxStack(256 << 10)
+	t.Cleanup(func() { debug.SetMaxStack(previous) })
 }

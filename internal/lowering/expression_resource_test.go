@@ -77,21 +77,31 @@ func FuzzExpression(f *testing.F) {
 }
 
 func TestWideObjectsAndDeepTemplateScopes(t *testing.T) {
-	for _, source := range []string{
-		"{" + strings.Repeat("key=1\n", 10000) + "}",
-		`"` + strings.Repeat("%{if true}", 20000) + "body" + strings.Repeat("%{endif}", 20000) + `"`,
+	for _, test := range []struct {
+		name, source string
+		// iterative marks input the parser also handles without recursion,
+		// so the stack cap applies.
+		iterative bool
+	}{
+		{"wide object", "{" + strings.Repeat("key=1\n", 2500) + "}", true},
+		{"deep directives", `"` + strings.Repeat("%{if true}", 5000) + "body" + strings.Repeat("%{endif}", 5000) + `"`, true},
 		// Nested expression containers respect the parser's nesting budget.
-		`"${` + strings.Repeat("{\nkey=", 512) + "0" + strings.Repeat("\n}", 512) + `}"`,
+		{"nested containers", `"${` + strings.Repeat("{\nkey=", 512) + "0" + strings.Repeat("\n}", 512) + `}"`, false},
 	} {
-		result, node := parse(t, source)
-		output := render(t, source, 40)
-		reparsed, next := parse(t, output)
-		if !reflect.DeepEqual(expressionTokens(result, node), expressionTokens(reparsed, next)) {
-			t.Fatal("large expression changed syntax or literal content")
-		}
-		if again := render(t, output, 40); again != output {
-			t.Fatal("large expression is not idempotent")
-		}
+		t.Run(test.name, func(t *testing.T) {
+			if test.iterative {
+				limitStack(t)
+			}
+			result, node := parse(t, test.source)
+			output := render(t, test.source, 40)
+			reparsed, next := parse(t, output)
+			if !reflect.DeepEqual(expressionTokens(result, node), expressionTokens(reparsed, next)) {
+				t.Fatal("large expression changed syntax or literal content")
+			}
+			if again := render(t, output, 40); again != output {
+				t.Fatal("large expression is not idempotent")
+			}
+		})
 	}
 }
 

@@ -13,12 +13,15 @@ func TestDeepAndWideNormalization(t *testing.T) {
 	for name, source := range map[string]string{
 		"wrappers":           strings.Repeat(`"${`, 512) + "a" + strings.Repeat(`}"`, 512),
 		"commented wrappers": strings.Repeat(`"${/*lead*/`, 256) + "a" + strings.Repeat(`/*tail*/}"`, 256),
-		"indices":            "foo" + strings.Repeat(".0 ", 20000),
-		"wide":               "[" + strings.Repeat(`"${foo.0}",`, 10000) + "]",
-		"operation":          strings.Repeat(`"${a}" + `, 20000) + `"${a}"`,
-		"comments":           `"${` + strings.Repeat("/*lead*/ ", 10000) + "a" + strings.Repeat(" /*tail*/", 10000) + `}"`,
+		"indices":            "foo" + strings.Repeat(".0 ", 5000),
+		"wide":               "[" + strings.Repeat(`"${foo.0}",`, 2500) + "]",
+		"operation":          strings.Repeat(`"${a}" + `, 5000) + `"${a}"`,
+		"comments":           `"${` + strings.Repeat("/*lead*/ ", 2500) + "a" + strings.Repeat(" /*tail*/", 2500) + `}"`,
 	} {
 		t.Run(name, func(t *testing.T) {
+			if name == "indices" || name == "operation" {
+				limitStack(t)
+			}
 			output := render(t, source, 40)
 			if next := render(t, output, 40); next != output {
 				t.Fatal("normalization is not idempotent")

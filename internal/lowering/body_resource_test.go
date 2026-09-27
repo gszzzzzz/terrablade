@@ -69,7 +69,8 @@ func TestDeepAndWideBodies(t *testing.T) {
 	// Construction must not recurse with block nesting. Rendering a deeply
 	// indented body has intrinsically quadratic output bytes, so test rendering
 	// separately at a depth that keeps that unavoidable output affordable.
-	deep := strings.Repeat("b {\n", 20000) + "a=x\n" + strings.Repeat("}\n", 20000)
+	limitStack(t)
+	deep := strings.Repeat("b {\n", 5000) + "a=x\n" + strings.Repeat("}\n", 5000)
 	result := syntax.Parse([]byte(deep))
 	if len(result.Diagnostics()) != 0 {
 		t.Fatal(result.Diagnostics())
@@ -79,9 +80,9 @@ func TestDeepAndWideBodies(t *testing.T) {
 	}
 	for _, source := range []string{
 		strings.Repeat("b {\n", 512) + "a=x\n" + strings.Repeat("}\n", 512),
-		wideBody(10000),
-		"b" + strings.Repeat(" label", 20000) + " {}\n",
-		"b" + strings.Repeat(" /*header*/ label", 20000) + " {}\n",
+		wideBody(2500),
+		"b" + strings.Repeat(" label", 5000) + " {}\n",
+		"b" + strings.Repeat(" /*header*/ label", 5000) + " {}\n",
 	} {
 		output := renderFile(t, source, 30)
 		assertFileContent(t, source, output)
