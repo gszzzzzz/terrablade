@@ -2,6 +2,7 @@ package terrablade
 
 import (
 	"fmt"
+	"math"
 
 	"github.com/gszzzzzz/terrablade/internal/document"
 	"github.com/gszzzzzz/terrablade/internal/lowering"
@@ -30,20 +31,23 @@ type Options struct {
 const maxSpacingWidth = 16
 
 // OptionsError identifies an out-of-range layout option. Option is its Go field
-// name. PrintWidth must be nonnegative; IndentWidth and TabWidth must be in [0, 16].
-// When several options are invalid, Format reports the first in declaration order.
+// name, and Min and Max bound the accepted values inclusively; Max is
+// math.MaxInt for an option without an upper limit.
 type OptionsError struct {
-	Option string
-	Value  int
+	Option   string
+	Value    int
+	Min, Max int
 }
 
-// Error names the limit that was violated: a value above the spacing cap is
-// reported as such, and any other invalid value can only be negative.
 func (e *OptionsError) Error() string {
-	if (e.Option == "IndentWidth" || e.Option == "TabWidth") && e.Value > maxSpacingWidth {
-		return fmt.Sprintf("terrablade: %s must not exceed %d (got %d)", e.Option, maxSpacingWidth, e.Value)
+	switch {
+	case e.Value > e.Max:
+		return fmt.Sprintf("terrablade: %s must not exceed %d (got %d)", e.Option, e.Max, e.Value)
+	case e.Min == 0:
+		return fmt.Sprintf("terrablade: %s must not be negative (got %d)", e.Option, e.Value)
+	default:
+		return fmt.Sprintf("terrablade: %s must be at least %d (got %d)", e.Option, e.Min, e.Value)
 	}
-	return fmt.Sprintf("terrablade: %s must not be negative (got %d)", e.Option, e.Value)
 }
 
 // Format formats a complete native HCL configuration. It parses, normalizes
@@ -62,7 +66,7 @@ func (e *OptionsError) Error() string {
 // never formatted. Filenames and diagnostic presentation belong to callers.
 // Format performs no I/O.
 func Format(source []byte, options Options) ([]byte, error) {
-	if err := options.validate(); err != nil {
+	if err := options.Validate(); err != nil {
 		return nil, err
 	}
 
@@ -82,21 +86,20 @@ func Format(source []byte, options Options) ([]byte, error) {
 	})), nil
 }
 
-// validate returns an *OptionsError for the first out-of-range field in
-// declaration order. The names are the Go field names because OptionsError
-// exposes them to callers.
-func (o Options) validate() error {
+// Validate returns an *OptionsError for the first out-of-range field in
+// declaration order, or nil. Format performs the same check.
+func (o Options) Validate() error {
 	for _, option := range []struct {
-		name   string
-		value  int
-		capped bool // Spacing widths are bounded; PrintWidth only needs to be nonnegative.
+		name  string
+		value int
+		max   int
 	}{
-		{"PrintWidth", o.PrintWidth, false},
-		{"IndentWidth", o.IndentWidth, true},
-		{"TabWidth", o.TabWidth, true},
+		{"PrintWidth", o.PrintWidth, math.MaxInt},
+		{"IndentWidth", o.IndentWidth, maxSpacingWidth},
+		{"TabWidth", o.TabWidth, maxSpacingWidth},
 	} {
-		if option.value < 0 || (option.capped && option.value > maxSpacingWidth) {
-			return &OptionsError{Option: option.name, Value: option.value}
+		if option.value < 0 || option.value > option.max {
+			return &OptionsError{Option: option.name, Value: option.value, Min: 0, Max: option.max}
 		}
 	}
 	return nil

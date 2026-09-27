@@ -68,9 +68,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return exitError
 	}
 
-	// Validation belongs to Format, including defaults and future option limits.
-	// Check it before reading any input or changing any file.
-	if _, err := terrablade.Format(nil, command.options); err != nil {
+	// Check options before reading any input or changing any file.
+	if err := command.options.Validate(); err != nil {
 		fmt.Fprintln(stderr, err)
 		return exitError
 	}

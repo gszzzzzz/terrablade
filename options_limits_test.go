@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 	"testing"
 
@@ -89,5 +90,39 @@ func TestMaxIntPrintWidth(t *testing.T) {
 	}
 	if again := format(t, got, options); !bytes.Equal(again, got) {
 		t.Fatalf("MaxInt PrintWidth is not idempotent: %q => %q", got, again)
+	}
+}
+
+func TestOptionsValidate(t *testing.T) {
+	if err := (terrablade.Options{}).Validate(); err != nil {
+		t.Fatalf("zero Options: %v", err)
+	}
+	for _, test := range []struct {
+		options  terrablade.Options
+		want     terrablade.OptionsError
+		wantText string
+	}{
+		{
+			terrablade.Options{PrintWidth: -1},
+			terrablade.OptionsError{Option: "PrintWidth", Value: -1, Min: 0, Max: math.MaxInt},
+			"terrablade: PrintWidth must not be negative (got -1)",
+		},
+		{
+			terrablade.Options{TabWidth: 17},
+			terrablade.OptionsError{Option: "TabWidth", Value: 17, Min: 0, Max: 16},
+			"terrablade: TabWidth must not exceed 16 (got 17)",
+		},
+	} {
+		err := test.options.Validate()
+		var optionError *terrablade.OptionsError
+		if !errors.As(err, &optionError) || *optionError != test.want || err.Error() != test.wantText {
+			t.Errorf("Validate(%+v) = %v, want %+v", test.options, err, test.want)
+		}
+	}
+
+	// The message comes from the fields alone, whichever option they name.
+	custom := &terrablade.OptionsError{Option: "Custom", Value: 1, Min: 2, Max: 4}
+	if got, want := custom.Error(), "terrablade: Custom must be at least 2 (got 1)"; got != want {
+		t.Errorf("Error() = %q, want %q", got, want)
 	}
 }
