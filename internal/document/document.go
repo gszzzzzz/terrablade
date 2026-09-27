@@ -32,9 +32,13 @@ type node struct {
 	kind kind
 	// text is the literal content of a textKind node.
 	text string
-	// children holds the parts of a concatKind node, the single content of
-	// the wrapping kinds, or the broken and flat branches of ifBreakKind.
+	// children holds the parts of a concatKind node, or the broken and flat
+	// branches of ifBreakKind.
 	children []Doc
+	// child is the content of a wrapping kind. A field rather than a slice
+	// keeps these common nodes to one allocation; a second Doc field for
+	// IfBreak would move every node into a larger size class.
+	child Doc
 	// column is the alignment column; it is only meaningful for cellKind.
 	column uint8
 	// A hard line on the flat path prevents every enclosing group from
@@ -137,7 +141,7 @@ func Cell(column uint8, content Doc) Doc {
 	if content.node == nil {
 		return content
 	}
-	return Doc{&node{kind: cellKind, column: column, children: []Doc{content}, forceBreak: content.node.forceBreak}}
+	return Doc{&node{kind: cellKind, column: column, child: content, forceBreak: content.node.forceBreak}}
 }
 
 // wrap builds a single-child node of kind k. An empty child yields an empty
@@ -148,7 +152,7 @@ func wrap(k kind, content Doc) Doc {
 	if content.node == nil {
 		return content
 	}
-	return Doc{&node{kind: k, children: []Doc{content}, forceBreak: content.node.forceBreak}}
+	return Doc{&node{kind: k, child: content, forceBreak: content.node.forceBreak}}
 }
 
 // IfBreak selects broken when the nearest enclosing group breaks, and flat

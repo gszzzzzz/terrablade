@@ -154,7 +154,7 @@ func (r *renderer) emitLine(current command, k kind) {
 // A group inside a flat ancestor or with a mandatory line break needs no probe.
 func (r *renderer) enterGroup(current command, n *node) {
 	if !current.flat && !n.forceBreak {
-		candidate := command{doc: n.children[0], indent: current.indent, flat: true}
+		candidate := command{doc: n.child, indent: current.indent, flat: true}
 
 		// Indentation owed to this line occupies columns once text arrives,
 		// so the probe must start from it rather than from the empty line.
@@ -165,7 +165,7 @@ func (r *renderer) enterGroup(current command, n *node) {
 		current.flat, r.probeScratch = fits(candidate, r.stack, start, r.options, r.probeScratch)
 	}
 
-	current.doc = n.children[0]
+	current.doc = n.child
 	r.stack = append(r.stack, current)
 }
 
@@ -181,7 +181,7 @@ func (r *renderer) enterCell(current command, n *node) {
 	})
 	r.stack = append(r.stack, command{cellEnd: len(r.cells)})
 
-	current.doc = n.children[0]
+	current.doc = n.child
 	r.stack = append(r.stack, current)
 }
 
@@ -233,7 +233,7 @@ func fits(candidate command, continuation []command, line lineWidth, options Opt
 			// Candidate descendants inherit flat mode. An undecided sibling
 			// keeps the continuation's broken mode, so its break opportunity
 			// can end this line instead of forcing an earlier group to break.
-			current.doc = n.children[0]
+			current.doc = n.child
 			stack = append(stack, current)
 		default:
 			stack = expand(stack, current, options.IndentWidth)
@@ -256,11 +256,11 @@ func expand(stack []command, current command, indentWidth int) []command {
 		}
 	case indentKind:
 		current.indent = addWidth(current.indent, indentWidth)
-		current.doc = n.children[0]
+		current.doc = n.child
 		stack = append(stack, current)
 	case forceFlatKind:
 		current.flat = true
-		current.doc = n.children[0]
+		current.doc = n.child
 		stack = append(stack, current)
 	case ifBreakKind:
 		index := 0
