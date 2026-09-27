@@ -2,22 +2,14 @@ package lowering
 
 import "github.com/gszzzzzz/terrablade/internal/syntax"
 
-// expressionView is a private, immutable syntax overlay. Original tokens keep
-// their source spans; only canonical delimiters are synthesized. The lossless
-// CST and the public lowering interface never expose these rewrite decisions.
-// Its accessors mirror syntax.Node so the layout code reads a view the
-// same way it would read the CST.
+// expressionView is a normalized, immutable copy of an expression's syntax.
+// Source tokens keep their spans; only delimiters are synthesized. Its
+// accessors mirror syntax.Node.
 type expressionView struct {
-	kind     syntax.NodeKind
-	children []expressionElement
-	// exposedLine reports that this node exposes a mandatory line
-	// break without a delimiter of its own (hasExposedLine). A parent
-	// object item or the root then wraps unary and traversal nodes in
-	// parentheses (protectExposedLine).
-	exposedLine bool
-	// endsHeredoc reports that the node's last significant token is a
-	// heredoc marker (expressionEndsHeredoc).
-	endsHeredoc bool
+	kind        syntax.NodeKind
+	children    []expressionElement
+	exposedLine bool // See hasExposedLine.
+	endsHeredoc bool // See expressionEndsHeredoc.
 }
 
 // expressionElement is one child of a view: a nested view when node is set,
@@ -27,9 +19,7 @@ type expressionElement struct {
 	token expressionToken
 }
 
-// expressionToken is a view token. A source token keeps its span so comments
-// and spellings are read from the original text; a synthesized delimiter has
-// no source and carries its spelling in text.
+// expressionToken is a source token or a synthesized delimiter.
 type expressionToken struct {
 	source syntax.Token
 	kind   syntax.TokenKind
