@@ -140,6 +140,11 @@ func commentGap(result syntax.Result, trivia []syntax.SyntaxToken, style gapStyl
 			prefix := style.beforeComment
 			if comment {
 				prefix = space
+			} else if token.Kind() == syntax.LineComment && newlines == 0 && (prefix == soft || prefix == line || prefix == hard) {
+				// A line comment written on the opener's line stays there
+				// (doc.go: Comments). A breaking edge would move it down, and
+				// a flattened soft edge would leave it touching the opener.
+				prefix = space
 			}
 			commentDoc := document.Concat(commentSeparator(newlines, lineComment || requiredLine, prefix, style.blankLine), commentLiteral(result, token))
 			if token.Kind() == syntax.LineComment && newlines == 0 && !lineComment && !requiredLine {

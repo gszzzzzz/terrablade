@@ -90,7 +90,7 @@ func TestExpressionNormalization(t *testing.T) {
 		{
 			name:   "numeric index line comment",
 			source: lines("f(foo.// index", "0)"),
-			want:   lines("f(", "  foo[", "    // index", "    0", "  ],", ")"),
+			want:   lines("f(", "  foo[ // index", "    0", "  ],", ")"),
 		},
 		{
 			name:   "commented traversal in object",
