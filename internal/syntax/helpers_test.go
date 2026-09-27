@@ -20,7 +20,7 @@ type tokenText struct {
 // is empty, a BOM token spans exactly one U+FEFF, and concatenating the tokens
 // reproduces the input. The lexer's own output and the leaves of a parsed tree
 // both pass through here so the rule is written down once.
-func assertTokenPartition(t *testing.T, source []byte, tokens []SyntaxToken) {
+func assertTokenPartition(t *testing.T, source []byte, tokens []Token) {
 	t.Helper()
 	if len(tokens) == 0 {
 		t.Fatal("missing EOF")
@@ -96,10 +96,10 @@ func assertTreeInvariants(t *testing.T, source []byte, file Result) {
 	}
 
 	type frame struct {
-		element SyntaxElement
+		element Element
 		exit    bool
 	}
-	var leaves []SyntaxToken
+	var leaves []Token
 	end, errors := 0, 0
 	stack := []frame{{element: file.root.Element()}}
 	for len(stack) > 0 {
@@ -134,7 +134,7 @@ func assertTreeInvariants(t *testing.T, source []byte, file Result) {
 				stack = append(stack, frame{element: node.Child(i)})
 			}
 		} else if token, ok := element.Token(); ok {
-			leaves = append(leaves, SyntaxToken{kind: token.Kind(), span: span})
+			leaves = append(leaves, Token{kind: token.Kind(), span: span})
 			end = span.End
 		} else {
 			t.Fatal("invalid element in tree")
@@ -203,7 +203,7 @@ func assertBody(t *testing.T, source string, diagnostics []Diagnostic, shape str
 // line, bodyShape indents one element per line. Both omit trivia, for
 // readability alone; assertTreeInvariants and the trivia-ownership tests
 // independently pin every token, every span, and each comment's parent.
-func expressionShape(file Result, current SyntaxElement) string {
+func expressionShape(file Result, current Element) string {
 	if element, ok := current.Token(); ok {
 		if element.Kind().IsTrivia() || element.Kind() == EOF {
 			return ""
@@ -222,10 +222,10 @@ func expressionShape(file Result, current SyntaxElement) string {
 	return "<invalid>"
 }
 
-func bodyShape(file Result, root SyntaxElement) string {
+func bodyShape(file Result, root Element) string {
 	var out strings.Builder
-	var visit func(SyntaxElement, int)
-	visit = func(element SyntaxElement, depth int) {
+	var visit func(Element, int)
+	visit = func(element Element, depth int) {
 		if node, ok := element.Node(); ok {
 			out.WriteString(strings.Repeat("  ", depth))
 			out.WriteString(shapeNodeNames[node.Kind()])
@@ -262,7 +262,7 @@ var shapeNodeNames = map[NodeKind]string{
 
 // countTree walks every node and token with a caller-owned stack, which is how
 // the allocation tests and benchmarks traverse without allocating.
-func countTree(root SyntaxNode, stack []SyntaxElement) (nodes, tokens, width int) {
+func countTree(root Node, stack []Element) (nodes, tokens, width int) {
 	stack = append(stack[:0], root.Element())
 	for len(stack) > 0 {
 		element := stack[len(stack)-1]

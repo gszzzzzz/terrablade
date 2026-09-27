@@ -151,7 +151,7 @@ func TestBodyTriviaOwnership(t *testing.T) {
 		"/*tail*/": Body, "# end": Body, "/*close*/": Body,
 		"/*blocktail*/": Body,
 	}
-	stack := []SyntaxNode{file.root}
+	stack := []Node{file.root}
 	for len(stack) > 0 {
 		node := stack[len(stack)-1]
 		stack = stack[:len(stack)-1]

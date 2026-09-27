@@ -54,7 +54,7 @@ func TestParse(t *testing.T) {
 
 func TestResultZeroAndEmpty(t *testing.T) {
 	var zero syntax.Result
-	if zero.Source() != "" || zero.Diagnostics() != nil || zero.Root() != (syntax.SyntaxNode{}) {
+	if zero.Source() != "" || zero.Diagnostics() != nil || zero.Root() != (syntax.Node{}) {
 		t.Fatal("zero Result must contain no source, diagnostics, or tree")
 	}
 	if zero.Root().Kind() != syntax.InvalidNode || zero.Root().Span() != (syntax.Span{}) || zero.Root().ChildCount() != 0 {
@@ -151,7 +151,7 @@ func TestResultCopiesAndHandleLifetime(t *testing.T) {
 
 	// Exercise handles after the local Result leaves scope. The handles own
 	// references to tree storage, and the source string retains text separately.
-	root, element, token, source := func() (syntax.SyntaxNode, syntax.SyntaxElement, syntax.SyntaxToken, string) {
+	root, element, token, source := func() (syntax.Node, syntax.Element, syntax.Token, string) {
 		parsed := syntax.Parse([]byte("answer = 42\n"))
 		body, _ := parsed.Root().Child(0).Node()
 		attribute, _ := body.Child(0).Node()
@@ -225,7 +225,7 @@ func TestResultConcurrentReads(t *testing.T) {
 
 func TestResultAccessAllocations(t *testing.T) {
 	result := syntax.Parse([]byte("a = [for x in xs : x]\n"))
-	stack := make([]syntax.SyntaxElement, 0, 64)
+	stack := make([]syntax.Element, 0, 64)
 	width := 0
 	allocations := testing.AllocsPerRun(100, func() {
 		width = 0
@@ -271,7 +271,7 @@ func checkResult(t *testing.T, result syntax.Result, source string) []treeEntry 
 		t.Fatal("parse result must own the source and a File spanning every byte")
 	}
 	type frame struct {
-		element syntax.SyntaxElement
+		element syntax.Element
 		exit    bool
 	}
 	stack := []frame{{element: root.Element()}}

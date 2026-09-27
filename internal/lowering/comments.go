@@ -126,7 +126,7 @@ const (
 // precedes it, no earlier line comment already ended the line, and no heredoc
 // newline is pending. Any other line comment is standalone, and padding it to
 // the column would misalign the rows around it (doc.go: Alignment).
-func commentGap(result syntax.Result, trivia []syntax.SyntaxToken, style gapStyle) (document.Doc, document.Doc) {
+func commentGap(result syntax.Result, trivia []syntax.Token, style gapStyle) (document.Doc, document.Doc) {
 	var parts []document.Doc
 	newlines := 0
 	comment, lineComment := false, false
@@ -180,7 +180,7 @@ func commentGap(result syntax.Result, trivia []syntax.SyntaxToken, style gapStyl
 // from the comment but retains every earlier CR, so without the extra CR a
 // second pass would read the comment as one CR shorter. This also covers an
 // EOF comment that did not originally have a line ending.
-func commentLiteral(result syntax.Result, token syntax.SyntaxToken) document.Doc {
+func commentLiteral(result syntax.Result, token syntax.Token) document.Doc {
 	text := result.Text(token.Span())
 	comment := literal(text)
 	if token.Kind() == syntax.LineComment && strings.HasSuffix(text, "\r") {

@@ -75,7 +75,7 @@ func operationContinuation(result syntax.Result, pieces []piece, endsHeredoc boo
 // operationGapHasLine reports whether trivia forces a line break on its own:
 // a line comment always does, and a block comment followed by a source
 // newline keeps that newline (doc.go: Comments).
-func operationGapHasLine(trivia []syntax.SyntaxToken) bool {
+func operationGapHasLine(trivia []syntax.Token) bool {
 	comment, newline := false, false
 	for _, token := range trivia {
 		switch token.Kind() {

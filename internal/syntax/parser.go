@@ -57,10 +57,10 @@ func classifyTrivia(kind TokenKind) triviaClass {
 // retainUntil, the one path that bypasses the gate.
 type parser struct {
 	source string
-	tokens []SyntaxToken
+	tokens []Token
 	// arena receives finished nodes and their child references; every handle
 	// returned to callers points into it.
-	arena *syntaxArena
+	arena *arena
 	// pending is the child stack shared by all open builders. A builder owns
 	// the tail after its mark, and finish moves that tail into arena.children.
 	pending []elementRef
@@ -78,7 +78,7 @@ func newParser(source []byte) *parser {
 	return &parser{
 		source:      string(source),
 		tokens:      lexed.Tokens,
-		arena:       &syntaxArena{tokens: lexed.Tokens},
+		arena:       &arena{tokens: lexed.Tokens},
 		diagnostics: lexed.Diagnostics,
 	}
 }
@@ -139,7 +139,7 @@ func (p *parser) keywordAt(word string, index int) bool {
 
 // current returns the token at the cursor, or EOF once halted, so productions
 // that inspect the cursor directly see the same exhausted stream as look.
-func (p *parser) current() SyntaxToken {
+func (p *parser) current() Token {
 	if p.halted {
 		return p.tokens[len(p.tokens)-1]
 	}
@@ -176,7 +176,7 @@ func (p *parser) beginAt(start int) nodeBuilder {
 	return nodeBuilder{parser: p, start: start, mark: len(p.pending)}
 }
 
-func (b *nodeBuilder) node(node SyntaxNode) {
+func (b *nodeBuilder) node(node Node) {
 	b.parser.pending = append(b.parser.pending, elementRef(node.index+1))
 }
 
@@ -230,15 +230,15 @@ func (p *parser) haltAtLimit(span Span) {
 // empty at start when there are none, which is how a missing operand is
 // represented without a synthetic token. Truncating pending restores the
 // parent's view, so nested builders must finish in LIFO order.
-func (b nodeBuilder) finish(kind NodeKind) SyntaxNode {
+func (b nodeBuilder) finish(kind NodeKind) Node {
 	p := b.parser
 	children := p.pending[b.mark:]
 	span := Span{Start: b.start, End: b.start}
 	if len(children) > 0 {
-		span.End = (SyntaxElement{arena: p.arena, ref: children[len(children)-1]}).Span().End
+		span.End = (Element{arena: p.arena, ref: children[len(children)-1]}).Span().End
 	}
 
-	node := SyntaxNode{arena: p.arena, index: len(p.arena.nodes)}
+	node := Node{arena: p.arena, index: len(p.arena.nodes)}
 	p.arena.nodes = append(p.arena.nodes, nodeRecord{
 		kind: kind, span: span,
 		firstChild: len(p.arena.children), childCount: len(children),

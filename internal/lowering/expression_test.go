@@ -132,10 +132,10 @@ func TestExpressionRejectsInvalidInput(t *testing.T) {
 	for _, test := range []struct {
 		name   string
 		result syntax.Result
-		node   syntax.SyntaxNode
+		node   syntax.Node
 	}{
-		{"zero result and node", syntax.Result{}, syntax.SyntaxNode{}},
-		{"zero node", valid, syntax.SyntaxNode{}},
+		{"zero result and node", syntax.Result{}, syntax.Node{}},
+		{"zero node", valid, syntax.Node{}},
 		{"file instead of expression", valid, valid.Root()},
 		{"diagnostic elsewhere", invalid, firstExpression(invalid)},
 	} {

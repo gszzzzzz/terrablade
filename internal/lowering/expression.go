@@ -9,7 +9,7 @@ import (
 
 // lowerExpression normalizes source and lowers the resulting view. File has
 // already checked the whole result for diagnostics.
-func lowerExpression(result syntax.Result, source syntax.SyntaxNode) layout {
+func lowerExpression(result syntax.Result, source syntax.Node) layout {
 	return postOrder(expressionWalker{result}, normalizeExpression(result, source), grammarContext{})
 }
 
@@ -69,7 +69,7 @@ type piece struct {
 	// one. Comma pieces normally hand theirs to the next piece
 	// (moveCommaTrivia), and clause helpers take it away (detachLeading) when
 	// they lay it out through a commentGap of their own.
-	before []syntax.SyntaxToken
+	before []syntax.Token
 	// child is the lowered layout of a node piece. A token piece leaves it
 	// zero, whose false flags read as "no such boundary".
 	child layout
@@ -99,7 +99,7 @@ func (pieces pieceList) contents(open int) pieceList { return pieces[open+1 : le
 // out the first gap through a commentGap of their own, so the shared sequence
 // helpers see a first piece without trivia and cannot emit the same comments
 // twice. The copy leaves the parent's pieces untouched.
-func detachLeading(pieces []piece) ([]piece, []syntax.SyntaxToken) {
+func detachLeading(pieces []piece) ([]piece, []syntax.Token) {
 	detached := append([]piece(nil), pieces...)
 	leading := detached[0].before
 	detached[0].before = nil
@@ -200,7 +200,7 @@ func lowerableKind(kind syntax.NodeKind) bool {
 // synthesized or from source; node pieces carry the child's layout.
 func collectPieces(result syntax.Result, node *expressionView, children []layout) []piece {
 	pieces := make([]piece, 0, node.ChildCount())
-	var trivia []syntax.SyntaxToken
+	var trivia []syntax.Token
 	for i := 0; i < node.ChildCount(); i++ {
 		element := node.Child(i)
 		if token, ok := element.Token(); ok {

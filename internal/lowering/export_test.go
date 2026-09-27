@@ -11,7 +11,7 @@ import (
 // lower, render, and fuzz expressions in isolation. Unlike File it reports
 // misuse as an error: a result with diagnostics, or a node that is not a
 // complete expression.
-func Expression(result syntax.Result, node syntax.SyntaxNode) (document.Doc, error) {
+func Expression(result syntax.Result, node syntax.Node) (document.Doc, error) {
 	if len(result.Diagnostics()) != 0 {
 		return document.Doc{}, errors.New("lowering: cannot format a result with diagnostics")
 	}

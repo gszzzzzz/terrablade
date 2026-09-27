@@ -8,7 +8,7 @@ import "slices"
 // root; call Parse(nil) to obtain a parsed empty file instead.
 type Result struct {
 	source      string
-	root        SyntaxNode
+	root        Node
 	diagnostics []Diagnostic
 }
 
@@ -37,7 +37,7 @@ func Parse(source []byte) Result {
 // Node and element handles keep tree storage alive independently of the Result.
 // Access and traversal do not allocate; callers traversing deep trees should
 // manage their own iterative stack rather than recurse through every child.
-func (r Result) Root() SyntaxNode { return r.root }
+func (r Result) Root() Node { return r.root }
 
 // Source returns the owned, unmodified source bytes as an immutable string,
 // without copying. Keep this string or the Result when text is needed: tree

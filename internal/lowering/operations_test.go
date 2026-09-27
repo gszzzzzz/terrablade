@@ -373,16 +373,16 @@ func groupsLeft(t *testing.T, source string) bool {
 
 // parseExpression parses one expression through the public parser and returns
 // its root node.
-func parseExpression(t *testing.T, source string) syntax.SyntaxNode {
+func parseExpression(t *testing.T, source string) syntax.Node {
 	t.Helper()
 	_, node := parse(t, source)
 	return node
 }
 
 // nodeChildren returns a node's child nodes in source order, skipping tokens.
-func nodeChildren(t *testing.T, node syntax.SyntaxNode) []syntax.SyntaxNode {
+func nodeChildren(t *testing.T, node syntax.Node) []syntax.Node {
 	t.Helper()
-	var children []syntax.SyntaxNode
+	var children []syntax.Node
 	for i := range node.ChildCount() {
 		if child, ok := node.Child(i).Node(); ok {
 			children = append(children, child)

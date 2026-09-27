@@ -15,7 +15,7 @@ package syntax
 type NodeKind uint8
 
 const (
-	// InvalidNode is the kind of a zero SyntaxNode. Parse never produces it.
+	// InvalidNode is the kind of a zero Node. Parse never produces it.
 	InvalidNode NodeKind = iota
 	// File: optional BOM, Body, EOF. After a NestingLimitExceeded diagnostic,
 	// trivia, an ErrorNode holding the unparsed remainder, and further trivia
@@ -127,34 +127,34 @@ const (
 	nodeKindCount
 )
 
-// SyntaxElement is a read-only handle to a node or token in source order.
+// Element is a read-only handle to a node or token in source order.
 // Copies share immutable tree storage. The zero value is neither a node nor a
 // token and has an empty span. A handle keeps its tree storage alive.
-type SyntaxElement struct {
-	arena *syntaxArena
+type Element struct {
+	arena *arena
 	ref   elementRef
 }
 
 // Node returns the node view, or the zero node and false for a token or zero
 // element. Converting views does not allocate.
-func (e SyntaxElement) Node() (SyntaxNode, bool) {
+func (e Element) Node() (Node, bool) {
 	if e.arena == nil || e.ref <= 0 {
-		return SyntaxNode{}, false
+		return Node{}, false
 	}
-	return SyntaxNode{arena: e.arena, index: int(e.ref) - 1}, true
+	return Node{arena: e.arena, index: int(e.ref) - 1}, true
 }
 
 // Token returns the lexical value, or the zero token and false for a node or
 // zero element. The returned value exposes no mutable tree storage.
-func (e SyntaxElement) Token() (SyntaxToken, bool) {
+func (e Element) Token() (Token, bool) {
 	if e.arena == nil || e.ref >= 0 {
-		return SyntaxToken{}, false
+		return Token{}, false
 	}
 	return e.arena.tokens[-int(e.ref)-1], true
 }
 
 // Span covers the original source bytes represented by the element.
-func (e SyntaxElement) Span() Span {
+func (e Element) Span() Span {
 	if node, ok := e.Node(); ok {
 		return node.Span()
 	}
@@ -162,16 +162,16 @@ func (e SyntaxElement) Span() Span {
 	return token.Span()
 }
 
-// SyntaxNode is a read-only grammatical structure. Children mix nodes and tokens
+// Node is a read-only grammatical structure. Children mix nodes and tokens
 // in source order. Trivia remains token children rather than node metadata.
 // Copies share immutable tree storage; a handle keeps that storage alive. The
 // zero node has InvalidNode kind, an empty span, and no children.
-type SyntaxNode struct {
-	arena *syntaxArena
+type Node struct {
+	arena *arena
 	index int
 }
 
-func (n SyntaxNode) record() nodeRecord {
+func (n Node) record() nodeRecord {
 	if n.arena == nil {
 		return nodeRecord{}
 	}
@@ -179,31 +179,31 @@ func (n SyntaxNode) record() nodeRecord {
 }
 
 // Kind identifies the node's grammatical structure.
-func (n SyntaxNode) Kind() NodeKind { return n.record().kind }
+func (n Node) Kind() NodeKind { return n.record().kind }
 
 // Span covers the node's children, including any trivia between them.
-func (n SyntaxNode) Span() Span { return n.record().span }
+func (n Node) Span() Span { return n.record().span }
 
 // ChildCount returns the number of immediate children.
-func (n SyntaxNode) ChildCount() int { return n.record().childCount }
+func (n Node) ChildCount() int { return n.record().childCount }
 
 // Child returns a read-only element in source order without allocating.
 // An index outside [0, ChildCount()) panics, like ordinary slice indexing.
-func (n SyntaxNode) Child(index int) SyntaxElement {
+func (n Node) Child(index int) Element {
 	record := n.record()
 	if index < 0 || index >= record.childCount {
 		panic("syntax: child index out of range")
 	}
-	return SyntaxElement{arena: n.arena, ref: n.arena.children[record.firstChild+index]}
+	return Element{arena: n.arena, ref: n.arena.children[record.firstChild+index]}
 }
 
 // Element returns the generic view without allocating. A zero node produces a
 // zero element.
-func (n SyntaxNode) Element() SyntaxElement {
+func (n Node) Element() Element {
 	if n.arena == nil {
-		return SyntaxElement{}
+		return Element{}
 	}
-	return SyntaxElement{arena: n.arena, ref: elementRef(n.index + 1)}
+	return Element{arena: n.arena, ref: elementRef(n.index + 1)}
 }
 
 // References use positive node indices and negative token indices, both offset
@@ -220,22 +220,22 @@ type nodeRecord struct {
 
 // The parser is the sole writer; published handles only read these slices.
 // Tokens reuse the lexer's storage rather than being copied into every parent.
-type syntaxArena struct {
+type arena struct {
 	nodes    []nodeRecord
-	tokens   []SyntaxToken
+	tokens   []Token
 	children []elementRef
 }
 
-// SyntaxToken is a read-only source leaf, including whitespace and comments.
+// Token is a read-only source leaf, including whitespace and comments.
 // Its text is available through Result.Text(t.Span()); it owns no source bytes.
-type SyntaxToken struct {
+type Token struct {
 	kind TokenKind
 	span Span
 }
 
 // Kind identifies the lexical element.
-func (t SyntaxToken) Kind() TokenKind { return t.kind }
+func (t Token) Kind() TokenKind { return t.kind }
 
 // Span identifies the original source bytes. Among tokens produced by Parse,
 // only EOF has an empty span. A zero token also has an empty span.
-func (t SyntaxToken) Span() Span { return t.span }
+func (t Token) Span() Span { return t.span }

@@ -20,20 +20,20 @@ func File(result syntax.Result) document.Doc {
 // Body belongs to a block rather than the file.
 type fileWalker struct{ result syntax.Result }
 
-func (fileWalker) expand(node syntax.SyntaxNode, _ bool, children []visit[syntax.SyntaxNode, bool]) []visit[syntax.SyntaxNode, bool] {
+func (fileWalker) expand(node syntax.Node, _ bool, children []visit[syntax.Node, bool]) []visit[syntax.Node, bool] {
 	// lowerAttribute walks the value expression itself.
 	if node.Kind() == syntax.Attribute {
 		return children
 	}
 	for i := range node.ChildCount() {
 		if child, ok := node.Child(i).Node(); ok {
-			children = append(children, visit[syntax.SyntaxNode, bool]{child, node.Kind() == syntax.Block})
+			children = append(children, visit[syntax.Node, bool]{child, node.Kind() == syntax.Block})
 		}
 	}
 	return children
 }
 
-func (w fileWalker) lower(node syntax.SyntaxNode, nested bool, children []bodyLayout) bodyLayout {
+func (w fileWalker) lower(node syntax.Node, nested bool, children []bodyLayout) bodyLayout {
 	switch node.Kind() {
 	case syntax.File:
 		var parts []document.Doc
@@ -79,9 +79,9 @@ type bodyLayout struct {
 // lowerAttribute lowers name = value together with the trivia between its
 // tokens. It is the only body-level node that holds an expression, so it is
 // where the body walk hands off to lowerExpression.
-func lowerAttribute(result syntax.Result, node syntax.SyntaxNode) bodyLayout {
+func lowerAttribute(result syntax.Result, node syntax.Node) bodyLayout {
 	var parts []piece
-	var trivia []syntax.SyntaxToken
+	var trivia []syntax.Token
 	for i := range node.ChildCount() {
 		element := node.Child(i)
 		if child, ok := element.Node(); ok {
@@ -103,9 +103,9 @@ func lowerAttribute(result syntax.Result, node syntax.SyntaxNode) bodyLayout {
 // lowerBlock lowers a block header and its already-lowered body. Header
 // comments are gathered into the trivia before the opening brace, and the
 // body's closing brace stays outside the Indent (doc.go: Blocks).
-func lowerBlock(result syntax.Result, node syntax.SyntaxNode, children []bodyLayout) document.Doc {
+func lowerBlock(result syntax.Result, node syntax.Node, children []bodyLayout) document.Doc {
 	var header []piece
-	var trivia []syntax.SyntaxToken
+	var trivia []syntax.Token
 	var contents bodyLayout
 	for i := range node.ChildCount() {
 		element := node.Child(i)
@@ -137,9 +137,9 @@ func lowerBlock(result syntax.Result, node syntax.SyntaxNode, children []bodyLay
 // by the gap that owns the trivia before it; the trailing gap after the last
 // item owns any closing comments. nested distinguishes a block body, whose
 // first gap starts on the opening brace line, from the file body.
-func lowerBody(result syntax.Result, node syntax.SyntaxNode, nested bool, children []bodyLayout) bodyLayout {
+func lowerBody(result syntax.Result, node syntax.Node, nested bool, children []bodyLayout) bodyLayout {
 	var parts []document.Doc
-	var trivia []syntax.SyntaxToken
+	var trivia []syntax.Token
 	previous := syntax.InvalidNode
 	endsHeredoc := false
 	nonempty := false
@@ -189,7 +189,7 @@ func lowerBody(result syntax.Result, node syntax.SyntaxNode, nested bool, childr
 // before each one from the sides known so far and then making that comment
 // the new before side, so a later decision never rescans earlier comments.
 // afterHeredoc reports that previous ends in a heredoc marker.
-func bodyGap(result syntax.Result, trivia []syntax.SyntaxToken, previous, next syntax.NodeKind, nested, afterHeredoc bool) document.Doc {
+func bodyGap(result syntax.Result, trivia []syntax.Token, previous, next syntax.NodeKind, nested, afterHeredoc bool) document.Doc {
 	gap := newBodyGap(previous, next, nested)
 
 	// A comment is standalone only if a newline follows it before the next
@@ -254,7 +254,7 @@ func newBodyGap(previous, next syntax.NodeKind, nested bool) bodyGapState {
 // next item. A run can contain several block comments on the same line; they
 // share their section status, but a prefix sharing the next item's line is
 // not an independent comment section.
-func (gap *bodyGapState) comment(result syntax.Result, token syntax.SyntaxToken, ownsLine bool) document.Doc {
+func (gap *bodyGapState) comment(result syntax.Result, token syntax.Token, ownsLine bool) document.Doc {
 	gap.after = bodyGapSide{
 		kind:       bodyBlockComment,
 		standalone: ownsLine && (gap.lines > 0 || gap.before.kind == bodyFileStart || gap.before.standalone),

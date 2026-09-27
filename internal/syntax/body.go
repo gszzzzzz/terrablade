@@ -31,7 +31,7 @@ type bodyAttributeKey struct {
 // attribute table keys by body start, keeping sibling scopes distinct without
 // allocating a separate map for every small body. Each loop iteration ends a
 // single-line body, closes a block, or parses one item.
-func (p *parser) body() SyntaxNode {
+func (p *parser) body() Node {
 	frames := []bodyFrame{{body: p.begin()}}
 	attributes := make(map[bodyAttributeKey]struct{})
 	for {

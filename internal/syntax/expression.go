@@ -37,7 +37,7 @@ func (p *parser) operand(b *nodeBuilder, minimum int, context newlineContext) {
 // operators bind from orPower to multiplicativePower and associate left;
 // unary operators bind at unaryPower; postfix traversal binds tightest and is
 // handled inside prefix.
-func (p *parser) expression(minimum int, context newlineContext) SyntaxNode {
+func (p *parser) expression(minimum int, context newlineContext) Node {
 	if p.depth == maxRecursiveExpressionDepth {
 		span := p.current().span
 		b := p.begin()
@@ -122,7 +122,7 @@ func binaryPower(kind TokenKind) int {
 // template, followed by any traversal steps. kind starts as ErrorNode so that
 // only the fallback arm, which reports the missing expression and retains the
 // offending token, leaves it unchanged; every grammatical arm sets its own.
-func (p *parser) prefix(context newlineContext) SyntaxNode {
+func (p *parser) prefix(context newlineContext) Node {
 	b := p.begin()
 	token := p.current()
 	kind := ErrorNode

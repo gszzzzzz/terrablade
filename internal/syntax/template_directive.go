@@ -5,7 +5,7 @@ package syntax
 // the header with a body is a separate, iterative step, and malformed headers
 // still retain their keyword so a later matching ending can recover the
 // surrounding template structure.
-func (p *parser) templateDirective() (SyntaxNode, string) {
+func (p *parser) templateDirective() (Node, string) {
 	b := p.begin()
 	p.templateSequenceOpen(&b)
 	keyword := p.tokens[p.look(newlineTransparent)]
@@ -75,7 +75,7 @@ func (n *templateNesting) current() *nodeBuilder {
 // else, endif, and endfor attach to the latest scope of their kind after
 // closing any unfinished inner scopes; without one they are diagnosed and kept
 // in place. Anything else, including an unknown directive, stays in place too.
-func (n *templateNesting) directive(header SyntaxNode, name string) {
+func (n *templateNesting) directive(header Node, name string) {
 	p := n.root.parser
 	switch name {
 	case "if", "for":

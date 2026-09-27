@@ -35,7 +35,7 @@ func render(t testing.TB, source string, width int) string {
 
 // parse parses source as an attribute value and returns the result together
 // with that value's node, which is what lowering.Expression accepts.
-func parse(t testing.TB, source string) (syntax.Result, syntax.SyntaxNode) {
+func parse(t testing.TB, source string) (syntax.Result, syntax.Node) {
 	t.Helper()
 	result := syntax.Parse([]byte("value = " + source + "\n"))
 	if diagnostics := result.Diagnostics(); len(diagnostics) != 0 {
@@ -46,7 +46,7 @@ func parse(t testing.TB, source string) (syntax.Result, syntax.SyntaxNode) {
 
 // firstExpression returns the value of the first attribute in result, or a
 // zero node when there is none.
-func firstExpression(result syntax.Result) syntax.SyntaxNode {
+func firstExpression(result syntax.Result) syntax.Node {
 	root := result.Root()
 	for i := 0; i < root.ChildCount(); i++ {
 		body, ok := root.Child(i).Node()
@@ -65,7 +65,7 @@ func firstExpression(result syntax.Result) syntax.SyntaxNode {
 			}
 		}
 	}
-	return syntax.SyntaxNode{}
+	return syntax.Node{}
 }
 
 // renderFile lowers a complete file through lowering.File and renders it at
@@ -91,7 +91,7 @@ func assertFileContent(t testing.TB, before, after string) {
 			t.Fatalf("invalid output %q: %+v", source, diagnostics)
 		}
 		var parts []string
-		stack := []syntax.SyntaxElement{result.Root().Element()}
+		stack := []syntax.Element{result.Root().Element()}
 		for len(stack) > 0 {
 			current := stack[len(stack)-1]
 			stack = stack[:len(stack)-1]
@@ -145,10 +145,10 @@ func assertFileContent(t testing.TB, before, after string) {
 // marker so a suffix cannot silently move inside an operation or splat. Only
 // parentheses and traversal containers are transparent: their canonical
 // children fully describe the expression.
-func expressionTokens(result syntax.Result, node syntax.SyntaxNode) []string {
+func expressionTokens(result syntax.Result, node syntax.Node) []string {
 	var tokens []string
 	type entry struct {
-		element             syntax.SyntaxElement
+		element             syntax.Element
 		objectSeparator     bool
 		wrapper             bool
 		legacyIndex         bool

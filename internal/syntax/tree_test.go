@@ -32,14 +32,14 @@ func TestFileDeepInput(t *testing.T) {
 	assertTreeInvariants(t, source, parseExpressionSource(source))
 }
 
-func TestSyntaxElementViews(t *testing.T) {
+func TestElementViews(t *testing.T) {
 	file := parseExpressionSource([]byte("x"))
 	root := file.root.Element()
 	node, ok := root.Node()
 	if !ok || node != file.root || node.Element() != root || root.Span() != file.root.Span() {
 		t.Fatal("node and element views must identify the same tree position")
 	}
-	if rootToken, isToken := root.Token(); isToken || rootToken != (SyntaxToken{}) {
+	if rootToken, isToken := root.Token(); isToken || rootToken != (Token{}) {
 		t.Fatal("node element must not have a token view")
 	}
 	variable, ok := node.Child(0).Node()
@@ -51,7 +51,7 @@ func TestSyntaxElementViews(t *testing.T) {
 	if !ok || token.Kind() != Identifier || token.Span() != (Span{Start: 0, End: 1}) || leaf.Span() != token.Span() {
 		t.Fatal("token view must preserve kind and span")
 	}
-	if leafNode, isNode := leaf.Node(); isNode || leafNode != (SyntaxNode{}) {
+	if leafNode, isNode := leaf.Node(); isNode || leafNode != (Node{}) {
 		t.Fatal("token element must not have a node view")
 	}
 	// Token views are independent values even though the arena reuses lexer data.
@@ -67,14 +67,14 @@ func TestSyntaxElementViews(t *testing.T) {
 }
 
 func TestSyntaxZeroValues(t *testing.T) {
-	var element SyntaxElement
-	if node, ok := element.Node(); ok || node != (SyntaxNode{}) {
+	var element Element
+	if node, ok := element.Node(); ok || node != (Node{}) {
 		t.Fatal("zero element must not have a node view")
 	}
-	if token, ok := element.Token(); ok || token != (SyntaxToken{}) {
+	if token, ok := element.Token(); ok || token != (Token{}) {
 		t.Fatal("zero element must not have a token view")
 	}
-	var node SyntaxNode
+	var node Node
 	if element.Span() != (Span{}) || node.Span() != (Span{}) || node.Kind() != InvalidNode || node.ChildCount() != 0 || node.Element() != element {
 		t.Fatal("zero handles must have empty, invalid views")
 	}
@@ -82,7 +82,7 @@ func TestSyntaxZeroValues(t *testing.T) {
 
 func TestSyntaxChildBounds(t *testing.T) {
 	root := parseExpressionSource([]byte("x")).root
-	for _, node := range []SyntaxNode{{}, root} {
+	for _, node := range []Node{{}, root} {
 		for _, index := range []int{-1, node.ChildCount(), node.ChildCount() + 1} {
 			t.Run(strconv.Itoa(node.ChildCount())+"/"+strconv.Itoa(index), func(t *testing.T) {
 				defer func() {
@@ -169,7 +169,7 @@ func TestDeepArenaTraversalAllocations(t *testing.T) {
 	file := parseExpressionSource(source)
 	// The caller owns a reusable traversal stack; node/token access must add no
 	// allocations even when visiting the full deep tree, including every trivia.
-	stack := make([]SyntaxElement, 0, terms*8)
+	stack := make([]Element, 0, terms*8)
 	var nodes, tokens, width int
 	allocations := testing.AllocsPerRun(10, func() {
 		nodes, tokens, width = countTree(file.root, stack)
@@ -224,7 +224,7 @@ func BenchmarkParse(b *testing.B) {
 func BenchmarkTraverseDeepExpression(b *testing.B) {
 	terms := maxRecursiveExpressionDepth * 8
 	file := parseExpressionSource([]byte(strings.Repeat("x + ", terms-1) + "x"))
-	stack := make([]SyntaxElement, 0, terms*8)
+	stack := make([]Element, 0, terms*8)
 	b.ReportAllocs()
 	for b.Loop() {
 		countTree(file.root, stack)

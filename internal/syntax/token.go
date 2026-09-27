@@ -83,6 +83,6 @@ type Span struct {
 // lexResult contains tokens and lexical errors, in source order. An input with
 // diagnostics must not be formatted. The token partition remains lossless.
 type lexResult struct {
-	Tokens      []SyntaxToken
+	Tokens      []Token
 	Diagnostics []Diagnostic
 }

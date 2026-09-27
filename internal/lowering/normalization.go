@@ -5,7 +5,7 @@ import "github.com/gszzzzzz/terrablade/internal/syntax"
 // expressionView is a private, immutable syntax overlay. Original tokens keep
 // their source spans; only canonical delimiters are synthesized. The lossless
 // CST and the public lowering interface never expose these rewrite decisions.
-// Its accessors mirror syntax.SyntaxNode so the layout code reads a view the
+// Its accessors mirror syntax.Node so the layout code reads a view the
 // same way it would read the CST.
 type expressionView struct {
 	kind     syntax.NodeKind
@@ -31,7 +31,7 @@ type expressionElement struct {
 // and spellings are read from the original text; a synthesized delimiter has
 // no source and carries its spelling in text.
 type expressionToken struct {
-	source syntax.SyntaxToken
+	source syntax.Token
 	kind   syntax.TokenKind
 	text   string // Nonempty only for a synthesized delimiter.
 }
@@ -61,7 +61,7 @@ func delimiter(kind syntax.TokenKind, text string) expressionElement {
 // indices). It visits each source element once, children first. An alias
 // carries its removed wrapper's grammar role to the immediate parent, which
 // can then protect precedence without rescanning a deep expression chain.
-func normalizeExpression(result syntax.Result, root syntax.SyntaxNode) *expressionView {
+func normalizeExpression(result syntax.Result, root syntax.Node) *expressionView {
 	return protectExpressionLines(postOrder(normalizationWalker{result}, root, false).node)
 }
 
@@ -70,16 +70,16 @@ func normalizeExpression(result syntax.Result, root syntax.SyntaxNode) *expressi
 // brackets would change meaning.
 type normalizationWalker struct{ result syntax.Result }
 
-func (normalizationWalker) expand(node syntax.SyntaxNode, _ bool, children []visit[syntax.SyntaxNode, bool]) []visit[syntax.SyntaxNode, bool] {
+func (normalizationWalker) expand(node syntax.Node, _ bool, children []visit[syntax.Node, bool]) []visit[syntax.Node, bool] {
 	for i := range node.ChildCount() {
 		if child, ok := node.Child(i).Node(); ok {
-			children = append(children, visit[syntax.SyntaxNode, bool]{child, node.Kind() == syntax.AttributeSplat})
+			children = append(children, visit[syntax.Node, bool]{child, node.Kind() == syntax.AttributeSplat})
 		}
 	}
 	return children
 }
 
-func (w normalizationWalker) lower(node syntax.SyntaxNode, attributeProjection bool, children []rewrite) rewrite {
+func (w normalizationWalker) lower(node syntax.Node, attributeProjection bool, children []rewrite) rewrite {
 	return rewriteView(normalizedView(w.result, node, children), attributeProjection)
 }
 
@@ -93,7 +93,7 @@ type rewrite struct {
 // normalizedView copies node into a view over its already normalized
 // children, protecting an unwrapped child's precedence and an object item's
 // exposed lines where the parent needs it.
-func normalizedView(result syntax.Result, node syntax.SyntaxNode, children []rewrite) *expressionView {
+func normalizedView(result syntax.Result, node syntax.Node, children []rewrite) *expressionView {
 	view := &expressionView{kind: node.Kind(), children: make([]expressionElement, 0, node.ChildCount())}
 	position := 0
 	for i := range node.ChildCount() {
@@ -301,7 +301,7 @@ func permanentParentheses(inner *expressionView, before, after []expressionEleme
 // binary operator, the condition of a conditional, the root of a traversal,
 // or the first element of a tuple. Each case names the misreading it
 // prevents; an already parenthesized child needs nothing.
-func needsGrouping(result syntax.Result, parent syntax.SyntaxNode, position int, child *expressionView) bool {
+func needsGrouping(result syntax.Result, parent syntax.Node, position int, child *expressionView) bool {
 	if child.kind == syntax.ParenthesizedExpression {
 		return false
 	}
