@@ -105,6 +105,6 @@ func (p *parser) bracketStep(parent, b *nodeBuilder, context newlineContext) {
 	}
 
 	p.operand(b, lowestPower, newlineTransparent)
-	p.expect(b, CloseBracket, ExpectedClosingBracket, newlineTransparent)
+	p.expectCloser(b, CloseBracket, ExpectedClosingBracket)
 	parent.node(b.finish(IndexAccess))
 }

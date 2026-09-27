@@ -40,14 +40,9 @@ func (p *parser) forExpression(b *nodeBuilder) {
 		p.operand(b, lowestPower, newlineTransparent)
 	}
 
-	if !p.expect(b, closer, missingCloser, newlineTransparent) {
-		// A for-expression has no item separators. Recover its remaining tail as
-		// one region rather than interpreting a stray comma as a new projection.
-		p.recoverUntil(b, newlineTransparent, expressionBoundaries)
-		if p.peek(newlineTransparent) == closer {
-			p.consumeLookahead(b, newlineTransparent)
-		}
-	}
+	// A for-expression has no item separators, so its remaining tail recovers
+	// as one region rather than a stray comma starting a new projection.
+	p.expectCloser(b, closer, missingCloser)
 }
 
 // forIntroduction parses the bindings, "in", and collection that follow a for

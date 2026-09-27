@@ -136,7 +136,7 @@ func (p *parser) prefix(context newlineContext) SyntaxNode {
 	case OpenParen:
 		p.consumeLookahead(&b, context)
 		p.operand(&b, lowestPower, newlineTransparent)
-		p.expect(&b, CloseParen, ExpectedClosingParen, newlineTransparent)
+		p.expectCloser(&b, CloseParen, ExpectedClosingParen)
 		kind = ParenthesizedExpression
 	case Minus, Bang:
 		p.consumeLookahead(&b, context)
@@ -200,6 +200,20 @@ func (p *parser) expect(b *nodeBuilder, kind TokenKind, diagnostic DiagnosticKin
 	return false
 }
 
+// expectCloser is expect for the closer of newline-transparent contents. On a
+// mismatch it keeps the unparsed tail as one ErrorNode and consumes the closer
+// where recovery stops at it, so that tail is not diagnosed a second time by
+// the enclosing production.
+func (p *parser) expectCloser(b *nodeBuilder, closer TokenKind, diagnostic DiagnosticKind) {
+	if p.expect(b, closer, diagnostic, newlineTransparent) {
+		return
+	}
+	p.recoverUntil(b, newlineTransparent, expressionBoundaries)
+	if p.peek(newlineTransparent) == closer {
+		p.consumeLookahead(b, newlineTransparent)
+	}
+}
+
 // call parses the rest of a function call after its first name: optional
 // "::"-separated namespace parts, then the parenthesized argument list. The
 // arguments are expressions separated by commas; a trailing comma is allowed,
@@ -232,7 +246,7 @@ func (p *parser) call(b *nodeBuilder, context newlineContext) {
 		case kind == Ellipsis:
 			// Expansion is final: a following comma must not reopen the argument loop.
 			p.consumeLookahead(b, newlineTransparent)
-			p.expect(b, CloseParen, ExpectedClosingParen, newlineTransparent)
+			p.expectCloser(b, CloseParen, ExpectedClosingParen)
 			return
 		case kind == Comma:
 			p.consumeLookahead(b, newlineTransparent)
