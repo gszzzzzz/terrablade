@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -10,7 +11,8 @@ func FuzzRunArguments(f *testing.F) {
 	for _, seed := range [][2]string{
 		{"check", "true"}, {"check", "false"}, {"write", "true"},
 		{"print-width", "80"}, {"print-width", "-1"}, {"indent-width", "17"},
-		{"tab-width", "0"}, {"help", "true"}, {"unknown", "\n\x1b\xff"},
+		{"tab-width", "0"}, {"help", "true"}, {"version", "true"},
+		{"unknown", "\n\x1b\xff"},
 	} {
 		f.Add(seed[0], seed[1])
 	}
@@ -22,7 +24,7 @@ func FuzzRunArguments(f *testing.F) {
 		status := run(args, strings.NewReader("a=1"), &stdout, &stderr)
 		switch status {
 		case 0:
-			if stderr.Len() != 0 || stdout.String() != "a = 1\n" && stdout.String() != usage {
+			if stderr.Len() != 0 || !slices.Contains([]string{"a = 1\n", usage, versionText()}, stdout.String()) {
 				t.Fatalf("success: stdout=%q stderr=%q", stdout.String(), stderr.String())
 			}
 		case 1:
