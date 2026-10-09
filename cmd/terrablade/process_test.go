@@ -22,7 +22,9 @@ func TestCLIProcess(t *testing.T) {
 	binary := filepath.Join(dir, name)
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
-	if output, err := exec.CommandContext(ctx, "go", "build", "-o", binary, ".").CombinedOutput(); err != nil {
+	// Release builds stamp the version the same way.
+	build := exec.CommandContext(ctx, "go", "build", "-ldflags=-X main.version=1.2.3", "-o", binary, ".")
+	if output, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("build CLI: %v\n%s", err, output)
 	}
 	// The OS wording varies across platforms; the CLI's empty argument label
@@ -44,6 +46,7 @@ func TestCLIProcess(t *testing.T) {
 		{name: "parse error", input: "a=", stderr: "<stdin>:1:3: ExpectedExpression: Expected an expression.\n", status: 2},
 		{name: "bad option", args: []string{"--tab-width=17"}, input: "a=1", stderr: "terrablade: --tab-width must not exceed 16 (got 17)\n", status: 2},
 		{name: "help", args: []string{"--help"}, stdout: usage},
+		{name: "version", args: []string{"--version"}, stdout: "terrablade 1.2.3\n"},
 		{name: "trailing option", args: []string{"x.tf", "--check"}, status: 2,
 			stderr: "terrablade: options must precede files: \"--check\" (use -- for a dash-prefixed filename)\n"},
 		{name: "empty path", args: []string{""}, status: 2, stderr: "terrablade: \"\": " + emptyPath.Op + ": " + emptyPath.Err.Error() + "\n"},

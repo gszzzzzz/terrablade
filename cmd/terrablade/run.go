@@ -24,6 +24,9 @@ const (
 	exitError   = 2
 )
 
+// errVersion is returned by parseArguments when --version was requested.
+var errVersion = errors.New("version requested")
+
 const usage = `Usage: terrablade [options] [file ...]
 
 Format stdin (no file, or -) or one file to stdout.
@@ -37,6 +40,7 @@ Options:
   --indent-width int  Spaces per level (default 2; 1..16; 0 selects default)
   --tab-width int     Distance between tab stops (default 8; 1..16; 0 selects default)
   --help              Show this help
+  --version           Show the version
 
 --check and --write are mutually exclusive. Stdin must be the only input
 and cannot be used with --write, which also requires regular files.
@@ -56,8 +60,12 @@ type invocation struct {
 // argument order and continues after errors that concern a single input.
 func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	inv, err := parseArguments(args)
-	if errors.Is(err, flag.ErrHelp) {
-		if writeErr := writeText(stdout, usage); writeErr != nil {
+	if errors.Is(err, flag.ErrHelp) || errors.Is(err, errVersion) {
+		text := usage
+		if errors.Is(err, errVersion) {
+			text = versionText()
+		}
+		if writeErr := writeText(stdout, text); writeErr != nil {
 			reportOutputError(stderr, writeErr)
 			return exitError
 		}
@@ -99,9 +107,10 @@ var optionFlags = map[string]string{
 
 // parseArguments validates the whole command line before any input is read,
 // so a usage error can never follow a partially written file. It returns
-// flag.ErrHelp when help was requested.
+// flag.ErrHelp when help was requested and errVersion when the version was.
 func parseArguments(args []string) (invocation, error) {
 	var inv invocation
+	var showVersion bool
 	flags := flag.NewFlagSet("terrablade", flag.ContinueOnError)
 	// run prints the usage text itself, on stdout and only for --help; the flag
 	// package would otherwise print its own version to stderr on every error.
@@ -111,8 +120,13 @@ func parseArguments(args []string) (invocation, error) {
 	flags.IntVar(&inv.options.PrintWidth, "print-width", 0, "")
 	flags.IntVar(&inv.options.IndentWidth, "indent-width", 0, "")
 	flags.IntVar(&inv.options.TabWidth, "tab-width", 0, "")
+	flags.BoolVar(&showVersion, "version", false, "")
 	if err := flags.Parse(args); err != nil {
 		return invocation{}, err
+	}
+	// Like --help, --version takes precedence over files and output modes.
+	if showVersion {
+		return invocation{}, errVersion
 	}
 
 	// flag stops at the first positional argument. Diagnose misplaced options

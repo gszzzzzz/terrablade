@@ -38,6 +38,8 @@ func TestRunStdin(t *testing.T) {
 		{name: "zero defaults", args: []string{"--print-width=0", "--indent-width=0", "--tab-width=0"}, input: "b {a=1}", output: "b {\n  a = 1\n}\n"},
 		{name: "help", args: []string{"--help"}, output: usage},
 		{name: "short help", args: []string{"-h"}, output: usage},
+		{name: "version", args: []string{"--version"}, output: versionText()},
+		{name: "version with files", args: []string{"--version", "--check", "a.tf", "b.tf"}, output: versionText()},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			assertRun(t, test.args, test.input, test.status, test.output, test.stderr)
@@ -60,6 +62,7 @@ func TestRunUsageErrorsBeforeReading(t *testing.T) {
 		{[]string{"x.tf", "--check"}, `options must precede files: "--check" (use -- for a dash-prefixed filename)`},
 		{[]string{"--check", "x.tf", "--unknown"}, `options must precede files: "--unknown" (use -- for a dash-prefixed filename)`},
 		{[]string{"x.tf", "-h"}, `options must precede files: "-h" (use -- for a dash-prefixed filename)`},
+		{[]string{"x.tf", "--version"}, `options must precede files: "--version" (use -- for a dash-prefixed filename)`},
 		{[]string{"--unknown"}, "flag provided but not defined: -unknown"},
 		{[]string{"--print-width"}, "flag needs an argument: -print-width"},
 		{[]string{"--print-width=abc"}, `invalid value "abc" for flag -print-width: parse error`},
@@ -158,7 +161,7 @@ func TestRunStreamFailures(t *testing.T) {
 	if status != 2 || stdout.Len() != 0 || stderr.String() != "terrablade: <stdin>: test read failure\n" {
 		t.Fatalf("read failure: status=%d stdout=%q stderr=%q", status, stdout.String(), stderr.String())
 	}
-	for _, args := range [][]string{nil, {"--help"}, {"--check"}} {
+	for _, args := range [][]string{nil, {"--help"}, {"--version"}, {"--check"}} {
 		for _, writer := range []io.Writer{failedWriter{}, shortWriter{}} {
 			stderr.Reset()
 			status := run(args, strings.NewReader("a=1"), writer, &stderr)
