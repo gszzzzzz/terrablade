@@ -6,6 +6,7 @@
   "include-component-in-tag": false,
   "include-v-in-tag": true,
   "initial-version": "0.1.0",
+  "last-release-sha": "9432b6e8bcab1bdb98de8b5fcd0003fe94e3508b",
   "release-type": "go",
   "packages": {
     ".": {
