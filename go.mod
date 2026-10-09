@@ -2,7 +2,7 @@ module github.com/gszzzzzz/terrablade
 
 go 1.25.0
 
-toolchain go1.26.6
+toolchain go1.26.9
 
 require (
 	github.com/clipperhouse/displaywidth v0.11.0
